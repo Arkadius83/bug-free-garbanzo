@@ -264,5 +264,19 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX idx_soundcloud_snapshots_track_time ON soundcloud_performance_snapshots(track_id, captured_at DESC);
     `
+  },
+  {
+    version: 11,
+    name: "spotify_catalog_v1",
+    sql: `
+      CREATE TABLE spotify_releases (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, album_type TEXT NOT NULL,
+        release_date TEXT NOT NULL, total_tracks INTEGER NOT NULL, image_url TEXT,
+        spotify_url TEXT NOT NULL, spotify_artist_id TEXT NOT NULL,
+        artist_id TEXT NOT NULL REFERENCES artist_profiles(id), raw_json TEXT NOT NULL,
+        imported_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_spotify_releases_artist_date ON spotify_releases(artist_id, release_date DESC);
+    `
   }
 ];
