@@ -221,5 +221,15 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX idx_soundcloud_tracks_created ON soundcloud_tracks(created_at_remote DESC);
     `
+  },
+  {
+    version: 7,
+    name: "soundcloud_catalog_classification_v2",
+    sql: `
+      ALTER TABLE soundcloud_tracks ADD COLUMN artist_id TEXT REFERENCES artist_profiles(id) ON DELETE SET NULL;
+      ALTER TABLE soundcloud_tracks ADD COLUMN catalog_status TEXT NOT NULL DEFAULT 'unreviewed'
+        CHECK(catalog_status IN ('unreviewed', 'release', 'gem', 'archive', 'exclude'));
+      CREATE INDEX idx_soundcloud_tracks_catalog ON soundcloud_tracks(catalog_status, artist_id);
+    `
   }
 ];
