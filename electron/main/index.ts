@@ -6,9 +6,23 @@ import { discoverOllamaModels, generateCampaignDraft, runPlanningAgent } from ".
 import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus, TaskStatus, UpdateReleaseInput } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
+import { SoundCloudClient } from "./soundcloud.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 let studioDatabase: StudioDatabase;
+let soundCloudClient: SoundCloudClient;
+if (!app.requestSingleInstanceLock()) app.quit();
+
+function soundCloudCallbackFromArgs(args: string[]): string | null {
+  return args.find((value) => value.startsWith("ai-studio-manager://soundcloud/callback")) ?? null;
+}
+
+async function handleSoundCloudCallback(url: string): Promise<void> {
+  try { await soundCloudClient.handleCallback(url); }
+  catch (error) { console.error("SoundCloud callback failed", error); }
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
+}
 
 function createWindow(): void {
   const window = new BrowserWindow({
@@ -90,6 +104,12 @@ ipcMain.handle("studio:run-task-agent", async (_event, taskId: string, model: st
   const output = await runPlanningAgent(model, task.title, task.releaseTitle);
   return studioDatabase.saveTaskAgentOutput(taskId, model, output);
 });
+ipcMain.handle("studio:get-soundcloud-connection", () => soundCloudClient.status());
+ipcMain.handle("studio:save-soundcloud-credentials", (_event, clientId: string, clientSecret: string) => soundCloudClient.saveCredentials(clientId, clientSecret));
+ipcMain.handle("studio:begin-soundcloud-connect", () => soundCloudClient.beginConnect());
+ipcMain.handle("studio:disconnect-soundcloud", () => soundCloudClient.disconnect());
+ipcMain.handle("studio:sync-soundcloud-catalog", async () => studioDatabase.importSoundCloudTracks(await soundCloudClient.fetchAllTracks()));
+ipcMain.handle("studio:list-soundcloud-tracks", () => studioDatabase.listSoundCloudTracks());
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
   const asset = studioDatabase.getAssetForAnalysis(assetId);
   if (!asset) throw new Error("Audio asset not found");
@@ -135,10 +155,26 @@ function inferMimeType(filePath: string): string | null {
 void app.whenReady().then(() => {
   studioDatabase = new StudioDatabase(path.join(app.getPath("userData"), "ai-studio-manager.sqlite"));
   studioDatabase.initialize();
+  soundCloudClient = new SoundCloudClient(app.getPath("userData"));
+  if (process.platform === "win32" && !app.isPackaged) app.setAsDefaultProtocolClient("ai-studio-manager", process.execPath, [path.resolve(process.argv[1])]);
+  else app.setAsDefaultProtocolClient("ai-studio-manager");
   createWindow();
+  const initialCallback = soundCloudCallbackFromArgs(process.argv);
+  if (initialCallback) void handleSoundCloudCallback(initialCallback);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on("open-url", (event, url) => {
+  if (!url.startsWith("ai-studio-manager://soundcloud/callback")) return;
+  event.preventDefault();
+  if (soundCloudClient) void handleSoundCloudCallback(url);
+});
+
+app.on("second-instance", (_event, argv) => {
+  const callback = soundCloudCallbackFromArgs(argv);
+  if (callback && soundCloudClient) void handleSoundCloudCallback(callback);
 });
 
 app.on("before-quit", () => studioDatabase?.close());
