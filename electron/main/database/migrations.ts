@@ -137,5 +137,28 @@ export const migrations: Migration[] = [
       CREATE INDEX idx_drafts_campaign ON drafts(campaign_id);
       CREATE INDEX idx_events_entity ON events(entity_type, entity_id, created_at);
     `
+  },
+  {
+    version: 2,
+    name: "audio_analysis_v1",
+    sql: `
+      CREATE TABLE audio_analyses (
+        id TEXT PRIMARY KEY,
+        asset_id TEXT NOT NULL UNIQUE REFERENCES assets(id) ON DELETE CASCADE,
+        status TEXT NOT NULL CHECK (status IN ('complete','limited')),
+        analyzer TEXT NOT NULL,
+        format TEXT NOT NULL,
+        duration_seconds REAL NOT NULL,
+        sample_rate INTEGER NOT NULL,
+        channels INTEGER NOT NULL,
+        bit_depth INTEGER,
+        integrated_lufs REAL,
+        loudness_range_lu REAL,
+        true_peak_dbtp REAL,
+        note TEXT,
+        analyzed_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_audio_analyses_asset ON audio_analyses(asset_id);
+    `
   }
 ];
