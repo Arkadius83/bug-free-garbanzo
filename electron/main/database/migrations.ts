@@ -286,5 +286,24 @@ export const migrations: Migration[] = [
       ALTER TABLE spotify_releases ADD COLUMN release_id TEXT REFERENCES releases(id) ON DELETE SET NULL;
       CREATE UNIQUE INDEX idx_spotify_releases_local_release ON spotify_releases(release_id) WHERE release_id IS NOT NULL;
     `
+  },
+  {
+    version: 13,
+    name: "campaign_pack_generator_v1",
+    sql: `
+      CREATE TABLE campaign_pack_items (
+        id TEXT PRIMARY KEY,
+        release_id TEXT NOT NULL REFERENCES releases(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK(kind IN ('caption','video-hook','video-script','image-prompt','visualizer-prompt')),
+        channel TEXT,
+        language TEXT NOT NULL CHECK(language IN ('pl','de','en')),
+        content TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','scheduled','published','rejected')),
+        model_name TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_campaign_pack_release ON campaign_pack_items(release_id, created_at DESC);
+    `
   }
 ];
