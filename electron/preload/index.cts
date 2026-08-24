@@ -42,7 +42,9 @@ const api: StudioApi = {
   getSpotifyArtistMappings: () => ipcRenderer.invoke("studio:get-spotify-artist-mappings"),
   saveSpotifyArtistMappings: (mappings) => ipcRenderer.invoke("studio:save-spotify-artist-mappings", mappings),
   syncSpotifyCatalog: () => ipcRenderer.invoke("studio:sync-spotify-catalog"),
-  listSpotifyReleases: () => ipcRenderer.invoke("studio:list-spotify-releases")
+  listSpotifyReleases: () => ipcRenderer.invoke("studio:list-spotify-releases"),
+  linkSpotifyRelease: (spotifyReleaseId, releaseId) => ipcRenderer.invoke("studio:link-spotify-release", spotifyReleaseId, releaseId),
+  getCatalogMatchSuggestions: () => ipcRenderer.invoke("studio:get-catalog-match-suggestions")
 };
 
 contextBridge.exposeInMainWorld("studio", api);
