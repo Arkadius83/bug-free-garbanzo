@@ -305,5 +305,28 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX idx_campaign_pack_release ON campaign_pack_items(release_id, created_at DESC);
     `
+  },
+  {
+    version: 14,
+    name: "media_generation_gallery_v1",
+    sql: `
+      CREATE TABLE media_generations (
+        id TEXT PRIMARY KEY,
+        release_id TEXT NOT NULL REFERENCES releases(id) ON DELETE CASCADE,
+        campaign_pack_item_id TEXT NOT NULL REFERENCES campaign_pack_items(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL CHECK(provider IN ('openai','kling')),
+        media_type TEXT NOT NULL CHECK(media_type IN ('image','video')),
+        prompt TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('queued','generating','ready','failed','approved','rejected')),
+        provider_task_id TEXT,
+        local_path TEXT,
+        mime_type TEXT,
+        error TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_media_generations_release ON media_generations(release_id, created_at DESC);
+    `
   }
 ];
