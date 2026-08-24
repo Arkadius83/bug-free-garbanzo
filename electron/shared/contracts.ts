@@ -237,7 +237,8 @@ export interface SoundCloudTrackPerformance { trackId: number; points: SoundClou
 
 export interface SpotifyConnection { configured: boolean; connected: boolean; accountId: string | null; displayName: string | null; callbackUrl: string; error: string | null; }
 export interface SpotifyArtistMapping { artistId: ArtistAlias; spotifyArtistId: string; }
-export interface SpotifyReleaseSummary { id: string; name: string; albumType: string; releaseDate: string; totalTracks: number; imageUrl: string | null; spotifyUrl: string; spotifyArtistId: string; artistId: ArtistAlias; importedAt: string; }
+export interface SpotifyReleaseSummary { id: string; name: string; albumType: string; releaseDate: string; totalTracks: number; imageUrl: string | null; spotifyUrl: string; spotifyArtistId: string; artistId: ArtistAlias; importedAt: string; releaseId: string | null; releaseTitle: string | null; }
+export interface CatalogMatchSuggestion { soundCloudTrackId: number; soundCloudTitle: string; spotifyReleaseId: string; spotifyTitle: string; artistId: ArtistAlias; score: number; reason: string; }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
@@ -297,4 +298,6 @@ export interface StudioApi {
   saveSpotifyArtistMappings(mappings: SpotifyArtistMapping[]): Promise<SpotifyArtistMapping[]>;
   syncSpotifyCatalog(): Promise<SpotifyReleaseSummary[]>;
   listSpotifyReleases(): Promise<SpotifyReleaseSummary[]>;
+  linkSpotifyRelease(spotifyReleaseId: string, releaseId: string | null): Promise<SpotifyReleaseSummary>;
+  getCatalogMatchSuggestions(): Promise<CatalogMatchSuggestion[]>;
 }
