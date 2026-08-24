@@ -2,8 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { discoverOllamaModels, generateCampaignDraft } from "./ollama.js";
-import type { AiSettings, AssetKind, CreateReleaseDraftInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus, UpdateReleaseInput } from "../shared/contracts.js";
+import { discoverOllamaModels, generateCampaignDraft, runPlanningAgent } from "./ollama.js";
+import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus, TaskStatus, UpdateReleaseInput } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 
@@ -80,6 +80,16 @@ ipcMain.handle("studio:list-assets", (_event, releaseId: string) => studioDataba
 ipcMain.handle("studio:detach-asset", (_event, assetId: string) => studioDatabase.detachAsset(assetId));
 ipcMain.handle("studio:get-audio-analysis", (_event, assetId: string) => studioDatabase.getAudioAnalysis(assetId));
 ipcMain.handle("studio:get-release-readiness", (_event, releaseId: string) => studioDatabase.getReleaseReadiness(releaseId));
+ipcMain.handle("studio:list-tasks", (_event, releaseId?: string | null) => studioDatabase.listTasks(releaseId));
+ipcMain.handle("studio:create-task", (_event, input: CreateTaskInput) => studioDatabase.createTask(input));
+ipcMain.handle("studio:update-task-status", (_event, taskId: string, taskStatus: TaskStatus) => studioDatabase.updateTaskStatus(taskId, taskStatus));
+ipcMain.handle("studio:run-task-agent", async (_event, taskId: string, model: string) => {
+  const task = studioDatabase.listTasks().find((item) => item.id === taskId);
+  if (!task) throw new Error("Task not found");
+  if (task.assignee !== "ai") throw new Error("Only AI Agent tasks can be run by a model");
+  const output = await runPlanningAgent(model, task.title, task.releaseTitle);
+  return studioDatabase.saveTaskAgentOutput(taskId, model, output);
+});
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
   const asset = studioDatabase.getAssetForAnalysis(assetId);
   if (!asset) throw new Error("Audio asset not found");
