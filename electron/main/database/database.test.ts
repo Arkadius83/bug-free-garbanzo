@@ -11,7 +11,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 16);
+    assert.equal(database.health().schemaVersion, 17);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
@@ -79,6 +79,7 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(database.createMediaGeneration(pack[0]!,"comfyui","image").provider,"comfyui");
     const queued=database.createPublishingQueueItem({releaseId:created.id,campaignPackItemId:pack[0]!.id,mediaGenerationId:null,platform:"Instagram",scheduledAt:"2026-09-10T18:00:00.000Z"});
     assert.equal(queued.status,"draft");assert.equal(database.updatePublishingQueueStatus(queued.id,"approved").status,"approved");assert.equal(database.updatePublishingQueueStatus(queued.id,"scheduled").status,"scheduled");
+    const brand=database.listBrandProfiles().find((profile)=>profile.artistId==="the-arkadiusz")!;assert.equal(brand.defaultAspectRatio,"1:1");assert.equal(database.updateBrandProfile({...brand,palette:"violet and cyan"}).palette,"violet and cyan");
     const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem", contentType: "bootleg" });
     assert.equal(classifiedTrack.artistId, "the-arkadiusz");
     assert.equal(classifiedTrack.catalogStatus, "gem");
