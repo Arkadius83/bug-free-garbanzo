@@ -231,5 +231,14 @@ export const migrations: Migration[] = [
         CHECK(catalog_status IN ('unreviewed', 'release', 'gem', 'archive', 'exclude'));
       CREATE INDEX idx_soundcloud_tracks_catalog ON soundcloud_tracks(catalog_status, artist_id);
     `
+  },
+  {
+    version: 8,
+    name: "soundcloud_content_type_v1",
+    sql: `
+      ALTER TABLE soundcloud_tracks ADD COLUMN content_type TEXT NOT NULL DEFAULT 'original'
+        CHECK(content_type IN ('original', 'bootleg', 'official-remix', 'edit', 'dj-set'));
+      CREATE INDEX idx_soundcloud_tracks_content_type ON soundcloud_tracks(content_type);
+    `
   }
 ];
