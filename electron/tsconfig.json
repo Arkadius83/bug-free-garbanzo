@@ -9,5 +9,5 @@
     "rootDir": ".",
     "outDir": "../dist-electron"
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts", "**/*.cts"]
 }

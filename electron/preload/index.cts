@@ -1,5 +1,6 @@
-import { contextBridge, ipcRenderer } from "electron";
 import type { StudioApi } from "../shared/contracts.js";
+
+const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
 const api: StudioApi = {
   getSystemStatus: () => ipcRenderer.invoke("studio:get-system-status"),

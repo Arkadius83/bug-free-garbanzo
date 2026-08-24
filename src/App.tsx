@@ -10,13 +10,17 @@ export function App() {
   const [database, setDatabase] = useState<DatabaseHealth | null>(null);
   const [releases, setReleases] = useState<ReleaseSummary[]>([]);
   const [saveMessage, setSaveMessage] = useState("");
+  const [bridgeError, setBridgeError] = useState("");
   const [title, setTitle] = useState("Different Perspective");
   const [story, setStory] = useState("Seeing beyond ego reveals another perspective.");
   const [releaseDate, setReleaseDate] = useState("");
   const artist = useMemo(() => artists.find((item) => item.id === selectedArtist) ?? artists[0], [selectedArtist]);
 
   useEffect(() => {
-    if (!window.studio) return;
+    if (!window.studio) {
+      setBridgeError("Desktop bridge unavailable — restart after updating the application.");
+      return;
+    }
     void Promise.all([
       window.studio.getSystemStatus().then(setStatus),
       window.studio.getDatabaseHealth().then(setDatabase),
@@ -60,6 +64,7 @@ export function App() {
       </aside>
 
       <main>
+        {bridgeError && <div className="bridge-error">{bridgeError}</div>}
         <header>
           <div><span className="eyebrow">Release Manager</span><h1>Turn one track into a complete campaign.</h1></div>
           <button className="primary" onClick={saveRelease}>Save release draft</button>

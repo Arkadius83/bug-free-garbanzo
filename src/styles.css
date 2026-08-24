@@ -22,6 +22,7 @@ nav button:hover, nav button.active { color: white; background: #1a211f; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: #6d7472; }
 .dot.online { background: #b4d84a; box-shadow: 0 0 12px #b4d84a; }
 main { padding: 36px 44px 54px; overflow: auto; }
+.bridge-error { margin-bottom: 18px; padding: 12px 14px; border: 1px solid #d36a5c; border-radius: 8px; color: #ffd7d1; background: #341916; }
 header { display: flex; justify-content: space-between; gap: 24px; align-items: end; }
 h1 { max-width: 780px; margin: 8px 0 0; font-size: clamp(30px, 4vw, 55px); line-height: 1.03; letter-spacing: -.045em; }
 h2 { margin: 7px 0 0; font-size: 22px; }
