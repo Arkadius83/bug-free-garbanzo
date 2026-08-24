@@ -20,6 +20,16 @@
   color: #b58ae9;
   font-size: 10px;
 }
+.analysis-row > .musical-result {
+  min-width: 105px;
+  border: 1px solid #40305d;
+  background: #1a1427;
+}
+.musical-result small {
+  display: block;
+  margin-top: 3px;
+  color: #7f728f !important;
+}
 .analysis-row button {
   margin-left: auto;
   border: 1px solid #68459d;
