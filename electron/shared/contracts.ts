@@ -221,10 +221,12 @@ export interface SoundCloudTrackSummary {
   importedAt: string;
   artistId: ArtistAlias | null;
   catalogStatus: SoundCloudCatalogStatus;
+  contentType: SoundCloudContentType;
 }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
-export interface UpdateSoundCloudTrackInput { id: number; artistId: ArtistAlias | null; catalogStatus: SoundCloudCatalogStatus; }
+export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
+export interface UpdateSoundCloudTrackInput { id: number; artistId: ArtistAlias | null; catalogStatus: SoundCloudCatalogStatus; contentType: SoundCloudContentType; }
 
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
@@ -269,4 +271,5 @@ export interface StudioApi {
   syncSoundCloudCatalog(): Promise<SoundCloudTrackSummary[]>;
   listSoundCloudTracks(): Promise<SoundCloudTrackSummary[]>;
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): Promise<SoundCloudTrackSummary>;
+  setSoundCloudTracksContentType(ids: number[], contentType: SoundCloudContentType): Promise<SoundCloudTrackSummary[]>;
 }
