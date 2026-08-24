@@ -5,6 +5,7 @@ import "./styles.css";
 import "./audio-analysis.css";
 import "./tasks.css";
 import "./integrations.css";
+import "./audio-player.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
