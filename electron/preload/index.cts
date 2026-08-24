@@ -20,7 +20,11 @@ const api: StudioApi = {
   detachAsset: (assetId) => ipcRenderer.invoke("studio:detach-asset", assetId),
   getAudioAnalysis: (assetId) => ipcRenderer.invoke("studio:get-audio-analysis", assetId),
   analyzeAudio: (assetId) => ipcRenderer.invoke("studio:analyze-audio", assetId),
-  getReleaseReadiness: (releaseId) => ipcRenderer.invoke("studio:get-release-readiness", releaseId)
+  getReleaseReadiness: (releaseId) => ipcRenderer.invoke("studio:get-release-readiness", releaseId),
+  listTasks: (releaseId) => ipcRenderer.invoke("studio:list-tasks", releaseId),
+  createTask: (input) => ipcRenderer.invoke("studio:create-task", input),
+  updateTaskStatus: (taskId, status) => ipcRenderer.invoke("studio:update-task-status", taskId, status),
+  runTaskAgent: (taskId, model) => ipcRenderer.invoke("studio:run-task-agent", taskId, model)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
