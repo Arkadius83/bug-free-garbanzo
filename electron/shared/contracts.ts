@@ -82,6 +82,23 @@ export interface AssetSummary {
   createdAt: string;
 }
 
+export interface AudioAnalysisSummary {
+  id: string;
+  assetId: string;
+  status: "complete" | "limited";
+  analyzer: "ffmpeg-ebur128" | "wav-native";
+  format: string;
+  durationSeconds: number;
+  sampleRate: number;
+  channels: number;
+  bitDepth: number | null;
+  integratedLufs: number | null;
+  loudnessRangeLu: number | null;
+  truePeakDbtp: number | null;
+  analyzedAt: string;
+  note: string | null;
+}
+
 export interface AttachAssetInput {
   releaseId: string;
   kind: AssetKind;
@@ -143,4 +160,6 @@ export interface StudioApi {
   updateDraftStatus(draftId: string, status: DraftStatus): Promise<DraftSummary>;
   listAssets(releaseId: string): Promise<AssetSummary[]>;
   selectAndAttachAsset(releaseId: string, kind: AssetKind): Promise<AssetSummary | null>;
+  getAudioAnalysis(assetId: string): Promise<AudioAnalysisSummary | null>;
+  analyzeAudio(assetId: string): Promise<AudioAnalysisSummary>;
 }
