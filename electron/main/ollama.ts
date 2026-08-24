@@ -38,11 +38,18 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
   const response = await fetch("http://127.0.0.1:11434/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(120_000),
+    signal: AbortSignal.timeout(300_000),
     body: JSON.stringify({
       model: input.model,
       stream: false,
-      options: { temperature: 0.65, top_p: 0.9 },
+      think: false,
+      keep_alive: "15m",
+      options: {
+        temperature: 0.55,
+        top_p: 0.9,
+        num_ctx: 3072,
+        num_predict: 320
+      },
       messages: [
         {
           role: "system",

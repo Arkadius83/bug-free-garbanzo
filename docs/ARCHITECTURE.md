@@ -35,4 +35,5 @@ Generated content remains a draft until explicitly approved. No platform adapter
 - Selected model, language and channel are persisted in SQLite settings.
 - On first launch, an installed `deepseek-r1` variant is preferred as the default model; the user can override it.
 - Generation receives only explicit release fields; it has no filesystem, shell or publishing access.
+- Marketing generation disables reasoning mode and caps output length; DeepSeek R1 remains the selected language model without spending the response budget on chain-of-thought.
 - Generated copy is always a preview and requires human approval.

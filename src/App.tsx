@@ -80,7 +80,10 @@ export function App() {
       setGenerationMessage(`Generated locally with ${result.model}`);
     } catch (error) {
       setGenerationState("error");
-      setGenerationMessage(error instanceof Error ? error.message : "Ollama generation failed");
+      const message = error instanceof Error ? error.message : "Ollama generation failed";
+      setGenerationMessage(message.includes("TimeoutError")
+        ? "The model did not respond within 5 minutes. Check whether it fits in GPU memory or select a smaller variant."
+        : message.replace(/^Error invoking remote method '[^']+': Error: /, ""));
     }
   }
 
@@ -162,6 +165,7 @@ export function App() {
               <button className="generate-button" disabled={generationState === "generating" || !aiSettings.model} onClick={() => void generateWithOllama()}>{generationState === "generating" ? "Generating..." : "Generate with Ollama"}</button>
             </div>
             {generationMessage && <p className={`generation-message ${generationState === "error" ? "error" : ""}`}>{generationMessage}</p>}
+            {generationState === "generating" && <p className="generation-hint">DeepSeek R1 14B may need extra time on its first run while the model loads into VRAM.</p>}
             <div className="draft"><span>{aiSettings.channel} · {aiSettings.language.toUpperCase()} {generatedDraft ? "· AI generated" : "· template preview"}</span><pre>{draft}</pre></div>
             <div className="architecture-note">
               <strong>Foundation status</strong>
