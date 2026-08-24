@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudTrackSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -413,6 +413,7 @@ export class StudioDatabase {
         imported_at=excluded.imported_at
     `);
     const importedAt = new Date().toISOString();
+    const snapshot = this.database.prepare("INSERT INTO soundcloud_performance_snapshots (track_id, captured_at, playback_count, likes_count, comment_count, reposts_count) VALUES (?, ?, ?, ?, ?, ?)");
     this.database.exec("BEGIN IMMEDIATE");
     try {
       for (const value of items) {
@@ -427,6 +428,7 @@ export class StudioDatabase {
           typeof track.genre === "string" ? track.genre : null, typeof track.tag_list === "string" ? track.tag_list : null,
           JSON.stringify(track), importedAt
         );
+        snapshot.run(track.id, importedAt, numberOrNull(track.playback_count), numberOrNull(track.likes_count) ?? numberOrNull(track.favoritings_count), numberOrNull(track.comment_count), numberOrNull(track.reposts_count));
       }
       this.database.exec("COMMIT");
     } catch (error) { this.database.exec("ROLLBACK"); throw error; }
@@ -449,8 +451,26 @@ export class StudioDatabase {
       const engagementRate = row.playbackCount && row.playbackCount > 0 ? Math.round((engagements / row.playbackCount) * 10_000) / 100 : null;
       const rateComponent = Math.min(60, (engagementRate ?? 0) * 10);
       const volumeComponent = Math.min(40, Math.log10(Math.max(1, row.playbackCount ?? 0)) * 10);
-      return { ...row, streamable: Boolean(row.streamable), engagementRate, engagementScore: Math.round(rateComponent + volumeComponent) };
+      const snapshots = this.database.prepare("SELECT playback_count AS playbackCount FROM soundcloud_performance_snapshots WHERE track_id = ? ORDER BY captured_at DESC, id DESC LIMIT 2").all(row.id) as unknown as Array<{ playbackCount: number | null }>;
+      const snapshotCount = (this.database.prepare("SELECT COUNT(*) AS count FROM soundcloud_performance_snapshots WHERE track_id = ?").get(row.id) as { count: number }).count;
+      const playsDelta = snapshots.length > 1 && snapshots[0].playbackCount !== null && snapshots[1].playbackCount !== null ? snapshots[0].playbackCount - snapshots[1].playbackCount : null;
+      const trend = playsDelta === null ? "baseline" : playsDelta > 0 ? "growing" : playsDelta < 0 ? "declining" : "stable";
+      return { ...row, streamable: Boolean(row.streamable), engagementRate, engagementScore: Math.round(rateComponent + volumeComponent), trend, playsDelta, snapshotCount };
     });
+  }
+
+  getSoundCloudTrackPerformance(trackId: number): SoundCloudTrackPerformance {
+    if (!this.database.prepare("SELECT 1 FROM soundcloud_tracks WHERE id = ?").get(trackId)) throw new Error("SoundCloud track not found");
+    const points = this.database.prepare(`SELECT captured_at AS capturedAt, playback_count AS playbackCount, likes_count AS likesCount, comment_count AS commentCount, reposts_count AS repostsCount FROM soundcloud_performance_snapshots WHERE track_id = ? ORDER BY captured_at ASC, id ASC`).all(trackId) as unknown as SoundCloudPerformancePoint[];
+    const latest = points.at(-1);
+    const windows = ([7, 30, 90] as const).map((days) => {
+      const cutoff = Date.now() - days * 86_400_000;
+      const baseline = points.find((point) => Date.parse(point.capturedAt) >= cutoff);
+      const available = Boolean(latest && baseline && baseline !== latest && Date.parse(points[0]?.capturedAt ?? "") <= cutoff);
+      const delta = (latestValue: number | null | undefined, baselineValue: number | null | undefined) => available && latestValue !== null && latestValue !== undefined && baselineValue !== null && baselineValue !== undefined ? latestValue - baselineValue : null;
+      return { days, available, playsDelta: delta(latest?.playbackCount, baseline?.playbackCount), likesDelta: delta(latest?.likesCount, baseline?.likesCount), commentsDelta: delta(latest?.commentCount, baseline?.commentCount), repostsDelta: delta(latest?.repostsCount, baseline?.repostsCount) };
+    });
+    return { trackId, points, windows };
   }
 
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): SoundCloudTrackSummary {
