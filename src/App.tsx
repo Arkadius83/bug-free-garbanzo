@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
 type AppView = "overview" | "releases" | "ai-studio";
@@ -25,6 +25,7 @@ export function App() {
   const [assetMessage, setAssetMessage] = useState("");
   const [audioAnalyses, setAudioAnalyses] = useState<Record<string, AudioAnalysisSummary>>({});
   const [analyzingAssetId, setAnalyzingAssetId] = useState<string | null>(null);
+  const [releaseReadiness, setReleaseReadiness] = useState<ReleaseReadiness | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
   const [bridgeError, setBridgeError] = useState("");
   const [aiSettings, setAiSettings] = useState<AiSettings>({ model: null, language: "en", channel: "Instagram" });
@@ -54,6 +55,21 @@ export function App() {
         setDatabase(databaseHealth);
         setReleases(savedReleases);
         setDrafts(savedDrafts);
+        if (savedReleases[0]) {
+          setActiveReleaseId(savedReleases[0].id);
+          setSelectedArtist(savedReleases[0].artistId);
+          setTitle(savedReleases[0].title);
+          setStory(savedReleases[0].story);
+          setReleaseDate(savedReleases[0].releaseDate ?? "");
+          const [initialAssets, initialReadiness] = await Promise.all([
+            window.studio!.listAssets(savedReleases[0].id),
+            window.studio!.getReleaseReadiness(savedReleases[0].id)
+          ]);
+          setAssets(initialAssets);
+          setReleaseReadiness(initialReadiness);
+          const analyses = await Promise.all(initialAssets.filter((asset) => asset.kind === "audio").map(async (asset) => [asset.id, await window.studio!.getAudioAnalysis(asset.id)] as const));
+          setAudioAnalyses(Object.fromEntries(analyses.filter((entry): entry is readonly [string, AudioAnalysisSummary] => entry[1] !== null)));
+        }
         const savedModelStillExists = system.ollama.models.some((model) => model.name === savedAiSettings.model);
         const preferredModel = system.ollama.models.find((model) => /^deepseek-r1(?::|$)/i.test(model.name)) ?? system.ollama.models[0];
         const resolvedSettings = savedModelStillExists || system.ollama.models.length === 0
@@ -103,6 +119,7 @@ export function App() {
       });
       setGeneratedDraft(result);
       setDrafts((current) => [savedDraft, ...current]);
+      setReleaseReadiness(await window.studio.getReleaseReadiness(releaseId));
       setGenerationState("idle");
       setGenerationMessage(`Generated locally with ${result.model} and saved as Draft`);
     } catch (error) {
@@ -129,6 +146,7 @@ export function App() {
     });
     setReleases((current) => [created, ...current]);
     setActiveReleaseId(created.id);
+    setReleaseReadiness(await window.studio.getReleaseReadiness(created.id));
     return created;
   }
 
@@ -147,6 +165,7 @@ export function App() {
     try {
       const updated = await window.studio.updateDraftStatus(draftId, status);
       setDrafts((current) => current.map((draft) => draft.id === updated.id ? updated : draft));
+      setReleaseReadiness(await window.studio.getReleaseReadiness(updated.releaseId));
     } catch (error) {
       setGenerationState("error");
       setGenerationMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not update draft");
@@ -162,6 +181,7 @@ export function App() {
     const releaseAssets = window.studio ? await window.studio.listAssets(release.id) : [];
     setAssets(releaseAssets);
     if (window.studio) {
+      setReleaseReadiness(await window.studio.getReleaseReadiness(release.id));
       const analyses = await Promise.all(releaseAssets.filter((asset) => asset.kind === "audio").map(async (asset) => [asset.id, await window.studio!.getAudioAnalysis(asset.id)] as const));
       setAudioAnalyses(Object.fromEntries(analyses.filter((entry): entry is readonly [string, AudioAnalysisSummary] => entry[1] !== null)));
     }
@@ -179,6 +199,7 @@ export function App() {
         return;
       }
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+      setReleaseReadiness(await window.studio.getReleaseReadiness(release.id));
       setAssetMessage(`${asset.fileName} attached to ${release.title}`);
     } catch (error) {
       setAssetMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not attach file");
@@ -197,6 +218,7 @@ export function App() {
     try {
       const analysis = await window.studio.analyzeAudio(assetId);
       setAudioAnalyses((current) => ({ ...current, [assetId]: analysis }));
+      if (activeReleaseId) setReleaseReadiness(await window.studio.getReleaseReadiness(activeReleaseId));
       setAssetMessage(analysis.status === "complete" ? "Audio analysis completed" : "Basic WAV analysis completed");
     } catch (error) {
       setAssetMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Audio analysis failed");
@@ -221,8 +243,8 @@ export function App() {
   const fallbackDraft = `${artist.name} presents ${title}.\n\n${story}\n\nA ${artist.genres[0]} transmission shaped for listeners who want more than background music.`;
   const draft = generatedDraft?.content ?? fallbackDraft;
   const currentRelease = releases.find((release) => release.id === activeReleaseId) ?? releases[0];
-  const approvedDrafts = drafts.filter((item) => item.status === "approved" || item.status === "scheduled" || item.status === "published").length;
-  const readiness = Math.min(100, 25 + (assets.some((item) => item.kind === "audio") ? 25 : 0) + (assets.some((item) => item.kind === "cover") ? 25 : 0) + (approvedDrafts > 0 ? 25 : 0));
+  const readinessScore = releaseReadiness?.score ?? 0;
+  const readinessCheck = (id: ReleaseReadiness["checks"][number]["id"]) => releaseReadiness?.checks.find((check) => check.id === id);
 
   function openReleaseWorkspace(release?: ReleaseSummary) {
     if (release) void selectRelease(release);
@@ -245,16 +267,16 @@ export function App() {
         <div className="topbar"><div className="search">⌕<span>Search releases, tracks, tasks...</span><kbd>⌘ K</kbd></div><div className="top-actions"><span><i className={`dot ${status?.ollama.available && database?.ready ? "online" : ""}`} />{status?.ollama.available && database?.ready ? "All systems synced" : "Systems starting"}</span><button className="icon-button">♧</button><button className="primary" onClick={() => openReleaseWorkspace()}>+ New release</button></div></div>
         {bridgeError && <div className="bridge-error">{bridgeError}</div>}
         {activeView === "overview" && <div className="overview page-content">
-          <div className="overview-heading"><div><span className="date-label">MONDAY, AUG 24</span><h1>Your music. <em>Ready for the world.</em></h1><p>Everything that needs your attention, in one place.</p></div><button className="daily-brief"><span>✦</span><small>AI DAILY BRIEF</small><strong>{Math.max(1, 3 - approvedDrafts)} smart actions →<br />ready</strong></button></div>
+          <div className="overview-heading"><div><span className="date-label">MONDAY, AUG 24</span><h1>Your music. <em>Ready for the world.</em></h1><p>Everything that needs your attention, in one place.</p></div><button className="daily-brief"><span>✦</span><small>RELEASE CHECK</small><strong>{releaseReadiness?.missing.length ?? 0} actions →<br />remaining</strong></button></div>
           <section className="release-hero">
             <div className="cover-art"><div className="orbit"><i /><i /></div><span>DIFFERENT<br />PERSPECTIVE</span><small>THE ARKADIUSZ</small></div>
             <div className="release-info"><span className="eyebrow">NEXT RELEASE · {releaseDate ? "scheduled" : "date pending"}</span><h2>{currentRelease?.title ?? title}</h2><p>{currentRelease?.artistName ?? artist.name} · Single · {currentRelease?.primaryGenre ?? artist.genres[0]}</p><div className="platforms"><span>↗ Spotify</span><span>◖ SoundCloud</span><span>♪ TikTok</span><span>+12</span></div></div>
-            <div className="readiness" style={{ "--progress": `${readiness * 3.6}deg` } as React.CSSProperties}><div><strong>{readiness}%</strong><span>READY</span></div><small>Release readiness</small></div>
-            <div className="release-steps"><div className="done"><b>✓</b><span>AUDIO<small>Master ready</small></span></div><div className="current"><b>2</b><span>IDENTITY<small>Artwork due</small></span></div><div><b>3</b><span>DELIVERY<small>Send to distributor</small></span></div><div><b>4</b><span>CAMPAIGN<small>Pre-save live</small></span></div><div><b>5</b><span>RELEASE<small>{releaseDate || "Set date"}</small></span></div></div>
+            <div className="readiness" style={{ "--progress": `${readinessScore * 3.6}deg` } as React.CSSProperties}><div><strong>{readinessScore}%</strong><span>READY</span></div><small>Release readiness</small></div>
+            <div className="release-steps">{releaseReadiness?.checks.slice(0, 5).map((check, index) => <div className={check.complete ? "done" : index === releaseReadiness.checks.findIndex((item) => !item.complete) ? "current" : ""} key={check.id}><b>{check.complete ? "✓" : index + 1}</b><span>{check.label.toUpperCase()}<small>{check.detail}</small></span></div>)}</div>
           </section>
           <div className="dashboard-grid">
-            <section className="dashboard-card focus-card"><div className="card-header"><div><span>YOUR FOCUS</span><h3>Move the release forward</h3></div><div className="tabs"><b>Tasks</b><span>Activity</span></div></div><div className="task done"><b>✓</b><i>WAV</i><div><strong>Final master approved</strong><small>Audio foundation complete</small></div><span>→</span></div><div className="task"><b /><i>ART</i><div><strong>Artwork export</strong><small>3000 × 3000 px · due today</small></div><span>→</span></div><div className="task"><b /><i>AI</i><div><strong>Spotify editorial pitch</strong><small>{approvedDrafts ? `${approvedDrafts} approved campaign draft${approvedDrafts === 1 ? "" : "s"}` : "Draft ready · review with AI"}</small></div><button onClick={() => setActiveView("ai-studio")}>Review →</button></div></section>
-            <section className="dashboard-card intelligence-card"><div className="card-header"><div><span>AI RELEASE INTELLIGENCE</span><h3>Worth your attention</h3></div><b className="live">● LIVE</b></div><article><i>◷</i><div><small>TIMING</small><strong>Your pitch window is ready.</strong><p>Approve a campaign draft before sending it to editorial teams.</p><button onClick={() => setActiveView("ai-studio")}>Open pitch →</button></div></article><article><i>↗</i><div><small>MOMENTUM</small><strong>Local AI is connected.</strong><p>{status?.ollama.models.length ?? 0} models available for release content.</p></div></article></section>
+            <section className="dashboard-card focus-card"><div className="card-header"><div><span>YOUR FOCUS</span><h3>Move the release forward</h3></div><div className="tabs"><b>Tasks</b><span>{readinessScore}%</span></div></div>{releaseReadiness?.checks.map((check) => <div className={`task ${check.complete ? "done" : ""}`} key={check.id}><b>{check.complete ? "✓" : ""}</b><i>{check.id.slice(0, 3).toUpperCase()}</i><div><strong>{check.label}</strong><small>{check.detail} · {check.weight}%</small></div>{check.id === "campaign" && !check.complete ? <button onClick={() => setActiveView("ai-studio")}>Review →</button> : <span>{check.complete ? "✓" : "→"}</span>}</div>)}</section>
+            <section className="dashboard-card intelligence-card"><div className="card-header"><div><span>RELEASE INTELLIGENCE</span><h3>Worth your attention</h3></div><b className="live">● LIVE</b></div><article><i>◷</i><div><small>NEXT ACTION</small><strong>{releaseReadiness?.missing[0] ?? "Release foundation complete"}</strong><p>{releaseReadiness?.missing.length ? `${releaseReadiness.missing.length} readiness items remain.` : "All required release elements are ready."}</p><button onClick={() => openReleaseWorkspace()}>Open release →</button></div></article><article><i>↗</i><div><small>AUDIO</small><strong>{readinessCheck("analysis")?.complete ? "Master analyzed" : "Analysis required"}</strong><p>{readinessCheck("analysis")?.detail ?? "Select a release to calculate readiness."}</p></div></article></section>
           </div>
         </div>}
 
