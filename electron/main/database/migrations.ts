@@ -182,5 +182,19 @@ export const migrations: Migration[] = [
       ALTER TABLE audio_analyses ADD COLUMN key_confidence REAL;
       ALTER TABLE audio_analyses ADD COLUMN alternate_key TEXT;
     `
+  },
+  {
+    version: 5,
+    name: "tasks_calendar_agents_v1",
+    sql: `
+      ALTER TABLE tasks ADD COLUMN release_id TEXT REFERENCES releases(id) ON DELETE CASCADE;
+      ALTER TABLE tasks ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low','medium','high'));
+      ALTER TABLE tasks ADD COLUMN assignee TEXT NOT NULL DEFAULT 'human' CHECK (assignee IN ('human','ai','automatic'));
+      ALTER TABLE tasks ADD COLUMN source_key TEXT;
+      ALTER TABLE tasks ADD COLUMN agent_output TEXT;
+      ALTER TABLE tasks ADD COLUMN model_name TEXT;
+      CREATE UNIQUE INDEX idx_tasks_source_key ON tasks(source_key) WHERE source_key IS NOT NULL;
+      CREATE INDEX idx_tasks_release ON tasks(release_id, due_at);
+    `
   }
 ];
