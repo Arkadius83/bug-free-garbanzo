@@ -56,10 +56,13 @@ test("creates a clean database, applies migrations and persists a release", () =
     const completedTask = database.saveTaskAgentOutput(task.id, "deepseek-r1:14b", "Draft pitch for human review.");
     assert.equal(completedTask.status, "done");
     assert.equal(completedTask.agentOutput, "Draft pitch for human review.");
-    const soundCloudTracks = database.importSoundCloudTracks([{ id: 42, title: "Catalog Track", permalink_url: "https://soundcloud.com/artist/catalog-track", artwork_url: null, created_at: "2026-08-01T10:00:00Z", duration: 245000, sharing: "public", streamable: true, playback_count: 1200, likes_count: 95, comment_count: 7, reposts_count: 11, genre: "Psytrance", tag_list: "psytrance" }]);
+    const soundCloudTracks = database.importSoundCloudTracks([{ id: 42, title: "Catalog Track", permalink_url: "https://soundcloud.com/artist/catalog-track", artwork_url: null, created_at: "2026-08-01T10:00:00Z", duration: 245000, sharing: "public", streamable: true, playback_count: 1200, favoritings_count: 95, comment_count: 7, reposts_count: 11, genre: "Psytrance", tag_list: "psytrance" }]);
     assert.equal(soundCloudTracks[0]?.id, 42);
     assert.equal(soundCloudTracks[0]?.playbackCount, 1200);
     assert.equal(soundCloudTracks[0]?.streamable, true);
+    assert.equal(soundCloudTracks[0]?.likesCount, 95);
+    assert.equal(soundCloudTracks[0]?.engagementRate, 9.42);
+    assert.ok((soundCloudTracks[0]?.engagementScore ?? 0) > 0);
     const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem", contentType: "bootleg" });
     assert.equal(classifiedTrack.artistId, "the-arkadiusz");
     assert.equal(classifiedTrack.catalogStatus, "gem");
