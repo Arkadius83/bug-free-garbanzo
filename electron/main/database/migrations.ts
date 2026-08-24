@@ -160,5 +160,15 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX idx_audio_analyses_asset ON audio_analyses(asset_id);
     `
+  },
+  {
+    version: 3,
+    name: "invalidate_incorrect_ebur128_results",
+    sql: `
+      DELETE FROM audio_analyses
+      WHERE analyzer = 'ffmpeg-ebur128'
+        AND integrated_lufs <= -69.9
+        AND true_peak_dbtp > -40;
+    `
   }
 ];
