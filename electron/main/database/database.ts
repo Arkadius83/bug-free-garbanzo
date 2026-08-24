@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseSummary, SaveGeneratedDraftInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -257,6 +257,43 @@ export class StudioDatabase {
     );
     this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('asset', ?, 'audio.analyzed', ?, ?)").run(analysis.assetId, JSON.stringify({ analyzer: analysis.analyzer, status: analysis.status }), analysis.analyzedAt);
     return this.getAudioAnalysis(analysis.assetId)!;
+  }
+
+  getReleaseReadiness(releaseId: string): ReleaseReadiness {
+    const release = this.database.prepare(`
+      SELECT r.id, r.release_date AS releaseDate, r.title, p.artist_id AS artistId,
+             t.primary_genre AS primaryGenre, t.story
+      FROM releases r
+      JOIN projects p ON p.id = r.project_id
+      JOIN release_tracks rt ON rt.release_id = r.id AND rt.position = 1
+      JOIN tracks t ON t.id = rt.track_id
+      WHERE r.id = ?
+    `).get(releaseId) as { id: string; releaseDate: string | null; title: string; artistId: string; primaryGenre: string; story: string } | undefined;
+    if (!release) throw new Error("Release not found");
+    const assets = this.listAssets(releaseId);
+    const audio = assets.find((asset) => asset.kind === "audio");
+    const cover = assets.some((asset) => asset.kind === "cover");
+    const analysis = audio ? this.getAudioAnalysis(audio.id) : null;
+    const approved = Number((this.database.prepare(`
+      SELECT COUNT(*) AS count FROM drafts d
+      JOIN campaigns c ON c.id = d.campaign_id
+      WHERE c.release_id = ? AND d.status IN ('approved','scheduled','published')
+    `).get(releaseId) as { count: number }).count) > 0;
+    const metadata = Boolean(release.title.trim() && release.artistId && release.primaryGenre.trim() && release.story.trim());
+    const checks: ReleaseReadiness["checks"] = [
+      { id: "audio", label: "Master audio", complete: Boolean(audio), weight: 20, detail: audio ? audio.fileName : "Attach the final master" },
+      { id: "analysis", label: "Audio analysis", complete: Boolean(analysis), weight: 15, detail: analysis ? "Technical and musical analysis saved" : "Analyze the attached master" },
+      { id: "cover", label: "Cover artwork", complete: cover, weight: 15, detail: cover ? "Cover attached" : "Attach release artwork" },
+      { id: "date", label: "Release date", complete: Boolean(release.releaseDate), weight: 15, detail: release.releaseDate ?? "Set a release date" },
+      { id: "metadata", label: "Core metadata", complete: metadata, weight: 15, detail: metadata ? "Title, artist, genre and story complete" : "Complete title, artist, genre and story" },
+      { id: "campaign", label: "Approved campaign", complete: approved, weight: 20, detail: approved ? "At least one draft approved" : "Approve a campaign draft" }
+    ];
+    return {
+      releaseId,
+      score: checks.reduce((score, check) => score + (check.complete ? check.weight : 0), 0),
+      checks,
+      missing: checks.filter((check) => !check.complete).map((check) => check.detail)
+    };
   }
 
   close(): void { this.database.close(); }
