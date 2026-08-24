@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
-type AppView = "overview" | "releases" | "ai-studio";
+type AppView = "overview" | "releases" | "ai-studio" | "calendar";
 
 const navigation: Array<{ id: AppView | "placeholder"; label: string; icon: string }> = [
   { id: "overview", label: "Overview", icon: "⌂" },
   { id: "releases", label: "Releases", icon: "♫" },
   { id: "ai-studio", label: "AI Studio", icon: "✦" },
-  { id: "placeholder", label: "Calendar", icon: "□" },
+  { id: "calendar", label: "Tasks & Calendar", icon: "□" },
   { id: "placeholder", label: "Analytics", icon: "⌁" },
   { id: "placeholder", label: "Contacts", icon: "◎" }
 ];
@@ -37,6 +37,13 @@ export function App() {
   const [releaseDate, setReleaseDate] = useState("");
   const [primaryGenre, setPrimaryGenre] = useState("Full-On Psytrance");
   const [releaseStatus, setReleaseStatus] = useState<ReleaseStatus>("draft");
+  const [tasks, setTasks] = useState<TaskSummary[]>([]);
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDueAt, setTaskDueAt] = useState("");
+  const [taskPriority, setTaskPriority] = useState<TaskPriority>("medium");
+  const [taskAssignee, setTaskAssignee] = useState<TaskAssignee>("human");
+  const [taskMessage, setTaskMessage] = useState("");
+  const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
   const artist = useMemo(() => artists.find((item) => item.id === selectedArtist) ?? artists[0], [selectedArtist]);
 
   useEffect(() => {
@@ -46,17 +53,19 @@ export function App() {
     }
     void (async () => {
       try {
-        const [system, databaseHealth, savedReleases, savedDrafts, savedAiSettings] = await Promise.all([
+        const [system, databaseHealth, savedReleases, savedDrafts, savedAiSettings, savedTasks] = await Promise.all([
           window.studio!.getSystemStatus(),
           window.studio!.getDatabaseHealth(),
           window.studio!.listReleases(),
           window.studio!.listDrafts(),
-          window.studio!.getAiSettings()
+          window.studio!.getAiSettings(),
+          window.studio!.listTasks()
         ]);
         setStatus(system);
         setDatabase(databaseHealth);
         setReleases(savedReleases);
         setDrafts(savedDrafts);
+        setTasks(savedTasks);
         if (savedReleases[0]) {
           setActiveReleaseId(savedReleases[0].id);
           setSelectedArtist(savedReleases[0].artistId);
@@ -85,6 +94,10 @@ export function App() {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (activeView === "calendar" && window.studio) void window.studio.listTasks().then(setTasks).catch((error) => setTaskMessage(error instanceof Error ? error.message : "Could not load tasks"));
+  }, [activeView]);
 
   async function updateAiSettings(next: AiSettings) {
     setAiSettings(next);
@@ -276,12 +289,49 @@ export function App() {
       const remaining = releases.filter((item) => item.id !== release.id);
       setReleases(remaining);
       setDrafts((current) => current.filter((draft) => draft.releaseId !== release.id));
+      setTasks((current) => current.filter((task) => task.releaseId !== release.id));
       if (remaining[0]) await selectRelease(remaining[0]);
       else startNewRelease();
       setSaveMessage("Release deleted. Original media files were not removed.");
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not delete release");
     }
+  }
+
+  async function createTask() {
+    if (!window.studio || !activeReleaseId) {
+      setTaskMessage("Select and save a release before creating a task.");
+      return;
+    }
+    setTaskMessage("Saving task...");
+    try {
+      const task = await window.studio.createTask({ releaseId: activeReleaseId, title: taskTitle, priority: taskPriority, assignee: taskAssignee, dueAt: taskDueAt || null });
+      setTasks((current) => [task, ...current]);
+      setTaskTitle(""); setTaskDueAt("");
+      setTaskMessage("Task saved");
+    } catch (error) { setTaskMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not create task"); }
+  }
+
+  async function changeTaskStatus(taskId: string, status: TaskStatus) {
+    if (!window.studio) return;
+    try {
+      const updated = await window.studio.updateTaskStatus(taskId, status);
+      setTasks((current) => current.map((task) => task.id === updated.id ? updated : task));
+    } catch (error) { setTaskMessage(error instanceof Error ? error.message : "Could not update task"); }
+  }
+
+  async function runTaskAgent(taskId: string) {
+    if (!window.studio || !aiSettings.model) {
+      setTaskMessage("Select a local Ollama model in AI Studio first.");
+      return;
+    }
+    setRunningTaskId(taskId); setTaskMessage("Local agent is working...");
+    try {
+      const updated = await window.studio.runTaskAgent(taskId, aiSettings.model);
+      setTasks((current) => current.map((task) => task.id === updated.id ? updated : task));
+      setTaskMessage("Agent result saved for human review");
+    } catch (error) { setTaskMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Agent task failed"); }
+    finally { setRunningTaskId(null); }
   }
 
   function formatDuration(seconds: number): string {
@@ -354,6 +404,15 @@ export function App() {
           <div className="dashboard-grid">
             <section className="dashboard-card focus-card"><div className="card-header"><div><span>YOUR FOCUS</span><h3>Move the release forward</h3></div><div className="tabs"><b>Tasks</b><span>{readinessScore}%</span></div></div>{releaseReadiness?.checks.map((check) => <div className={`task ${check.complete ? "done" : ""}`} key={check.id}><b>{check.complete ? "✓" : ""}</b><i>{check.id.slice(0, 3).toUpperCase()}</i><div><strong>{check.label}</strong><small>{check.detail} · {check.weight}%</small></div>{check.id === "campaign" && !check.complete ? <button onClick={() => setActiveView("ai-studio")}>Review →</button> : <span>{check.complete ? "✓" : "→"}</span>}</div>)}</section>
             <section className="dashboard-card intelligence-card"><div className="card-header"><div><span>RELEASE INTELLIGENCE</span><h3>Worth your attention</h3></div><b className="live">● LIVE</b></div><article><i>◷</i><div><small>NEXT ACTION</small><strong>{releaseReadiness?.missing[0] ?? "Release foundation complete"}</strong><p>{releaseReadiness?.missing.length ? `${releaseReadiness.missing.length} readiness items remain.` : "All required release elements are ready."}</p><button onClick={() => openReleaseWorkspace()}>Open release →</button></div></article><article><i>↗</i><div><small>AUDIO</small><strong>{readinessCheck("analysis")?.complete ? "Master analyzed" : "Analysis required"}</strong><p>{readinessCheck("analysis")?.detail ?? "Select a release to calculate readiness."}</p></div></article></section>
+          </div>
+        </div>}
+
+        {activeView === "calendar" && <div className="page-content tasks-page">
+          <header><div><span className="eyebrow">Tasks, Calendar & Agents</span><h1>Plan the release work.</h1><p>Human decisions, local AI assistance and automatic readiness checks in one queue.</p></div></header>
+          <section className="task-creator panel"><input placeholder="New task title" value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /><select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as TaskPriority)}><option value="low">Low priority</option><option value="medium">Medium priority</option><option value="high">High priority</option></select><select value={taskAssignee} onChange={(event) => setTaskAssignee(event.target.value as TaskAssignee)}><option value="human">Human</option><option value="ai">AI Agent</option><option value="automatic">Automatic</option></select><input type="date" value={taskDueAt} onChange={(event) => setTaskDueAt(event.target.value)} /><button className="primary" disabled={!taskTitle.trim() || !activeReleaseId} onClick={() => void createTask()}>Add task</button></section>
+          {taskMessage && <p className="task-message">{taskMessage}</p>}
+          <div className="task-board">
+            {(["doing","todo","done"] as TaskStatus[]).map((column) => <section className="task-column" key={column}><div className="task-column-title"><strong>{column === "doing" ? "In progress" : column === "todo" ? "To do" : "Done"}</strong><span>{tasks.filter((task) => task.status === column).length}</span></div>{tasks.filter((task) => task.status === column).map((task) => <article className={`managed-task priority-${task.priority}`} key={task.id}><div className="managed-task-meta"><span>{task.assignee === "ai" ? "✦ AI AGENT" : task.assignee === "automatic" ? "⚙ AUTOMATIC" : "● HUMAN"}</span><b>{task.priority}</b></div><h3>{task.title}</h3><p>{task.releaseTitle ?? "No release"}{task.dueAt ? ` · due ${task.dueAt}` : ""}</p>{task.agentOutput && <div className="agent-output"><strong>Agent result · {task.model}</strong><p>{task.agentOutput}</p><small>Human review required</small></div>}<div className="managed-task-actions">{column !== "doing" && column !== "done" && <button onClick={() => void changeTaskStatus(task.id, "doing")}>Start</button>}{column !== "done" && <button onClick={() => void changeTaskStatus(task.id, "done")}>Done</button>}{column === "done" && <button onClick={() => void changeTaskStatus(task.id, "todo")}>Reopen</button>}{task.assignee === "ai" && column !== "done" && <button className="agent-button" disabled={runningTaskId === task.id} onClick={() => void runTaskAgent(task.id)}>{runningTaskId === task.id ? "Working..." : "Run agent"}</button>}</div></article>)}</section>)}
           </div>
         </div>}
 
