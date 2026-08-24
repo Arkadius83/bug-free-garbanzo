@@ -11,7 +11,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 11);
+    assert.equal(database.health().schemaVersion, 12);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
@@ -69,6 +69,8 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(database.saveSpotifyArtistMappings([{ artistId: "the-arkadiusz", spotifyArtistId: "https://open.spotify.com/intl-de/artist/1wzJc2v61Ydpl7IB35w4NK?si=test" }])[0]?.spotifyArtistId, "1wzJc2v61Ydpl7IB35w4NK");
     database.importSpotifyReleases("the-arkadiusz", "1234567890ABCDEF", [{ id: "album1", name: "Album", album_type: "album", release_date: "2026-01-01", total_tracks: 8, images: [{ url: "https://image" }], external_urls: { spotify: "https://open.spotify.com/album/album1" } }]);
     assert.equal(database.listSpotifyReleases()[0]?.name, "Album");
+    assert.equal(database.linkSpotifyRelease("album1", created.id).releaseTitle, "Different Perspective V2");
+    assert.equal(database.linkSpotifyRelease("album1", null).releaseId, null);
     const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem", contentType: "bootleg" });
     assert.equal(classifiedTrack.artistId, "the-arkadiusz");
     assert.equal(classifiedTrack.catalogStatus, "gem");
