@@ -349,5 +349,27 @@ export const migrations: Migration[] = [
       ALTER TABLE media_generations_v2 RENAME TO media_generations;
       CREATE INDEX idx_media_generations_release ON media_generations(release_id, created_at DESC);
     `
+  },
+  {
+    version: 16,
+    name: "publishing_queue_calendar_v1",
+    sql: `
+      CREATE TABLE publishing_queue (
+        id TEXT PRIMARY KEY,
+        release_id TEXT NOT NULL REFERENCES releases(id) ON DELETE CASCADE,
+        campaign_pack_item_id TEXT NOT NULL REFERENCES campaign_pack_items(id) ON DELETE CASCADE,
+        media_generation_id TEXT REFERENCES media_generations(id) ON DELETE SET NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('Instagram','Facebook','TikTok','SoundCloud','YouTube')),
+        caption TEXT NOT NULL,
+        scheduled_at TEXT,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','scheduled','published','failed')),
+        error TEXT,
+        exported_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_publishing_queue_schedule ON publishing_queue(scheduled_at, status);
+      CREATE INDEX idx_publishing_queue_release ON publishing_queue(release_id, created_at DESC);
+    `
   }
 ];
