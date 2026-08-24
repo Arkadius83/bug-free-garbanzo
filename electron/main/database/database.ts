@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CatalogMatchSuggestion, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -483,7 +483,21 @@ export class StudioDatabase {
     const now = new Date().toISOString();
     for (const value of values) { const album = value as Record<string, unknown>; const urls = album.external_urls as Record<string, unknown> | undefined, images = album.images as Array<Record<string, unknown>> | undefined; if (typeof album.id !== "string" || typeof album.name !== "string" || typeof urls?.spotify !== "string") continue; statement.run(album.id, album.name, typeof album.album_type === "string" ? album.album_type : "album", typeof album.release_date === "string" ? album.release_date : "", typeof album.total_tracks === "number" ? album.total_tracks : 0, typeof images?.[0]?.url === "string" ? images[0].url : null, urls.spotify, spotifyArtistIdValue, artistId, JSON.stringify(album), now); }
   }
-  listSpotifyReleases(): SpotifyReleaseSummary[] { return this.database.prepare(`SELECT id,name,album_type AS albumType,release_date AS releaseDate,total_tracks AS totalTracks,image_url AS imageUrl,spotify_url AS spotifyUrl,spotify_artist_id AS spotifyArtistId,artist_id AS artistId,imported_at AS importedAt FROM spotify_releases ORDER BY release_date DESC`).all() as unknown as SpotifyReleaseSummary[]; }
+  listSpotifyReleases(): SpotifyReleaseSummary[] { return this.database.prepare(`SELECT sp.id,sp.name,sp.album_type AS albumType,sp.release_date AS releaseDate,sp.total_tracks AS totalTracks,sp.image_url AS imageUrl,sp.spotify_url AS spotifyUrl,sp.spotify_artist_id AS spotifyArtistId,sp.artist_id AS artistId,sp.imported_at AS importedAt,sp.release_id AS releaseId,r.title AS releaseTitle FROM spotify_releases sp LEFT JOIN releases r ON r.id=sp.release_id ORDER BY sp.release_date DESC`).all() as unknown as SpotifyReleaseSummary[]; }
+  linkSpotifyRelease(spotifyReleaseId: string, releaseId: string | null): SpotifyReleaseSummary {
+    if (!this.database.prepare("SELECT 1 FROM spotify_releases WHERE id=?").get(spotifyReleaseId)) throw new Error("Spotify release not found");
+    if (releaseId && !this.database.prepare("SELECT 1 FROM releases WHERE id=?").get(releaseId)) throw new Error("Local release not found");
+    try { this.database.prepare("UPDATE spotify_releases SET release_id=? WHERE id=?").run(releaseId, spotifyReleaseId); }
+    catch (error) { if (String(error).includes("UNIQUE")) throw new Error("This local release is already linked to another Spotify release"); throw error; }
+    return this.listSpotifyReleases().find((item) => item.id === spotifyReleaseId)!;
+  }
+  getCatalogMatchSuggestions(): CatalogMatchSuggestion[] {
+    const soundCloud = this.listSoundCloudTracks().filter((track) => !track.releaseId && track.contentType !== "bootleg" && track.contentType !== "dj-set" && track.artistId);
+    const spotify = this.listSpotifyReleases().filter((release) => !release.releaseId);
+    const suggestions: CatalogMatchSuggestion[] = [];
+    for (const source of soundCloud) for (const target of spotify) { if (source.artistId !== target.artistId) continue; const score = titleSimilarity(source.title, target.name); if (score >= 0.72) suggestions.push({ soundCloudTrackId: source.id, soundCloudTitle: source.title, spotifyReleaseId: target.id, spotifyTitle: target.name, artistId: target.artistId, score: Math.round(score * 100), reason: score === 1 ? "Normalized titles are identical" : "Titles are strongly similar" }); }
+    return suggestions.sort((a,b) => b.score-a.score);
+  }
 
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): SoundCloudTrackSummary {
     if (!["unreviewed", "release", "gem", "archive", "exclude"].includes(input.catalogStatus)) throw new Error("Invalid SoundCloud catalog status");
@@ -553,3 +567,5 @@ function spotifyArtistId(value: string): string {
   try { const parts = new URL(trimmed).pathname.split("/").filter(Boolean); const marker = parts.lastIndexOf("artist"); const id = marker >= 0 ? parts[marker + 1] : ""; if (/^[A-Za-z0-9]{22}$/.test(id)) return id; } catch { /* handled below */ }
   throw new Error("Invalid Spotify artist URL or ID");
 }
+function normalizedTitle(value: string): string { return value.toLowerCase().normalize("NFKD").replace(/\p{Diacritic}/gu, "").replace(/\b(official|audio|video|original|mix|remaster(?:ed)?|radio|version)\b/g, " ").replace(/[^a-z0-9]+/g, " ").trim(); }
+function titleSimilarity(left: string, right: string): number { const a=normalizedTitle(left), b=normalizedTitle(right); if (!a || !b) return 0; if (a===b) return 1; const x=new Set(a.split(" ")), y=new Set(b.split(" ")); const intersection=[...x].filter((token)=>y.has(token)).length, union=new Set([...x,...y]).size; const tokenScore=union ? intersection/union : 0; const lengthScore=1-Math.abs(a.length-b.length)/Math.max(a.length,b.length); return tokenScore*0.75+Math.max(0,lengthScore)*0.25; }
