@@ -422,7 +422,7 @@ export class StudioDatabase {
           track.id, track.title, track.permalink_url, typeof track.artwork_url === "string" ? track.artwork_url : null,
           typeof track.created_at === "string" ? track.created_at : importedAt,
           typeof track.duration === "number" ? track.duration : 0, typeof track.sharing === "string" ? track.sharing : "public",
-          track.streamable === false ? 0 : 1, numberOrNull(track.playback_count), numberOrNull(track.likes_count),
+          track.streamable === false ? 0 : 1, numberOrNull(track.playback_count), numberOrNull(track.likes_count) ?? numberOrNull(track.favoritings_count),
           numberOrNull(track.comment_count), numberOrNull(track.reposts_count),
           typeof track.genre === "string" ? track.genre : null, typeof track.tag_list === "string" ? track.tag_list : null,
           JSON.stringify(track), importedAt
@@ -434,7 +434,7 @@ export class StudioDatabase {
   }
 
   listSoundCloudTracks(): SoundCloudTrackSummary[] {
-    return this.database.prepare(`
+    const rows = this.database.prepare(`
       SELECT id, title, permalink_url AS permalinkUrl, artwork_url AS artworkUrl,
              created_at_remote AS createdAt, duration_ms AS durationMs, sharing,
              streamable, playback_count AS playbackCount, likes_count AS likesCount,
@@ -442,7 +442,14 @@ export class StudioDatabase {
              genre, tag_list AS tagList, imported_at AS importedAt,
              artist_id AS artistId, catalog_status AS catalogStatus, content_type AS contentType
       FROM soundcloud_tracks ORDER BY created_at_remote DESC
-    `).all().map((row) => ({ ...row, streamable: Boolean(row.streamable) })) as unknown as SoundCloudTrackSummary[];
+    `).all() as unknown as Array<Omit<SoundCloudTrackSummary, "streamable" | "engagementRate" | "engagementScore"> & { streamable: number }>;
+    return rows.map((row) => {
+      const engagements = (row.likesCount ?? 0) + (row.commentCount ?? 0) + (row.repostsCount ?? 0);
+      const engagementRate = row.playbackCount && row.playbackCount > 0 ? Math.round((engagements / row.playbackCount) * 10_000) / 100 : null;
+      const rateComponent = Math.min(60, (engagementRate ?? 0) * 10);
+      const volumeComponent = Math.min(40, Math.log10(Math.max(1, row.playbackCount ?? 0)) * 10);
+      return { ...row, streamable: Boolean(row.streamable), engagementRate, engagementScore: Math.round(rateComponent + volumeComponent) };
+    });
   }
 
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): SoundCloudTrackSummary {
