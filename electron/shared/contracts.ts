@@ -224,6 +224,8 @@ export interface SoundCloudTrackSummary {
   contentType: SoundCloudContentType;
   engagementRate: number | null;
   engagementScore: number;
+  releaseId: string | null;
+  releaseTitle: string | null;
 }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
@@ -274,4 +276,5 @@ export interface StudioApi {
   listSoundCloudTracks(): Promise<SoundCloudTrackSummary[]>;
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): Promise<SoundCloudTrackSummary>;
   setSoundCloudTracksContentType(ids: number[], contentType: SoundCloudContentType): Promise<SoundCloudTrackSummary[]>;
+  linkSoundCloudTrack(trackId: number, releaseId: string | null): Promise<SoundCloudTrackSummary>;
 }
