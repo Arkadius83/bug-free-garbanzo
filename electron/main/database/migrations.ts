@@ -371,5 +371,18 @@ export const migrations: Migration[] = [
       CREATE INDEX idx_publishing_queue_schedule ON publishing_queue(scheduled_at, status);
       CREATE INDEX idx_publishing_queue_release ON publishing_queue(release_id, created_at DESC);
     `
+  },
+  {
+    version: 17,
+    name: "brand_profiles_prompt_templates_v1",
+    sql: `
+      CREATE TABLE brand_profiles (
+        artist_id TEXT PRIMARY KEY REFERENCES artist_profiles(id) ON DELETE CASCADE,
+        visual_direction TEXT NOT NULL, palette TEXT NOT NULL, typography TEXT NOT NULL,
+        required_elements TEXT NOT NULL, forbidden_elements TEXT NOT NULL,
+        negative_prompt TEXT NOT NULL, default_aspect_ratio TEXT NOT NULL CHECK(default_aspect_ratio IN ('1:1','4:5','9:16','16:9')),
+        updated_at TEXT NOT NULL
+      );
+    `
   }
 ];
