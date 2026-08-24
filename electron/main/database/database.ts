@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, CreateReleaseDraftInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseSummary, SaveGeneratedDraftInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseSummary, SaveGeneratedDraftInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -209,6 +209,45 @@ export class StudioDatabase {
       throw error;
     }
     return { id, releaseId: input.releaseId, trackId: link.trackId, kind: input.kind, filePath: input.filePath, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: input.sizeBytes, modifiedAt: input.modifiedAt, createdAt: now };
+  }
+
+  getAssetForAnalysis(assetId: string): { id: string; kind: string; filePath: string } | null {
+    return (this.database.prepare("SELECT id, kind, file_path AS filePath FROM assets WHERE id = ?").get(assetId) as { id: string; kind: string; filePath: string } | undefined) ?? null;
+  }
+
+  getAudioAnalysis(assetId: string): AudioAnalysisSummary | null {
+    return (this.database.prepare(`
+      SELECT id, asset_id AS assetId, status, analyzer, format,
+             duration_seconds AS durationSeconds, sample_rate AS sampleRate,
+             channels, bit_depth AS bitDepth, integrated_lufs AS integratedLufs,
+             loudness_range_lu AS loudnessRangeLu, true_peak_dbtp AS truePeakDbtp,
+             analyzed_at AS analyzedAt, note
+      FROM audio_analyses WHERE asset_id = ?
+    `).get(assetId) as unknown as AudioAnalysisSummary | undefined) ?? null;
+  }
+
+  saveAudioAnalysis(analysis: AudioAnalysisSummary): AudioAnalysisSummary {
+    this.database.prepare(`
+      INSERT INTO audio_analyses (
+        id, asset_id, status, analyzer, format, duration_seconds, sample_rate,
+        channels, bit_depth, integrated_lufs, loudness_range_lu, true_peak_dbtp,
+        note, analyzed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(asset_id) DO UPDATE SET
+        id=excluded.id, status=excluded.status, analyzer=excluded.analyzer,
+        format=excluded.format, duration_seconds=excluded.duration_seconds,
+        sample_rate=excluded.sample_rate, channels=excluded.channels,
+        bit_depth=excluded.bit_depth, integrated_lufs=excluded.integrated_lufs,
+        loudness_range_lu=excluded.loudness_range_lu, true_peak_dbtp=excluded.true_peak_dbtp,
+        note=excluded.note, analyzed_at=excluded.analyzed_at
+    `).run(
+      analysis.id, analysis.assetId, analysis.status, analysis.analyzer, analysis.format,
+      analysis.durationSeconds, analysis.sampleRate, analysis.channels, analysis.bitDepth,
+      analysis.integratedLufs, analysis.loudnessRangeLu, analysis.truePeakDbtp,
+      analysis.note, analysis.analyzedAt
+    );
+    this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('asset', ?, 'audio.analyzed', ?, ?)").run(analysis.assetId, JSON.stringify({ analyzer: analysis.analyzer, status: analysis.status }), analysis.analyzedAt);
+    return this.getAudioAnalysis(analysis.assetId)!;
   }
 
   close(): void { this.database.close(); }
