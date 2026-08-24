@@ -2,9 +2,19 @@ import { useEffect, useMemo, useState } from "react";
 import type { AiSettings, AssetKind, AssetSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
-const modules = ["Release", "Content", "Visuals", "Schedule", "Website", "Engagement", "Trends", "Analytics", "Business", "Memory"];
+type AppView = "overview" | "releases" | "ai-studio";
+
+const navigation: Array<{ id: AppView | "placeholder"; label: string; icon: string }> = [
+  { id: "overview", label: "Overview", icon: "⌂" },
+  { id: "releases", label: "Releases", icon: "♫" },
+  { id: "ai-studio", label: "AI Studio", icon: "✦" },
+  { id: "placeholder", label: "Calendar", icon: "□" },
+  { id: "placeholder", label: "Analytics", icon: "⌁" },
+  { id: "placeholder", label: "Contacts", icon: "◎" }
+];
 
 export function App() {
+  const [activeView, setActiveView] = useState<AppView>("overview");
   const [selectedArtist, setSelectedArtist] = useState<ArtistAlias>("the-arkadiusz");
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [database, setDatabase] = useState<DatabaseHealth | null>(null);
@@ -183,29 +193,49 @@ export function App() {
 
   const fallbackDraft = `${artist.name} presents ${title}.\n\n${story}\n\nA ${artist.genres[0]} transmission shaped for listeners who want more than background music.`;
   const draft = generatedDraft?.content ?? fallbackDraft;
+  const currentRelease = releases.find((release) => release.id === activeReleaseId) ?? releases[0];
+  const approvedDrafts = drafts.filter((item) => item.status === "approved" || item.status === "scheduled" || item.status === "published").length;
+  const readiness = Math.min(100, 25 + (assets.some((item) => item.kind === "audio") ? 25 : 0) + (assets.some((item) => item.kind === "cover") ? 25 : 0) + (approvedDrafts > 0 ? 25 : 0));
+
+  function openReleaseWorkspace(release?: ReleaseSummary) {
+    if (release) void selectRelease(release);
+    setActiveView("releases");
+  }
 
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand"><span>SONIC—ARK</span><strong>AI Studio Manager</strong></div>
-        <nav>{modules.map((module, index) => <button className={index === 0 ? "active" : ""} key={module}>{module}</button>)}</nav>
-        <div className="system-card">
-          <span className={`dot ${status?.ollama.available ? "online" : ""}`} />
-          <div><strong>{status?.ollama.available ? "Ollama connected" : "Ollama offline"}</strong><small>{status?.ollama.models.length ?? 0} local models</small></div>
-        </div>
-        <div className="system-card">
-          <span className={`dot ${database?.ready ? "online" : ""}`} />
-          <div><strong>{database?.ready ? `SQLite schema v${database.schemaVersion}` : "SQLite starting"}</strong><small>{releases.length} saved releases</small></div>
-        </div>
+        <div className="brand"><span className="brand-mark">▥</span><div><strong>AI MUSIC</strong><small>MANAGER</small></div></div>
+        <nav>{navigation.map((item, index) => <button className={item.id === activeView ? "active" : ""} key={`${item.label}-${index}`} onClick={() => item.id !== "placeholder" && setActiveView(item.id)}><span>{item.icon}</span>{item.label}{item.label === "AI Studio" && <b>AI</b>}</button>)}</nav>
+        <div className="nav-divider" />
+        <nav className="secondary-nav"><button><span>⌘</span>Integrations<i className="status-light" /></button><button><span>⚙</span>Settings</button></nav>
+        <div className="sidebar-spacer" />
+        <div className="sidebar-health"><span className={`dot ${status?.ollama.available && database?.ready ? "online" : ""}`} /><span>{status?.ollama.available && database?.ready ? "Local systems ready" : "Connecting local systems"}</span></div>
+        <div className="user-card"><span className="avatar">A</span><div><strong>Arkadiusz</strong><small>Independent artist</small></div><b>•••</b></div>
       </aside>
 
-      <main>
+      <main className="app-main">
+        <div className="topbar"><div className="search">⌕<span>Search releases, tracks, tasks...</span><kbd>⌘ K</kbd></div><div className="top-actions"><span><i className={`dot ${status?.ollama.available && database?.ready ? "online" : ""}`} />{status?.ollama.available && database?.ready ? "All systems synced" : "Systems starting"}</span><button className="icon-button">♧</button><button className="primary" onClick={() => openReleaseWorkspace()}>+ New release</button></div></div>
         {bridgeError && <div className="bridge-error">{bridgeError}</div>}
+        {activeView === "overview" && <div className="overview page-content">
+          <div className="overview-heading"><div><span className="date-label">MONDAY, AUG 24</span><h1>Your music. <em>Ready for the world.</em></h1><p>Everything that needs your attention, in one place.</p></div><button className="daily-brief"><span>✦</span><small>AI DAILY BRIEF</small><strong>{Math.max(1, 3 - approvedDrafts)} smart actions →<br />ready</strong></button></div>
+          <section className="release-hero">
+            <div className="cover-art"><div className="orbit"><i /><i /></div><span>DIFFERENT<br />PERSPECTIVE</span><small>THE ARKADIUSZ</small></div>
+            <div className="release-info"><span className="eyebrow">NEXT RELEASE · {releaseDate ? "scheduled" : "date pending"}</span><h2>{currentRelease?.title ?? title}</h2><p>{currentRelease?.artistName ?? artist.name} · Single · {currentRelease?.primaryGenre ?? artist.genres[0]}</p><div className="platforms"><span>↗ Spotify</span><span>◖ SoundCloud</span><span>♪ TikTok</span><span>+12</span></div></div>
+            <div className="readiness" style={{ "--progress": `${readiness * 3.6}deg` } as React.CSSProperties}><div><strong>{readiness}%</strong><span>READY</span></div><small>Release readiness</small></div>
+            <div className="release-steps"><div className="done"><b>✓</b><span>AUDIO<small>Master ready</small></span></div><div className="current"><b>2</b><span>IDENTITY<small>Artwork due</small></span></div><div><b>3</b><span>DELIVERY<small>Send to distributor</small></span></div><div><b>4</b><span>CAMPAIGN<small>Pre-save live</small></span></div><div><b>5</b><span>RELEASE<small>{releaseDate || "Set date"}</small></span></div></div>
+          </section>
+          <div className="dashboard-grid">
+            <section className="dashboard-card focus-card"><div className="card-header"><div><span>YOUR FOCUS</span><h3>Move the release forward</h3></div><div className="tabs"><b>Tasks</b><span>Activity</span></div></div><div className="task done"><b>✓</b><i>WAV</i><div><strong>Final master approved</strong><small>Audio foundation complete</small></div><span>→</span></div><div className="task"><b /><i>ART</i><div><strong>Artwork export</strong><small>3000 × 3000 px · due today</small></div><span>→</span></div><div className="task"><b /><i>AI</i><div><strong>Spotify editorial pitch</strong><small>{approvedDrafts ? `${approvedDrafts} approved campaign draft${approvedDrafts === 1 ? "" : "s"}` : "Draft ready · review with AI"}</small></div><button onClick={() => setActiveView("ai-studio")}>Review →</button></div></section>
+            <section className="dashboard-card intelligence-card"><div className="card-header"><div><span>AI RELEASE INTELLIGENCE</span><h3>Worth your attention</h3></div><b className="live">● LIVE</b></div><article><i>◷</i><div><small>TIMING</small><strong>Your pitch window is ready.</strong><p>Approve a campaign draft before sending it to editorial teams.</p><button onClick={() => setActiveView("ai-studio")}>Open pitch →</button></div></article><article><i>↗</i><div><small>MOMENTUM</small><strong>Local AI is connected.</strong><p>{status?.ollama.models.length ?? 0} models available for release content.</p></div></article></section>
+          </div>
+        </div>}
+
+        {(activeView === "releases" || activeView === "ai-studio") && <div className="page-content release-page">
         <header>
-          <div><span className="eyebrow">Release Manager</span><h1>Turn one track into a complete campaign.</h1></div>
+          <div><span className="eyebrow">{activeView === "ai-studio" ? "AI Studio" : "Release Manager"}</span><h1>{activeView === "ai-studio" ? "Create campaign content." : "Build the next release."}</h1></div>
           <button className="primary" onClick={saveRelease}>Save release draft</button>
         </header>
-
         <section className="artist-strip">
           {artists.map((profile) => (
             <button className={profile.id === selectedArtist ? "selected" : ""} key={profile.id} onClick={() => setSelectedArtist(profile.id)}>
@@ -214,7 +244,7 @@ export function App() {
           ))}
         </section>
 
-        <div className="workspace">
+        <div className={`workspace ${activeView === "ai-studio" ? "ai-focus" : ""}`}>
           <section className="panel form-panel">
             <div className="panel-heading"><span className="eyebrow">01 / Source</span><h2>Release foundation</h2></div>
             <label>Track title<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
@@ -244,15 +274,6 @@ export function App() {
             {generationMessage && <p className={`generation-message ${generationState === "error" ? "error" : ""}`}>{generationMessage}</p>}
             {generationState === "generating" && <p className="generation-hint">DeepSeek R1 14B may need extra time on its first run while the model loads into VRAM.</p>}
             <div className="draft"><span>{aiSettings.channel} · {aiSettings.language.toUpperCase()} {generatedDraft ? "· AI generated" : "· template preview"}</span><pre>{draft}</pre></div>
-            <div className="architecture-note">
-              <strong>Foundation status</strong>
-              <ul>
-                <li>React renderer isolated from Node.js</li>
-                <li>Typed IPC through secure preload</li>
-                <li>Four artist identities established</li>
-                <li>Ollama model discovery connected</li>
-              </ul>
-            </div>
             <div className="release-list">
               <strong>Saved releases</strong>
               {releases.length === 0 ? <p>No releases saved yet.</p> : releases.slice(0, 6).map((release) => (
@@ -270,6 +291,7 @@ export function App() {
             </div>
           </section>
         </div>
+        </div>}
       </main>
     </div>
   );
