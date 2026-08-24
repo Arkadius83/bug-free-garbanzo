@@ -48,7 +48,14 @@ const api: StudioApi = {
   getCatalogMatchSuggestions: () => ipcRenderer.invoke("studio:get-catalog-match-suggestions"),
   generateCampaignPack: (input) => ipcRenderer.invoke("studio:generate-campaign-pack", input),
   listCampaignPackItems: (releaseId) => ipcRenderer.invoke("studio:list-campaign-pack-items", releaseId),
-  updateCampaignPackItemStatus: (itemId, status) => ipcRenderer.invoke("studio:update-campaign-pack-item-status", itemId, status)
+  updateCampaignPackItemStatus: (itemId, status) => ipcRenderer.invoke("studio:update-campaign-pack-item-status", itemId, status),
+  getMediaGenerationSettings: () => ipcRenderer.invoke("studio:get-media-generation-settings"),
+  saveMediaGenerationCredentials: (openAiApiKey, klingApiKey) => ipcRenderer.invoke("studio:save-media-generation-credentials", openAiApiKey, klingApiKey),
+  generateMedia: (input) => ipcRenderer.invoke("studio:generate-media", input),
+  refreshMediaGeneration: (generationId) => ipcRenderer.invoke("studio:refresh-media-generation", generationId),
+  listMediaGenerations: (releaseId) => ipcRenderer.invoke("studio:list-media-generations", releaseId),
+  updateMediaGenerationStatus: (generationId, status) => ipcRenderer.invoke("studio:update-media-generation-status", generationId, status),
+  getGeneratedMediaUrl: (generationId) => ipcRenderer.invoke("studio:get-generated-media-url", generationId)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
