@@ -91,3 +91,25 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
 function stripThinking(value: string): string {
   return value.replace(/<think>[\s\S]*?<\/think>\s*/gi, "").trim();
 }
+
+export async function runPlanningAgent(model: string, task: string, releaseTitle: string | null): Promise<string> {
+  if (!model.trim() || !task.trim()) throw new Error("Model and task are required");
+  const response = await fetch("http://127.0.0.1:11434/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(300_000),
+    body: JSON.stringify({
+      model, stream: false, think: false, keep_alive: "15m",
+      options: { temperature: .35, top_p: .85, num_ctx: 3072, num_predict: model.toLowerCase().startsWith("deepseek-r1") ? 900 : 500 },
+      messages: [
+        { role: "system", content: "You are a safe release-management assistant. Complete only research, planning, checking or drafting work. Never claim to publish, upload, delete, contact people, change accounts, or perform an external action. Return a concise practical result that a human can review." },
+        { role: "user", content: ["Release: " + (releaseTitle || "Unspecified"), "Task: " + task, "Produce the requested draft, checklist or recommendation. Clearly label anything that still needs human approval."].join("\n") }
+      ]
+    })
+  });
+  if (!response.ok) throw new Error("Ollama agent failed with HTTP " + response.status);
+  const data = await response.json() as { message?: { content?: string; thinking?: string }; error?: string };
+  const content = stripThinking(data.message?.content ?? "");
+  if (!content) throw new Error(data.error || "Ollama agent returned an empty response");
+  return content;
+}
