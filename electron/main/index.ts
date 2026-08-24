@@ -3,14 +3,16 @@ import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, runPlanningAgent } from "./ollama.js";
-import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SoundCloudContentType, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
+import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
+import { SpotifyClient } from "./spotify.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 let studioDatabase: StudioDatabase;
 let soundCloudClient: SoundCloudClient;
+let spotifyClient: SpotifyClient;
 if (!app.requestSingleInstanceLock()) app.quit();
 
 function soundCloudCallbackFromArgs(args: string[]): string | null {
@@ -114,6 +116,14 @@ ipcMain.handle("studio:update-soundcloud-track", (_event, input: UpdateSoundClou
 ipcMain.handle("studio:set-soundcloud-tracks-content-type", (_event, ids: number[], contentType: SoundCloudContentType) => studioDatabase.setSoundCloudTracksContentType(ids, contentType));
 ipcMain.handle("studio:link-soundcloud-track", (_event, trackId: number, releaseId: string | null) => studioDatabase.linkSoundCloudTrack(trackId, releaseId));
 ipcMain.handle("studio:get-soundcloud-track-performance", (_event, trackId: number) => studioDatabase.getSoundCloudTrackPerformance(trackId));
+ipcMain.handle("studio:get-spotify-connection", () => spotifyClient.status());
+ipcMain.handle("studio:save-spotify-client-id", (_event, clientId: string) => spotifyClient.saveClientId(clientId));
+ipcMain.handle("studio:begin-spotify-connect", () => spotifyClient.beginConnect());
+ipcMain.handle("studio:disconnect-spotify", () => spotifyClient.disconnect());
+ipcMain.handle("studio:get-spotify-artist-mappings", () => studioDatabase.getSpotifyArtistMappings());
+ipcMain.handle("studio:save-spotify-artist-mappings", (_event, mappings: SpotifyArtistMapping[]) => studioDatabase.saveSpotifyArtistMappings(mappings));
+ipcMain.handle("studio:list-spotify-releases", () => studioDatabase.listSpotifyReleases());
+ipcMain.handle("studio:sync-spotify-catalog", async () => { for (const mapping of studioDatabase.getSpotifyArtistMappings()) studioDatabase.importSpotifyReleases(mapping.artistId, mapping.spotifyArtistId, await spotifyClient.fetchArtistReleases(mapping.spotifyArtistId)); return studioDatabase.listSpotifyReleases(); });
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
   const asset = studioDatabase.getAssetForAnalysis(assetId);
   if (!asset) throw new Error("Audio asset not found");
@@ -160,6 +170,7 @@ void app.whenReady().then(() => {
   studioDatabase = new StudioDatabase(path.join(app.getPath("userData"), "ai-studio-manager.sqlite"));
   studioDatabase.initialize();
   soundCloudClient = new SoundCloudClient(app.getPath("userData"));
+  spotifyClient = new SpotifyClient(app.getPath("userData"));
   if (process.platform === "win32" && !app.isPackaged) app.setAsDefaultProtocolClient("ai-studio-manager", process.execPath, [path.resolve(process.argv[1])]);
   else app.setAsDefaultProtocolClient("ai-studio-manager");
   createWindow();
