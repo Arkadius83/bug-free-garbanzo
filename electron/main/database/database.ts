@@ -118,6 +118,18 @@ export class StudioDatabase {
     return this.listReleases().find((item) => item.id === input.id)!;
   }
 
+  deleteRelease(releaseId: string): void {
+    const release = this.database.prepare("SELECT project_id AS projectId, title FROM releases WHERE id = ?").get(releaseId) as { projectId: string; title: string } | undefined;
+    if (!release) throw new Error("Release not found");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release', ?, 'release.deleted', ?, ?)").run(releaseId, JSON.stringify({ title: release.title, projectId: release.projectId }), now);
+      this.database.prepare("DELETE FROM projects WHERE id = ?").run(release.projectId);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
+
   getSetting<T>(key: string, fallback: T): T {
     const row = this.database.prepare("SELECT value_json AS valueJson FROM settings WHERE key = ?").get(key) as { valueJson: string } | undefined;
     if (!row) return fallback;
