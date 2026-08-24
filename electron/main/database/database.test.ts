@@ -11,7 +11,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 9);
+    assert.equal(database.health().schemaVersion, 10);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
@@ -63,6 +63,8 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(soundCloudTracks[0]?.likesCount, 95);
     assert.equal(soundCloudTracks[0]?.engagementRate, 9.42);
     assert.ok((soundCloudTracks[0]?.engagementScore ?? 0) > 0);
+    assert.equal(soundCloudTracks[0]?.trend, "baseline");
+    assert.equal(database.getSoundCloudTrackPerformance(42).points.length, 1);
     const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem", contentType: "bootleg" });
     assert.equal(classifiedTrack.artistId, "the-arkadiusz");
     assert.equal(classifiedTrack.catalogStatus, "gem");
