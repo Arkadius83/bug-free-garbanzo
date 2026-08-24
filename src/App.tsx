@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SoundCloudConnection, SoundCloudTrackSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
-type AppView = "overview" | "releases" | "ai-studio" | "calendar";
+type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "integrations";
 
 const navigation: Array<{ id: AppView | "placeholder"; label: string; icon: string }> = [
   { id: "overview", label: "Overview", icon: "⌂" },
@@ -44,6 +44,12 @@ export function App() {
   const [taskAssignee, setTaskAssignee] = useState<TaskAssignee>("human");
   const [taskMessage, setTaskMessage] = useState("");
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
+  const [soundCloud, setSoundCloud] = useState<SoundCloudConnection | null>(null);
+  const [soundCloudTracks, setSoundCloudTracks] = useState<SoundCloudTrackSummary[]>([]);
+  const [soundCloudClientId, setSoundCloudClientId] = useState("");
+  const [soundCloudClientSecret, setSoundCloudClientSecret] = useState("");
+  const [soundCloudMessage, setSoundCloudMessage] = useState("");
+  const [soundCloudBusy, setSoundCloudBusy] = useState(false);
   const artist = useMemo(() => artists.find((item) => item.id === selectedArtist) ?? artists[0], [selectedArtist]);
 
   useEffect(() => {
@@ -99,11 +105,58 @@ export function App() {
     if (activeView === "calendar" && window.studio) void window.studio.listTasks().then(setTasks).catch((error) => setTaskMessage(error instanceof Error ? error.message : "Could not load tasks"));
   }, [activeView]);
 
+  useEffect(() => {
+    if (activeView !== "integrations" || !window.studio) return;
+    void Promise.all([window.studio.getSoundCloudConnection(), window.studio.listSoundCloudTracks()]).then(([connection, tracks]) => { setSoundCloud(connection); setSoundCloudTracks(tracks); }).catch((error) => setSoundCloudMessage(error instanceof Error ? error.message : "Could not load SoundCloud integration"));
+  }, [activeView]);
+
   async function updateAiSettings(next: AiSettings) {
     setAiSettings(next);
     if (!window.studio) return;
     try { setAiSettings(await window.studio.saveAiSettings(next)); }
     catch (error) { setGenerationMessage(error instanceof Error ? error.message : "Could not save AI settings"); }
+  }
+
+  async function saveSoundCloudCredentials() {
+    if (!window.studio) return;
+    setSoundCloudBusy(true); setSoundCloudMessage("Saving encrypted credentials...");
+    try {
+      setSoundCloud(await window.studio.saveSoundCloudCredentials(soundCloudClientId, soundCloudClientSecret));
+      setSoundCloudClientSecret(""); setSoundCloudMessage("Credentials saved securely on this computer.");
+    } catch (error) { setSoundCloudMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not save credentials"); }
+    finally { setSoundCloudBusy(false); }
+  }
+
+  async function connectSoundCloud() {
+    if (!window.studio) return;
+    setSoundCloudBusy(true); setSoundCloudMessage("Complete authorization in the browser. This screen will update automatically.");
+    try {
+      await window.studio.beginSoundCloudConnect();
+      for (let attempt = 0; attempt < 120; attempt++) {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        const connection = await window.studio.getSoundCloudConnection(); setSoundCloud(connection);
+        if (connection.connected) { setSoundCloudMessage(`Connected as ${connection.username}. You can now import the catalog.`); return; }
+        if (connection.error) throw new Error(connection.error);
+      }
+      throw new Error("Authorization timed out. Start the connection again.");
+    } catch (error) { setSoundCloudMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "SoundCloud connection failed"); }
+    finally { setSoundCloudBusy(false); }
+  }
+
+  async function syncSoundCloudCatalog() {
+    if (!window.studio) return;
+    setSoundCloudBusy(true); setSoundCloudMessage("Importing your SoundCloud catalog...");
+    try { const tracks = await window.studio.syncSoundCloudCatalog(); setSoundCloudTracks(tracks); setSoundCloudMessage(`Catalog synchronized: ${tracks.length} tracks.`); }
+    catch (error) { setSoundCloudMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Catalog import failed"); }
+    finally { setSoundCloudBusy(false); }
+  }
+
+  async function disconnectSoundCloud() {
+    if (!window.studio) return;
+    setSoundCloudBusy(true);
+    try { setSoundCloud(await window.studio.disconnectSoundCloud()); setSoundCloudMessage("SoundCloud disconnected. The imported catalog remains available locally."); }
+    catch (error) { setSoundCloudMessage(error instanceof Error ? error.message : "Could not disconnect SoundCloud"); }
+    finally { setSoundCloudBusy(false); }
   }
 
   async function generateWithOllama() {
@@ -384,7 +437,7 @@ export function App() {
         <div className="brand"><span className="brand-mark">▥</span><div><strong>AI MUSIC</strong><small>MANAGER</small></div></div>
         <nav>{navigation.map((item, index) => <button className={item.id === activeView ? "active" : ""} key={`${item.label}-${index}`} onClick={() => item.id !== "placeholder" && setActiveView(item.id)}><span>{item.icon}</span>{item.label}{item.label === "AI Studio" && <b>AI</b>}</button>)}</nav>
         <div className="nav-divider" />
-        <nav className="secondary-nav"><button><span>⌘</span>Integrations<i className="status-light" /></button><button><span>⚙</span>Settings</button></nav>
+        <nav className="secondary-nav"><button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><span>⌘</span>Integrations<i className={`status-light ${soundCloud?.connected ? "connected" : ""}`} /></button><button><span>⚙</span>Settings</button></nav>
         <div className="sidebar-spacer" />
         <div className="sidebar-health"><span className={`dot ${status?.ollama.available && database?.ready ? "online" : ""}`} /><span>{status?.ollama.available && database?.ready ? "Local systems ready" : "Connecting local systems"}</span></div>
         <div className="user-card"><span className="avatar">A</span><div><strong>Arkadiusz</strong><small>Independent artist</small></div><b>•••</b></div>
@@ -413,6 +466,26 @@ export function App() {
           {taskMessage && <p className="task-message">{taskMessage}</p>}
           <div className="task-board">
             {(["doing","todo","done"] as TaskStatus[]).map((column) => <section className="task-column" key={column}><div className="task-column-title"><strong>{column === "doing" ? "In progress" : column === "todo" ? "To do" : "Done"}</strong><span>{tasks.filter((task) => task.status === column).length}</span></div>{tasks.filter((task) => task.status === column).map((task) => <article className={`managed-task priority-${task.priority}`} key={task.id}><div className="managed-task-meta"><span>{task.assignee === "ai" ? "✦ AI AGENT" : task.assignee === "automatic" ? "⚙ AUTOMATIC" : "● HUMAN"}</span><b>{task.priority}</b></div><h3>{task.title}</h3><p>{task.releaseTitle ?? "No release"}{task.dueAt ? ` · due ${task.dueAt}` : ""}</p>{task.agentOutput && <div className="agent-output"><strong>Agent result · {task.model}</strong><p>{task.agentOutput}</p><small>Human review required</small></div>}<div className="managed-task-actions">{column !== "doing" && column !== "done" && <button onClick={() => void changeTaskStatus(task.id, "doing")}>Start</button>}{column !== "done" && <button onClick={() => void changeTaskStatus(task.id, "done")}>Done</button>}{column === "done" && <button onClick={() => void changeTaskStatus(task.id, "todo")}>Reopen</button>}{task.assignee === "ai" && column !== "done" && <button className="agent-button" disabled={runningTaskId === task.id} onClick={() => void runTaskAgent(task.id)}>{runningTaskId === task.id ? "Working..." : "Run agent"}</button>}</div></article>)}</section>)}
+          </div>
+        </div>}
+
+        {activeView === "integrations" && <div className="page-content integrations-page">
+          <header><div><span className="eyebrow">Integrations</span><h1>Connect SoundCloud.</h1><p>Authorize your Artist Pro account and bring your existing catalog into the local studio database.</p></div><span className={`connection-badge ${soundCloud?.connected ? "connected" : ""}`}>{soundCloud?.connected ? "● CONNECTED" : "○ NOT CONNECTED"}</span></header>
+          <div className="integration-grid">
+            <section className="panel connection-panel">
+              <div className="integration-title"><span className="soundcloud-mark">☁</span><div><h2>SoundCloud Artist Pro</h2><p>OAuth 2.1 · credentials encrypted by Windows</p></div></div>
+              <div className="callback-box"><small>CALLBACK URL — add this exact address in your SoundCloud app</small><code>{soundCloud?.callbackUrl ?? "ai-studio-manager://soundcloud/callback"}</code></div>
+              <label>Client ID<input autoComplete="off" placeholder={soundCloud?.configured ? "Credentials already configured" : "Paste SoundCloud Client ID"} value={soundCloudClientId} onChange={(event) => setSoundCloudClientId(event.target.value)} /></label>
+              <label>Client Secret<input type="password" autoComplete="new-password" placeholder={soundCloud?.configured ? "Enter only when replacing credentials" : "Paste SoundCloud Client Secret"} value={soundCloudClientSecret} onChange={(event) => setSoundCloudClientSecret(event.target.value)} /></label>
+              <div className="integration-actions"><button disabled={soundCloudBusy || !soundCloudClientId.trim() || !soundCloudClientSecret.trim()} onClick={() => void saveSoundCloudCredentials()}>Save API credentials</button><button className="primary" disabled={soundCloudBusy || !soundCloud?.configured || soundCloud.connected} onClick={() => void connectSoundCloud()}>{soundCloudBusy ? "Working..." : "Connect with SoundCloud"}</button></div>
+              {soundCloud?.connected && <div className="connected-profile"><span>✓</span><div><strong>{soundCloud.username}</strong><small>{soundCloud.permalinkUrl}</small></div></div>}
+              {soundCloudMessage && <p className="integration-message">{soundCloudMessage}</p>}
+              {soundCloud?.connected && <div className="integration-actions"><button className="primary" disabled={soundCloudBusy} onClick={() => void syncSoundCloudCatalog()}>Sync catalog</button><button className="danger-button" disabled={soundCloudBusy} onClick={() => void disconnectSoundCloud()}>Disconnect</button></div>}
+            </section>
+            <section className="panel catalog-panel">
+              <div className="catalog-heading"><div><span className="eyebrow">Local catalog</span><h2>{soundCloudTracks.length} tracks imported</h2></div>{soundCloudTracks.length > 0 && <small>Latest sync is stored in SQLite</small>}</div>
+              {soundCloudTracks.length === 0 ? <div className="empty-catalog"><span>♫</span><strong>No SoundCloud tracks imported yet</strong><p>Connect your account and select Sync catalog. Nothing is published or changed on SoundCloud.</p></div> : <div className="soundcloud-track-list">{soundCloudTracks.map((track) => <article key={track.id}>{track.artworkUrl ? <img src={track.artworkUrl} alt="" /> : <span className="track-placeholder">♫</span>}<div className="track-main"><strong>{track.title}</strong><small>{new Date(track.createdAt).toLocaleDateString()} · {track.genre ?? "No genre"} · {Math.round(track.durationMs / 6000) / 10} min</small></div><div className="track-stats"><span><b>{track.playbackCount ?? "—"}</b> plays</span><span><b>{track.likesCount ?? "—"}</b> likes</span><span><b>{track.commentCount ?? "—"}</b> comments</span></div><b className="sharing-label">{track.sharing}</b></article>)}</div>}
+            </section>
           </div>
         </div>}
 
