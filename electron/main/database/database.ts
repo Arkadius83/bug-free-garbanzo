@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CampaignPackItem, CampaignPackKind, CatalogMatchSuggestion, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, GeneratedMediaType, MediaGenerationStatus, MediaGenerationSummary, MediaProvider, PublishingQueueItem, PublishingStatus, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, BrandProfile, CampaignPackItem, CampaignPackKind, CatalogMatchSuggestion, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, GeneratedMediaType, MediaGenerationStatus, MediaGenerationSummary, MediaProvider, PublishingQueueItem, PublishingStatus, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -38,6 +38,7 @@ export class StudioDatabase {
       }
     }
     this.seedArtistProfiles();
+    this.seedBrandProfiles();
   }
 
   health(): DatabaseHealth {
@@ -515,6 +516,9 @@ export class StudioDatabase {
   updatePublishingQueueStatus(id:string,status:PublishingStatus):PublishingQueueItem{const current=this.getPublishingQueueItem(id);if(!current)throw new Error("Publishing queue item not found");const allowed:Record<PublishingStatus,PublishingStatus[]>={draft:["approved"],approved:["draft","scheduled"],scheduled:["approved","published","failed"],published:[],failed:["draft"]};if(!allowed[current.status].includes(status))throw new Error(`Invalid publishing transition: ${current.status} → ${status}`);if(status==="scheduled"&&!current.scheduledAt)throw new Error("Choose a publishing date before scheduling");if(current.rightsBlocked&&["SoundCloud","YouTube"].includes(current.platform)&&["approved","scheduled","published"].includes(status))throw new Error("Bootleg rights are not cleared: official publishing is blocked");this.database.prepare("UPDATE publishing_queue SET status=?,error=NULL,updated_at=? WHERE id=?").run(status,new Date().toISOString(),id);return this.getPublishingQueueItem(id)!;}
   markPublishingPackExported(id:string):PublishingQueueItem{if(!this.getPublishingQueueItem(id))throw new Error("Publishing queue item not found");this.database.prepare("UPDATE publishing_queue SET exported_at=?,updated_at=? WHERE id=?").run(new Date().toISOString(),new Date().toISOString(),id);return this.getPublishingQueueItem(id)!;}
   getPublishingExportData(id:string):{item:PublishingQueueItem;mediaPath:string|null;mimeType:string|null}{const item=this.getPublishingQueueItem(id);if(!item)throw new Error("Publishing queue item not found");const media=item.mediaGenerationId?this.getMediaGenerationFile(item.mediaGenerationId):undefined;return{item,mediaPath:media?.filePath??null,mimeType:media?.mimeType??null};}
+  listBrandProfiles():BrandProfile[]{return this.database.prepare(`SELECT b.artist_id AS artistId,a.name AS artistName,b.visual_direction AS visualDirection,b.palette,b.typography,b.required_elements AS requiredElements,b.forbidden_elements AS forbiddenElements,b.negative_prompt AS negativePrompt,b.default_aspect_ratio AS defaultAspectRatio,b.updated_at AS updatedAt FROM brand_profiles b JOIN artist_profiles a ON a.id=b.artist_id ORDER BY a.name`).all() as unknown as BrandProfile[];}
+  getBrandProfileForRelease(releaseId:string):BrandProfile|undefined{const row=this.database.prepare(`SELECT b.artist_id AS artistId,a.name AS artistName,b.visual_direction AS visualDirection,b.palette,b.typography,b.required_elements AS requiredElements,b.forbidden_elements AS forbiddenElements,b.negative_prompt AS negativePrompt,b.default_aspect_ratio AS defaultAspectRatio,b.updated_at AS updatedAt FROM releases r JOIN projects p ON p.id=r.project_id JOIN brand_profiles b ON b.artist_id=p.artist_id JOIN artist_profiles a ON a.id=b.artist_id WHERE r.id=?`).get(releaseId) as unknown as BrandProfile|undefined;return row;}
+  updateBrandProfile(input:UpdateBrandProfileInput):BrandProfile{if(!seedArtists.some(([id])=>id===input.artistId))throw new Error("Unknown artist profile");if(!["1:1","4:5","9:16","16:9"].includes(input.defaultAspectRatio))throw new Error("Invalid default aspect ratio");const fields=[input.visualDirection,input.palette,input.typography,input.requiredElements,input.forbiddenElements,input.negativePrompt];if(fields.some((value)=>!value.trim()))throw new Error("All brand profile fields are required");this.database.prepare(`UPDATE brand_profiles SET visual_direction=?,palette=?,typography=?,required_elements=?,forbidden_elements=?,negative_prompt=?,default_aspect_ratio=?,updated_at=? WHERE artist_id=?`).run(...fields.map((value)=>value.trim()),input.defaultAspectRatio,new Date().toISOString(),input.artistId);return this.listBrandProfiles().find((profile)=>profile.artistId===input.artistId)!;}
 
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): SoundCloudTrackSummary {
     if (!["unreviewed", "release", "gem", "archive", "exclude"].includes(input.catalogStatus)) throw new Error("Invalid SoundCloud catalog status");
@@ -573,6 +577,24 @@ export class StudioDatabase {
     `);
     const now = new Date().toISOString();
     for (const [id, name, genres, voice] of seedArtists) insert.run(id, name, JSON.stringify(genres), voice, now, now);
+  }
+
+  private seedBrandProfiles(): void {
+    const insert = this.database.prepare(`
+      INSERT INTO brand_profiles (
+        artist_id, visual_direction, palette, typography, required_elements,
+        forbidden_elements, negative_prompt, default_aspect_ratio, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(artist_id) DO NOTHING
+    `);
+    const profiles = [
+      ["the-arkadiusz", "Psychedelic, conscious and cinematic; expansive depth, sacred geometry used with restraint, premium electronic-music artwork", "deep violet, electric cyan, acid-lime highlights, near-black background", "clean geometric sans-serif; title area must remain readable and uncluttered", "one strong focal subject, controlled fractal detail, depth, light emerging from darkness", "generic festival poster, cartoon look, random mandalas, cheap neon overload, visible AI artifacts", "text, letters, words, watermark, logo, blurry, low quality, deformed anatomy, duplicate objects, clutter, oversaturated neon", "1:1"],
+      ["arkadelic", "Ultra-fast futuristic energy, playful high-tech psychedelia, sharp motion and controlled chaos", "neon magenta, electric blue, ultraviolet, black", "condensed futuristic sans-serif with aggressive spacing", "dynamic movement, microscopic circuitry, one memorable central symbol", "retro synthwave, 1980s chrome, childish cartoon characters, generic cyberpunk city", "text, watermark, logo, retro 80s, synthwave sunset, cartoon, blurry, low detail, malformed objects", "1:1"],
+      ["ar-tek", "Minimal industrial technology, hypnotic club architecture, precision and restraint", "charcoal, graphite, cold white, acid-green accent", "minimal Swiss grotesk, technical grid alignment", "architectural geometry, tactile dark materials, single technical light accent", "psychedelic rainbow, fantasy landscapes, busy fractals, playful illustration", "text, watermark, logo, colorful fantasy, rainbow, ornate decoration, clutter, low quality", "1:1"],
+      ["echoes-of-arcadia", "Organic cinematic dreamscape, spacious contemplative atmosphere, nature merging with subtle futurism", "deep teal, midnight blue, warm amber, misty silver", "elegant light serif paired with restrained sans-serif", "large negative space, natural texture, atmospheric light, quiet emotional focal point", "aggressive club graphics, harsh neon, mechanical overload, cartoon fantasy", "text, watermark, logo, harsh neon, crowded composition, oversaturated colors, low quality, blurry", "1:1"]
+    ] as const;
+    const now = new Date().toISOString();
+    for (const profile of profiles) insert.run(...profile, now);
   }
 }
 
