@@ -24,7 +24,13 @@ const api: StudioApi = {
   listTasks: (releaseId) => ipcRenderer.invoke("studio:list-tasks", releaseId),
   createTask: (input) => ipcRenderer.invoke("studio:create-task", input),
   updateTaskStatus: (taskId, status) => ipcRenderer.invoke("studio:update-task-status", taskId, status),
-  runTaskAgent: (taskId, model) => ipcRenderer.invoke("studio:run-task-agent", taskId, model)
+  runTaskAgent: (taskId, model) => ipcRenderer.invoke("studio:run-task-agent", taskId, model),
+  getSoundCloudConnection: () => ipcRenderer.invoke("studio:get-soundcloud-connection"),
+  saveSoundCloudCredentials: (clientId, clientSecret) => ipcRenderer.invoke("studio:save-soundcloud-credentials", clientId, clientSecret),
+  beginSoundCloudConnect: () => ipcRenderer.invoke("studio:begin-soundcloud-connect"),
+  disconnectSoundCloud: () => ipcRenderer.invoke("studio:disconnect-soundcloud"),
+  syncSoundCloudCatalog: () => ipcRenderer.invoke("studio:sync-soundcloud-catalog"),
+  listSoundCloudTracks: () => ipcRenderer.invoke("studio:list-soundcloud-tracks")
 };
 
 contextBridge.exposeInMainWorld("studio", api);
