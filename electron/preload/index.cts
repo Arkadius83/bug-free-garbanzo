@@ -20,6 +20,7 @@ const api: StudioApi = {
   detachAsset: (assetId) => ipcRenderer.invoke("studio:detach-asset", assetId),
   getAudioAnalysis: (assetId) => ipcRenderer.invoke("studio:get-audio-analysis", assetId),
   analyzeAudio: (assetId) => ipcRenderer.invoke("studio:analyze-audio", assetId),
+  getAssetPlaybackUrl: (assetId) => ipcRenderer.invoke("studio:get-asset-playback-url", assetId),
   getReleaseReadiness: (releaseId) => ipcRenderer.invoke("studio:get-release-readiness", releaseId),
   listTasks: (releaseId) => ipcRenderer.invoke("studio:list-tasks", releaseId),
   createTask: (input) => ipcRenderer.invoke("studio:create-task", input),
