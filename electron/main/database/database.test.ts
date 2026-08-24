@@ -11,7 +11,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 7);
+    assert.equal(database.health().schemaVersion, 8);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
@@ -60,9 +60,11 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(soundCloudTracks[0]?.id, 42);
     assert.equal(soundCloudTracks[0]?.playbackCount, 1200);
     assert.equal(soundCloudTracks[0]?.streamable, true);
-    const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem" });
+    const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem", contentType: "bootleg" });
     assert.equal(classifiedTrack.artistId, "the-arkadiusz");
     assert.equal(classifiedTrack.catalogStatus, "gem");
+    assert.equal(classifiedTrack.contentType, "bootleg");
+    assert.equal(database.setSoundCloudTracksContentType([42], "edit")[0]?.contentType, "edit");
     database.deleteRelease(created.id);
     assert.equal(database.listReleases().length, 0);
     assert.throws(() => database.getReleaseReadiness(created.id), /Release not found/);
