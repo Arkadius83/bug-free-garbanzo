@@ -170,5 +170,17 @@ export const migrations: Migration[] = [
         AND integrated_lufs <= -69.9
         AND true_peak_dbtp > -40;
     `
+  },
+  {
+    version: 4,
+    name: "musical_analysis_v2",
+    sql: `
+      ALTER TABLE audio_analyses ADD COLUMN bpm REAL;
+      ALTER TABLE audio_analyses ADD COLUMN bpm_confidence REAL;
+      ALTER TABLE audio_analyses ADD COLUMN alternate_bpm REAL;
+      ALTER TABLE audio_analyses ADD COLUMN musical_key TEXT;
+      ALTER TABLE audio_analyses ADD COLUMN key_confidence REAL;
+      ALTER TABLE audio_analyses ADD COLUMN alternate_key TEXT;
+    `
   }
 ];
