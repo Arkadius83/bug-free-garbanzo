@@ -248,5 +248,21 @@ export const migrations: Migration[] = [
       ALTER TABLE soundcloud_tracks ADD COLUMN release_id TEXT REFERENCES releases(id) ON DELETE SET NULL;
       CREATE UNIQUE INDEX idx_soundcloud_tracks_release ON soundcloud_tracks(release_id) WHERE release_id IS NOT NULL;
     `
+  },
+  {
+    version: 10,
+    name: "soundcloud_performance_history_v1",
+    sql: `
+      CREATE TABLE soundcloud_performance_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        track_id INTEGER NOT NULL REFERENCES soundcloud_tracks(id) ON DELETE CASCADE,
+        captured_at TEXT NOT NULL,
+        playback_count INTEGER,
+        likes_count INTEGER,
+        comment_count INTEGER,
+        reposts_count INTEGER
+      );
+      CREATE INDEX idx_soundcloud_snapshots_track_time ON soundcloud_performance_snapshots(track_id, captured_at DESC);
+    `
   }
 ];
