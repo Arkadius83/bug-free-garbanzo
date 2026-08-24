@@ -546,4 +546,10 @@ export class StudioDatabase {
 }
 
 function numberOrNull(value: unknown): number | null { return typeof value === "number" && Number.isFinite(value) ? value : null; }
-function spotifyArtistId(value: string): string { const match = value.trim().match(/(?:artist\/|spotify:artist:)?([A-Za-z0-9]{10,})/); if (!match) throw new Error("Invalid Spotify artist URL or ID"); return match[1]; }
+function spotifyArtistId(value: string): string {
+  const trimmed = value.trim();
+  if (/^[A-Za-z0-9]{22}$/.test(trimmed)) return trimmed;
+  if (trimmed.startsWith("spotify:artist:")) { const id = trimmed.slice("spotify:artist:".length); if (/^[A-Za-z0-9]{22}$/.test(id)) return id; }
+  try { const parts = new URL(trimmed).pathname.split("/").filter(Boolean); const marker = parts.lastIndexOf("artist"); const id = marker >= 0 ? parts[marker + 1] : ""; if (/^[A-Za-z0-9]{22}$/.test(id)) return id; } catch { /* handled below */ }
+  throw new Error("Invalid Spotify artist URL or ID");
+}
