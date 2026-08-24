@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, CampaignPackItem, CatalogMatchSuggestion, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudContentType, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyConnection, SpotifyReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
+import { AudioPlayer } from "./AudioPlayer";
 
 type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "integrations";
 
@@ -24,6 +25,7 @@ export function App() {
   const [assets, setAssets] = useState<AssetSummary[]>([]);
   const [assetMessage, setAssetMessage] = useState("");
   const [audioAnalyses, setAudioAnalyses] = useState<Record<string, AudioAnalysisSummary>>({});
+  const [playbackUrls, setPlaybackUrls] = useState<Record<string, string>>({});
   const [analyzingAssetId, setAnalyzingAssetId] = useState<string | null>(null);
   const [releaseReadiness, setReleaseReadiness] = useState<ReleaseReadiness | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
@@ -122,6 +124,7 @@ export function App() {
   }, [activeView]);
 
   useEffect(() => { if (activeView === "ai-studio" && activeReleaseId && window.studio) void window.studio.listCampaignPackItems(activeReleaseId).then(setCampaignPackItems).catch((error) => setCampaignPackMessage(error instanceof Error ? error.message : "Could not load campaign pack")); }, [activeView, activeReleaseId]);
+  useEffect(()=>{if(!window.studio)return;const audioAssets=assets.filter((asset)=>asset.kind==="audio");void Promise.all(audioAssets.map(async(asset)=>[asset.id,await window.studio!.getAssetPlaybackUrl(asset.id)] as const)).then((entries)=>setPlaybackUrls(Object.fromEntries(entries))).catch((error)=>setAssetMessage(error instanceof Error?error.message:"Could not prepare audio preview"));},[assets]);
 
   useEffect(() => {
     if (activeView !== "integrations" || !window.studio) return;
@@ -612,6 +615,7 @@ export function App() {
               const analysis = audioAnalyses[asset.id];
               return <article key={asset.id}><b>{asset.kind}</b><div><div className="asset-title"><strong>{asset.fileName}</strong><button onClick={() => void detachAsset(asset.id)}>Detach</button></div><span>{formatBytes(asset.sizeBytes)} · {asset.mimeType ?? "unknown type"}{asset.width && asset.height ? ` · ${asset.width} × ${asset.height}px` : ""}</span><small title={asset.filePath}>{asset.filePath}</small>
                 {asset.kind === "cover" && asset.width && asset.height && (asset.width !== asset.height || asset.width < 3000) && <small className="asset-warning">Cover recommendation: square artwork, at least 3000 × 3000 px.</small>}
+                {asset.kind === "audio" && playbackUrls[asset.id] && <AudioPlayer source={playbackUrls[asset.id]} title={asset.fileName} />}
                 {asset.kind === "audio" && <div className="analysis-row">{analysis ? <><span><b>{formatDuration(analysis.durationSeconds)}</b> duration</span><span><b>{(analysis.sampleRate / 1000).toFixed(1)} kHz</b> sample rate</span><span><b>{analysis.bitDepth ?? "—"} bit</b> depth</span><span><b>{analysis.integratedLufs ?? "—"} LUFS</b> loudness</span><span><b>{analysis.truePeakDbtp ?? "—"} dBTP</b> peak</span>{analysis.loudnessRangeLu !== null && <span><b>{analysis.loudnessRangeLu} LU</b> range</span>}<span className="musical-result"><b>{analysis.bpm ?? "—"} BPM</b>{analysis.bpmConfidence !== null ? `${analysis.bpmConfidence}% confidence` : "tempo unavailable"}{analysis.alternateBpm !== null && <small>alt. {analysis.alternateBpm}</small>}</span><span className="musical-result"><b>{analysis.musicalKey ?? "—"}</b>{analysis.keyConfidence !== null ? `${analysis.keyConfidence}% confidence` : "key unavailable"}{analysis.alternateKey && <small>alt. {analysis.alternateKey}</small>}</span></> : <span>No analysis saved</span>}<button disabled={analyzingAssetId === asset.id} onClick={() => void analyzeAsset(asset.id)}>{analyzingAssetId === asset.id ? "Analyzing..." : analysis ? "Analyze again" : "Analyze audio"}</button></div>}
                 {analysis?.note && <small className="analysis-note">{analysis.note}</small>}
               </div></article>;
