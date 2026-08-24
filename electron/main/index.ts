@@ -1,9 +1,9 @@
 import { app, BrowserWindow, dialog, ipcMain } from "electron";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft } from "./ollama.js";
-import type { AiSettings, AssetKind, CreateReleaseDraftInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus } from "../shared/contracts.js";
+import type { AiSettings, AssetKind, CreateReleaseDraftInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus, UpdateReleaseInput } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 
@@ -60,6 +60,7 @@ ipcMain.handle("studio:get-system-status", async (): Promise<SystemStatus> => {
 ipcMain.handle("studio:get-database-health", () => studioDatabase.health());
 ipcMain.handle("studio:list-releases", () => studioDatabase.listReleases());
 ipcMain.handle("studio:create-release-draft", (_event, input: CreateReleaseDraftInput) => studioDatabase.createReleaseDraft(input));
+ipcMain.handle("studio:update-release", (_event, input: UpdateReleaseInput) => studioDatabase.updateRelease(input));
 ipcMain.handle("studio:get-ai-settings", (): AiSettings => studioDatabase.getSetting("ai.settings", { model: null, language: "en", channel: "Instagram" }));
 ipcMain.handle("studio:save-ai-settings", (_event, settings: AiSettings): AiSettings => {
   const safe: AiSettings = {
@@ -75,6 +76,7 @@ ipcMain.handle("studio:list-drafts", (_event, releaseId?: string | null) => stud
 ipcMain.handle("studio:save-generated-draft", (_event, input: SaveGeneratedDraftInput) => studioDatabase.saveGeneratedDraft(input));
 ipcMain.handle("studio:update-draft-status", (_event, draftId: string, status: DraftStatus) => studioDatabase.updateDraftStatus(draftId, status));
 ipcMain.handle("studio:list-assets", (_event, releaseId: string) => studioDatabase.listAssets(releaseId));
+ipcMain.handle("studio:detach-asset", (_event, assetId: string) => studioDatabase.detachAsset(assetId));
 ipcMain.handle("studio:get-audio-analysis", (_event, assetId: string) => studioDatabase.getAudioAnalysis(assetId));
 ipcMain.handle("studio:get-release-readiness", (_event, releaseId: string) => studioDatabase.getReleaseReadiness(releaseId));
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
@@ -92,8 +94,26 @@ ipcMain.handle("studio:select-and-attach-asset", async (event, releaseId: string
   if (result.canceled || !result.filePaths[0]) return null;
   const filePath = result.filePaths[0];
   const details = await stat(filePath);
-  return studioDatabase.attachAsset({ releaseId, kind, filePath, fileName: path.basename(filePath), mimeType: inferMimeType(filePath), sizeBytes: details.size, modifiedAt: details.mtime.toISOString() });
+  const dimensions = kind === "cover" ? await getImageDimensions(filePath) : null;
+  return studioDatabase.attachAsset({ releaseId, kind, filePath, fileName: path.basename(filePath), mimeType: inferMimeType(filePath), sizeBytes: details.size, modifiedAt: details.mtime.toISOString(), width: dimensions?.width ?? null, height: dimensions?.height ?? null });
 });
+
+async function getImageDimensions(filePath: string): Promise<{ width: number; height: number } | null> {
+  const buffer = await readFile(filePath);
+  if (buffer.length >= 24 && buffer.toString("ascii", 1, 4) === "PNG") return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
+  if (buffer[0] === 0xff && buffer[1] === 0xd8) {
+    let offset = 2;
+    while (offset + 9 < buffer.length) {
+      if (buffer[offset] !== 0xff) { offset++; continue; }
+      const marker = buffer[offset + 1];
+      if ([0xc0,0xc1,0xc2,0xc3,0xc5,0xc6,0xc7,0xc9,0xca,0xcb,0xcd,0xce,0xcf].includes(marker)) return { height: buffer.readUInt16BE(offset + 5), width: buffer.readUInt16BE(offset + 7) };
+      const length = buffer.readUInt16BE(offset + 2);
+      if (length < 2) break;
+      offset += 2 + length;
+    }
+  }
+  return null;
+}
 
 function inferMimeType(filePath: string): string | null {
   const extension = path.extname(filePath).toLowerCase();
