@@ -183,6 +183,7 @@ export interface StudioApi {
   listReleases(): Promise<ReleaseSummary[]>;
   createReleaseDraft(input: CreateReleaseDraftInput): Promise<ReleaseSummary>;
   updateRelease(input: UpdateReleaseInput): Promise<ReleaseSummary>;
+  deleteRelease(releaseId: string): Promise<void>;
   getAiSettings(): Promise<AiSettings>;
   saveAiSettings(settings: AiSettings): Promise<AiSettings>;
   generateCampaignDraft(input: GenerateCampaignDraftInput): Promise<GeneratedCampaignDraft>;
