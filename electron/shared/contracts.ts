@@ -226,7 +226,14 @@ export interface SoundCloudTrackSummary {
   engagementScore: number;
   releaseId: string | null;
   releaseTitle: string | null;
+  trend: "baseline" | "growing" | "stable" | "declining";
+  playsDelta: number | null;
+  snapshotCount: number;
 }
+
+export interface SoundCloudPerformancePoint { capturedAt: string; playbackCount: number | null; likesCount: number | null; commentCount: number | null; repostsCount: number | null; }
+export interface SoundCloudPerformanceWindow { days: 7 | 30 | 90; available: boolean; playsDelta: number | null; likesDelta: number | null; commentsDelta: number | null; repostsDelta: number | null; }
+export interface SoundCloudTrackPerformance { trackId: number; points: SoundCloudPerformancePoint[]; windows: SoundCloudPerformanceWindow[]; }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
@@ -277,4 +284,5 @@ export interface StudioApi {
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): Promise<SoundCloudTrackSummary>;
   setSoundCloudTracksContentType(ids: number[], contentType: SoundCloudContentType): Promise<SoundCloudTrackSummary[]>;
   linkSoundCloudTrack(trackId: number, releaseId: string | null): Promise<SoundCloudTrackSummary>;
+  getSoundCloudTrackPerformance(trackId: number): Promise<SoundCloudTrackPerformance>;
 }
