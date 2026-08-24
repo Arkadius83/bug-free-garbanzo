@@ -1,6 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, protocol } from "electron";
 import { readFile, stat } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
 import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
@@ -10,6 +10,7 @@ import { SoundCloudClient } from "./soundcloud.js";
 import { SpotifyClient } from "./spotify.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
+protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 let studioDatabase: StudioDatabase;
 let soundCloudClient: SoundCloudClient;
 let spotifyClient: SpotifyClient;
@@ -95,6 +96,7 @@ ipcMain.handle("studio:update-draft-status", (_event, draftId: string, status: D
 ipcMain.handle("studio:list-assets", (_event, releaseId: string) => studioDatabase.listAssets(releaseId));
 ipcMain.handle("studio:detach-asset", (_event, assetId: string) => studioDatabase.detachAsset(assetId));
 ipcMain.handle("studio:get-audio-analysis", (_event, assetId: string) => studioDatabase.getAudioAnalysis(assetId));
+ipcMain.handle("studio:get-asset-playback-url", (_event, assetId: string) => { const asset=studioDatabase.getAssetForAnalysis(assetId); if(!asset||asset.kind!=="audio")throw new Error("Audio asset not found"); return `studio-media://asset/${encodeURIComponent(assetId)}`; });
 ipcMain.handle("studio:get-release-readiness", (_event, releaseId: string) => studioDatabase.getReleaseReadiness(releaseId));
 ipcMain.handle("studio:list-tasks", (_event, releaseId?: string | null) => studioDatabase.listTasks(releaseId));
 ipcMain.handle("studio:create-task", (_event, input: CreateTaskInput) => studioDatabase.createTask(input));
@@ -176,6 +178,7 @@ void app.whenReady().then(() => {
   studioDatabase.initialize();
   soundCloudClient = new SoundCloudClient(app.getPath("userData"));
   spotifyClient = new SpotifyClient(app.getPath("userData"));
+  protocol.handle("studio-media", (request) => { const url=new URL(request.url); if(url.hostname!=="asset")return new Response("Not found",{status:404}); const asset=studioDatabase.getAssetForAnalysis(decodeURIComponent(url.pathname.slice(1))); if(!asset||asset.kind!=="audio")return new Response("Not found",{status:404}); return net.fetch(pathToFileURL(asset.filePath).toString(), { headers: request.headers }); });
   if (process.platform === "win32" && !app.isPackaged) app.setAsDefaultProtocolClient("ai-studio-manager", process.execPath, [path.resolve(process.argv[1])]);
   else app.setAsDefaultProtocolClient("ai-studio-manager");
   createWindow();
