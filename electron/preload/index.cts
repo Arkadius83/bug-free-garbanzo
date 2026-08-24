@@ -62,7 +62,11 @@ const api: StudioApi = {
   refreshMediaGeneration: (generationId) => ipcRenderer.invoke("studio:refresh-media-generation", generationId),
   listMediaGenerations: (releaseId) => ipcRenderer.invoke("studio:list-media-generations", releaseId),
   updateMediaGenerationStatus: (generationId, status) => ipcRenderer.invoke("studio:update-media-generation-status", generationId, status),
-  getGeneratedMediaUrl: (generationId) => ipcRenderer.invoke("studio:get-generated-media-url", generationId)
+  getGeneratedMediaUrl: (generationId) => ipcRenderer.invoke("studio:get-generated-media-url", generationId),
+  listPublishingQueue: () => ipcRenderer.invoke("studio:list-publishing-queue"),
+  createPublishingQueueItem: (input) => ipcRenderer.invoke("studio:create-publishing-queue-item",input),
+  updatePublishingQueueStatus: (itemId,status) => ipcRenderer.invoke("studio:update-publishing-queue-status",itemId,status),
+  exportPublishingPack: (itemId) => ipcRenderer.invoke("studio:export-publishing-pack",itemId)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
