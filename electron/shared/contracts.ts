@@ -145,6 +145,21 @@ export interface ReleaseSummary {
   createdAt: string;
 }
 
+export interface ReadinessCheck {
+  id: "audio" | "analysis" | "cover" | "date" | "metadata" | "campaign";
+  label: string;
+  complete: boolean;
+  weight: number;
+  detail: string;
+}
+
+export interface ReleaseReadiness {
+  releaseId: string;
+  score: number;
+  checks: ReadinessCheck[];
+  missing: string[];
+}
+
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
   title: string;
@@ -168,4 +183,5 @@ export interface StudioApi {
   selectAndAttachAsset(releaseId: string, kind: AssetKind): Promise<AssetSummary | null>;
   getAudioAnalysis(assetId: string): Promise<AudioAnalysisSummary | null>;
   analyzeAudio(assetId: string): Promise<AudioAnalysisSummary>;
+  getReleaseReadiness(releaseId: string): Promise<ReleaseReadiness>;
 }
