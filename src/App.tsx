@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
 type AppView = "overview" | "releases" | "ai-studio";
@@ -23,6 +23,8 @@ export function App() {
   const [activeReleaseId, setActiveReleaseId] = useState<string | null>(null);
   const [assets, setAssets] = useState<AssetSummary[]>([]);
   const [assetMessage, setAssetMessage] = useState("");
+  const [audioAnalyses, setAudioAnalyses] = useState<Record<string, AudioAnalysisSummary>>({});
+  const [analyzingAssetId, setAnalyzingAssetId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
   const [bridgeError, setBridgeError] = useState("");
   const [aiSettings, setAiSettings] = useState<AiSettings>({ model: null, language: "en", channel: "Instagram" });
@@ -157,7 +159,12 @@ export function App() {
     setTitle(release.title);
     setStory(release.story);
     setReleaseDate(release.releaseDate ?? "");
-    setAssets(window.studio ? await window.studio.listAssets(release.id) : []);
+    const releaseAssets = window.studio ? await window.studio.listAssets(release.id) : [];
+    setAssets(releaseAssets);
+    if (window.studio) {
+      const analyses = await Promise.all(releaseAssets.filter((asset) => asset.kind === "audio").map(async (asset) => [asset.id, await window.studio!.getAudioAnalysis(asset.id)] as const));
+      setAudioAnalyses(Object.fromEntries(analyses.filter((entry): entry is readonly [string, AudioAnalysisSummary] => entry[1] !== null)));
+    }
     setAssetMessage(`Active release: ${release.title}`);
   }
 
@@ -181,6 +188,26 @@ export function App() {
   function formatBytes(value: number): string {
     if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  async function analyzeAsset(assetId: string) {
+    if (!window.studio) return;
+    setAnalyzingAssetId(assetId);
+    setAssetMessage("Analyzing audio locally...");
+    try {
+      const analysis = await window.studio.analyzeAudio(assetId);
+      setAudioAnalyses((current) => ({ ...current, [assetId]: analysis }));
+      setAssetMessage(analysis.status === "complete" ? "Audio analysis completed" : "Basic WAV analysis completed");
+    } catch (error) {
+      setAssetMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Audio analysis failed");
+    } finally {
+      setAnalyzingAssetId(null);
+    }
+  }
+
+  function formatDuration(seconds: number): string {
+    const minutes = Math.floor(seconds / 60);
+    return `${minutes}:${Math.round(seconds % 60).toString().padStart(2, "0")}`;
   }
 
   function nextDraftActions(status: DraftStatus): DraftStatus[] {
@@ -254,7 +281,13 @@ export function App() {
             <label>Track story<textarea rows={6} value={story} onChange={(event) => setStory(event.target.value)} /></label>
             {saveMessage && <p className="save-message">{saveMessage}</p>}
             <div className="dropzone"><strong>Release media library</strong><span>Files remain in their original folders; the application stores secure references.</span><div className="asset-buttons"><button onClick={() => void attachAsset("audio")}>Choose audio</button><button onClick={() => void attachAsset("cover")}>Choose cover</button></div>{assetMessage && <p>{assetMessage}</p>}</div>
-            {assets.length > 0 && <div className="asset-list-local">{assets.map((asset) => <article key={asset.id}><b>{asset.kind}</b><div><strong>{asset.fileName}</strong><span>{formatBytes(asset.sizeBytes)} · {asset.mimeType ?? "unknown type"}</span><small title={asset.filePath}>{asset.filePath}</small></div></article>)}</div>}
+            {assets.length > 0 && <div className="asset-list-local">{assets.map((asset) => {
+              const analysis = audioAnalyses[asset.id];
+              return <article key={asset.id}><b>{asset.kind}</b><div><strong>{asset.fileName}</strong><span>{formatBytes(asset.sizeBytes)} · {asset.mimeType ?? "unknown type"}</span><small title={asset.filePath}>{asset.filePath}</small>
+                {asset.kind === "audio" && <div className="analysis-row">{analysis ? <><span><b>{formatDuration(analysis.durationSeconds)}</b> duration</span><span><b>{(analysis.sampleRate / 1000).toFixed(1)} kHz</b> sample rate</span><span><b>{analysis.bitDepth ?? "—"} bit</b> depth</span><span><b>{analysis.integratedLufs ?? "—"} LUFS</b> loudness</span><span><b>{analysis.truePeakDbtp ?? "—"} dBTP</b> peak</span>{analysis.loudnessRangeLu !== null && <span><b>{analysis.loudnessRangeLu} LU</b> range</span>}</> : <span>No analysis saved</span>}<button disabled={analyzingAssetId === asset.id} onClick={() => void analyzeAsset(asset.id)}>{analyzingAssetId === asset.id ? "Analyzing..." : analysis ? "Analyze again" : "Analyze audio"}</button></div>}
+                {analysis?.note && <small className="analysis-note">{analysis.note}</small>}
+              </div></article>;
+            })}</div>}
           </section>
 
           <section className="panel output-panel">
