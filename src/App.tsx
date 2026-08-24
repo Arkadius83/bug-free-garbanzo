@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, CatalogMatchSuggestion, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudContentType, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyConnection, SpotifyReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, CampaignPackItem, CatalogMatchSuggestion, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudContentType, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyConnection, SpotifyReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
 type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "integrations";
@@ -63,6 +63,9 @@ export function App() {
   const [spotifyMessage, setSpotifyMessage] = useState("");
   const [spotifyBusy, setSpotifyBusy] = useState(false);
   const [catalogMatches, setCatalogMatches] = useState<CatalogMatchSuggestion[]>([]);
+  const [campaignPackItems, setCampaignPackItems] = useState<CampaignPackItem[]>([]);
+  const [campaignPackBusy, setCampaignPackBusy] = useState(false);
+  const [campaignPackMessage, setCampaignPackMessage] = useState("");
   const artist = useMemo(() => artists.find((item) => item.id === selectedArtist) ?? artists[0], [selectedArtist]);
 
   useEffect(() => {
@@ -117,6 +120,8 @@ export function App() {
   useEffect(() => {
     if (activeView === "calendar" && window.studio) void window.studio.listTasks().then(setTasks).catch((error) => setTaskMessage(error instanceof Error ? error.message : "Could not load tasks"));
   }, [activeView]);
+
+  useEffect(() => { if (activeView === "ai-studio" && activeReleaseId && window.studio) void window.studio.listCampaignPackItems(activeReleaseId).then(setCampaignPackItems).catch((error) => setCampaignPackMessage(error instanceof Error ? error.message : "Could not load campaign pack")); }, [activeView, activeReleaseId]);
 
   useEffect(() => {
     if (activeView !== "integrations" || !window.studio) return;
@@ -277,6 +282,8 @@ export function App() {
         : message.replace(/^Error invoking remote method '[^']+': Error: /, ""));
     }
   }
+  async function generateCampaignPack() { if (!window.studio || !activeReleaseId || !aiSettings.model) { setCampaignPackMessage("Save a release and select an Ollama model first."); return; } setCampaignPackBusy(true); setCampaignPackMessage("Generating the complete local campaign pack..."); try { const items=await window.studio.generateCampaignPack({releaseId:activeReleaseId,...aiSettings,model:aiSettings.model,artistId:selectedArtist,artistName:artist.name,artistVoice:artist.voice,title,primaryGenre,story,releaseDate:releaseDate||null}); setCampaignPackItems(items); setCampaignPackMessage(`Campaign pack generated in ${aiSettings.language.toUpperCase()}. ${items.length} items saved as Draft.`); } catch(error){setCampaignPackMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Campaign pack generation failed");} finally{setCampaignPackBusy(false);} }
+  async function changeCampaignPackStatus(itemId:string,next:DraftStatus){if(!window.studio)return;try{const updated=await window.studio.updateCampaignPackItemStatus(itemId,next);setCampaignPackItems((current)=>current.map((item)=>item.id===updated.id?updated:item));}catch(error){setCampaignPackMessage(error instanceof Error?error.message:"Could not update campaign item");}}
 
   async function persistRelease(): Promise<ReleaseSummary> {
     if (!window.studio) throw new Error("Desktop bridge unavailable");
@@ -645,6 +652,7 @@ export function App() {
             </div>
           </section>
         </div>
+        {activeView === "ai-studio" && <section className="panel campaign-pack-panel"><div className="campaign-pack-heading"><div><span className="eyebrow">Campaign Pack Generator V1</span><h2>One release. Every promotional format.</h2><p>Generated locally with Ollama. Prompts stay provider-independent until you approve them for image or video generation.</p></div><button className="primary" disabled={campaignPackBusy||!activeReleaseId||!aiSettings.model} onClick={()=>void generateCampaignPack()}>{campaignPackBusy?"Generating pack...":`Generate ${aiSettings.language.toUpperCase()} pack`}</button></div>{campaignPackMessage&&<p className="integration-message">{campaignPackMessage}</p>}<div className="campaign-pack-grid">{campaignPackItems.map((item)=><article key={item.id}><div className="pack-item-head"><div><span>{item.kind.replaceAll("-"," ").toUpperCase()}</span><strong>{item.channel??"MEDIA GENERATION"} · {item.language.toUpperCase()}</strong></div><b className={`status-${item.status}`}>{item.status}</b></div><p>{item.content}</p><div className="pack-item-actions">{nextDraftActions(item.status).map((next)=><button key={next} onClick={()=>void changeCampaignPackStatus(item.id,next)}>{next}</button>)}</div></article>)}</div></section>}
         </div>}
       </main>
     </div>
