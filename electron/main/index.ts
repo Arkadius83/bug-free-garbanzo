@@ -112,6 +112,7 @@ ipcMain.handle("studio:sync-soundcloud-catalog", async () => studioDatabase.impo
 ipcMain.handle("studio:list-soundcloud-tracks", () => studioDatabase.listSoundCloudTracks());
 ipcMain.handle("studio:update-soundcloud-track", (_event, input: UpdateSoundCloudTrackInput) => studioDatabase.updateSoundCloudTrack(input));
 ipcMain.handle("studio:set-soundcloud-tracks-content-type", (_event, ids: number[], contentType: SoundCloudContentType) => studioDatabase.setSoundCloudTracksContentType(ids, contentType));
+ipcMain.handle("studio:link-soundcloud-track", (_event, trackId: number, releaseId: string | null) => studioDatabase.linkSoundCloudTrack(trackId, releaseId));
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
   const asset = studioDatabase.getAssetForAnalysis(assetId);
   if (!asset) throw new Error("Audio asset not found");
