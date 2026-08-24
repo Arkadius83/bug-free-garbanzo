@@ -40,6 +40,16 @@ input:focus, textarea:focus { border-color: #8eaa42; }
 textarea { resize: vertical; }
 .dropzone { margin-top: 18px; border: 1px dashed #42504c; border-radius: 9px; padding: 22px; text-align: center; color: #aab1ae; }
 .dropzone span { display: block; color: #69726f; font-size: 12px; margin-top: 5px; }
+.dropzone p { margin: 10px 0 0; color: #b4d84a; font-size: 11px; }
+.asset-buttons { display: flex; justify-content: center; gap: 8px; margin-top: 14px; }
+.asset-buttons button { border: 1px solid #3d4a46; border-radius: 6px; padding: 8px 11px; background: #151c1a; color: #e1e6e4; cursor: pointer; }
+.asset-buttons button:hover { border-color: #b4d84a; }
+.asset-list-local { display: grid; gap: 8px; margin-top: 12px; }
+.asset-list-local article { display: grid; grid-template-columns: 54px 1fr; gap: 10px; padding: 10px; border: 1px solid #293431; border-radius: 7px; background: #0a0f10; text-align: left; }
+.asset-list-local b { color: #b4d84a; font-size: 10px; text-transform: uppercase; }
+.asset-list-local strong, .asset-list-local span, .asset-list-local small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.asset-list-local span { margin-top: 3px; color: #9ca5a1; font-size: 11px; }
+.asset-list-local small { margin-top: 3px; color: #626d69; font-size: 10px; }
 .draft { border: 1px solid #303a37; border-radius: 9px; overflow: hidden; background: #090d0f; }
 .ai-controls { display: grid; grid-template-columns: 1.5fr .8fr 1fr auto; gap: 9px; align-items: end; margin-bottom: 12px; }
 .ai-controls label { margin: 0; }
@@ -61,6 +71,8 @@ pre { margin: 0; padding: 20px; min-height: 210px; color: #d7dcda; white-space: 
 .release-list article strong, .release-list article span { display: block; }
 .release-list article span { margin-top: 3px; color: #77817e; font-size: 11px; }
 .release-list article b { color: #b4d84a; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
+.release-list article { cursor: pointer; }
+.release-list article:hover, .release-list article.active-release { border-color: #b4d84a; }
 .draft-workflow { margin-top: 20px; display: grid; gap: 9px; }
 .draft-workflow > p { color: #77817e; font-size: 13px; }
 .draft-workflow > article { display: grid; gap: 10px; padding: 12px; border: 1px solid #293431; border-radius: 8px; background: #0a0f10; }

@@ -12,7 +12,9 @@ const api: StudioApi = {
   generateCampaignDraft: (input) => ipcRenderer.invoke("studio:generate-campaign-draft", input),
   listDrafts: (releaseId) => ipcRenderer.invoke("studio:list-drafts", releaseId),
   saveGeneratedDraft: (input) => ipcRenderer.invoke("studio:save-generated-draft", input),
-  updateDraftStatus: (draftId, status) => ipcRenderer.invoke("studio:update-draft-status", draftId, status)
+  updateDraftStatus: (draftId, status) => ipcRenderer.invoke("studio:update-draft-status", draftId, status),
+  listAssets: (releaseId) => ipcRenderer.invoke("studio:list-assets", releaseId),
+  selectAndAttachAsset: (releaseId, kind) => ipcRenderer.invoke("studio:select-and-attach-asset", releaseId, kind)
 };
 
 contextBridge.exposeInMainWorld("studio", api);

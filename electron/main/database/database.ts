@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { CreateReleaseDraftInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseSummary, SaveGeneratedDraftInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, CreateReleaseDraftInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseSummary, SaveGeneratedDraftInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -168,6 +168,47 @@ export class StudioDatabase {
       throw error;
     }
     return this.listDrafts().find((draft) => draft.id === draftId)!;
+  }
+
+  listAssets(releaseId: string): AssetSummary[] {
+    const rows = this.database.prepare(`
+      SELECT a.id, r.id AS releaseId, a.track_id AS trackId, a.kind, a.file_path AS filePath,
+             a.mime_type AS mimeType, a.metadata_json AS metadataJson, a.created_at AS createdAt
+      FROM assets a
+      JOIN projects p ON p.id = a.project_id
+      JOIN releases r ON r.project_id = p.id
+      WHERE r.id = ?
+      ORDER BY a.created_at DESC, a.id DESC
+    `).all(releaseId) as unknown as Array<Omit<AssetSummary, "fileName" | "sizeBytes" | "modifiedAt"> & { metadataJson: string }>;
+    return rows.map(({ metadataJson, ...row }) => {
+      const metadata = JSON.parse(metadataJson) as { fileName?: string; sizeBytes?: number; modifiedAt?: string | null };
+      return { ...row, fileName: metadata.fileName ?? row.filePath.split(/[\\/]/).pop() ?? row.filePath, sizeBytes: metadata.sizeBytes ?? 0, modifiedAt: metadata.modifiedAt ?? null };
+    });
+  }
+
+  attachAsset(input: AttachAssetInput): AssetSummary {
+    const link = this.database.prepare(`
+      SELECT r.project_id AS projectId, rt.track_id AS trackId
+      FROM releases r
+      LEFT JOIN release_tracks rt ON rt.release_id = r.id AND rt.position = 1
+      WHERE r.id = ?
+    `).get(input.releaseId) as { projectId: string; trackId: string | null } | undefined;
+    if (!link) throw new Error("Release not found");
+    const existing = this.listAssets(input.releaseId).find((asset) => asset.kind === input.kind && asset.filePath === input.filePath);
+    if (existing) return existing;
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const metadata = JSON.stringify({ fileName: input.fileName, sizeBytes: input.sizeBytes, modifiedAt: input.modifiedAt });
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("INSERT INTO assets (id, project_id, track_id, kind, file_path, mime_type, metadata_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(id, link.projectId, link.trackId, input.kind, input.filePath, input.mimeType, metadata, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('asset', ?, 'asset.attached', ?, ?)").run(id, JSON.stringify({ releaseId: input.releaseId, kind: input.kind, filePath: input.filePath }), now);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return { id, releaseId: input.releaseId, trackId: link.trackId, kind: input.kind, filePath: input.filePath, fileName: input.fileName, mimeType: input.mimeType, sizeBytes: input.sizeBytes, modifiedAt: input.modifiedAt, createdAt: now };
   }
 
   close(): void { this.database.close(); }

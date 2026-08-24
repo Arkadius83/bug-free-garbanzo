@@ -1,8 +1,9 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft } from "./ollama.js";
-import type { AiSettings, CreateReleaseDraftInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus } from "../shared/contracts.js";
+import type { AiSettings, AssetKind, CreateReleaseDraftInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -72,6 +73,24 @@ ipcMain.handle("studio:generate-campaign-draft", (_event, input: GenerateCampaig
 ipcMain.handle("studio:list-drafts", (_event, releaseId?: string | null) => studioDatabase.listDrafts(releaseId));
 ipcMain.handle("studio:save-generated-draft", (_event, input: SaveGeneratedDraftInput) => studioDatabase.saveGeneratedDraft(input));
 ipcMain.handle("studio:update-draft-status", (_event, draftId: string, status: DraftStatus) => studioDatabase.updateDraftStatus(draftId, status));
+ipcMain.handle("studio:list-assets", (_event, releaseId: string) => studioDatabase.listAssets(releaseId));
+ipcMain.handle("studio:select-and-attach-asset", async (event, releaseId: string, kind: AssetKind) => {
+  const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
+  const filters = kind === "audio"
+    ? [{ name: "Audio", extensions: ["wav", "mp3", "flac", "aiff", "aif", "m4a", "ogg"] }]
+    : [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "tif", "tiff"] }];
+  const result = owner ? await dialog.showOpenDialog(owner, { properties: ["openFile"], filters }) : await dialog.showOpenDialog({ properties: ["openFile"], filters });
+  if (result.canceled || !result.filePaths[0]) return null;
+  const filePath = result.filePaths[0];
+  const details = await stat(filePath);
+  return studioDatabase.attachAsset({ releaseId, kind, filePath, fileName: path.basename(filePath), mimeType: inferMimeType(filePath), sizeBytes: details.size, modifiedAt: details.mtime.toISOString() });
+});
+
+function inferMimeType(filePath: string): string | null {
+  const extension = path.extname(filePath).toLowerCase();
+  const types: Record<string, string> = { ".wav": "audio/wav", ".mp3": "audio/mpeg", ".flac": "audio/flac", ".aiff": "audio/aiff", ".aif": "audio/aiff", ".m4a": "audio/mp4", ".ogg": "audio/ogg", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".tif": "image/tiff", ".tiff": "image/tiff" };
+  return types[extension] ?? null;
+}
 
 void app.whenReady().then(() => {
   studioDatabase = new StudioDatabase(path.join(app.getPath("userData"), "ai-studio-manager.sqlite"));

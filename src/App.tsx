@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
 const modules = ["Release", "Content", "Visuals", "Schedule", "Website", "Engagement", "Trends", "Analytics", "Business", "Memory"];
@@ -11,6 +11,8 @@ export function App() {
   const [releases, setReleases] = useState<ReleaseSummary[]>([]);
   const [drafts, setDrafts] = useState<DraftSummary[]>([]);
   const [activeReleaseId, setActiveReleaseId] = useState<string | null>(null);
+  const [assets, setAssets] = useState<AssetSummary[]>([]);
+  const [assetMessage, setAssetMessage] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [bridgeError, setBridgeError] = useState("");
   const [aiSettings, setAiSettings] = useState<AiSettings>({ model: null, language: "en", channel: "Instagram" });
@@ -139,6 +141,38 @@ export function App() {
     }
   }
 
+  async function selectRelease(release: ReleaseSummary) {
+    setActiveReleaseId(release.id);
+    setSelectedArtist(release.artistId);
+    setTitle(release.title);
+    setStory(release.story);
+    setReleaseDate(release.releaseDate ?? "");
+    setAssets(window.studio ? await window.studio.listAssets(release.id) : []);
+    setAssetMessage(`Active release: ${release.title}`);
+  }
+
+  async function attachAsset(kind: AssetKind) {
+    if (!window.studio) return;
+    setAssetMessage(kind === "audio" ? "Choose the source audio file..." : "Choose the cover artwork...");
+    try {
+      const release = await persistRelease();
+      const asset = await window.studio.selectAndAttachAsset(release.id, kind);
+      if (!asset) {
+        setAssetMessage("File selection cancelled");
+        return;
+      }
+      setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+      setAssetMessage(`${asset.fileName} attached to ${release.title}`);
+    } catch (error) {
+      setAssetMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not attach file");
+    }
+  }
+
+  function formatBytes(value: number): string {
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
   function nextDraftActions(status: DraftStatus): DraftStatus[] {
     if (status === "draft") return ["approved", "rejected"];
     if (status === "approved") return ["draft", "scheduled"];
@@ -189,7 +223,8 @@ export function App() {
             <label>Release date<input type="date" value={releaseDate} onChange={(event) => setReleaseDate(event.target.value)} /></label>
             <label>Track story<textarea rows={6} value={story} onChange={(event) => setStory(event.target.value)} /></label>
             {saveMessage && <p className="save-message">{saveMessage}</p>}
-            <div className="dropzone"><strong>Drop audio and cover here</strong><span>Media library arrives in the next milestone</span></div>
+            <div className="dropzone"><strong>Release media library</strong><span>Files remain in their original folders; the application stores secure references.</span><div className="asset-buttons"><button onClick={() => void attachAsset("audio")}>Choose audio</button><button onClick={() => void attachAsset("cover")}>Choose cover</button></div>{assetMessage && <p>{assetMessage}</p>}</div>
+            {assets.length > 0 && <div className="asset-list-local">{assets.map((asset) => <article key={asset.id}><b>{asset.kind}</b><div><strong>{asset.fileName}</strong><span>{formatBytes(asset.sizeBytes)} · {asset.mimeType ?? "unknown type"}</span><small title={asset.filePath}>{asset.filePath}</small></div></article>)}</div>}
           </section>
 
           <section className="panel output-panel">
@@ -221,7 +256,7 @@ export function App() {
             <div className="release-list">
               <strong>Saved releases</strong>
               {releases.length === 0 ? <p>No releases saved yet.</p> : releases.slice(0, 6).map((release) => (
-                <article key={release.id}><div><strong>{release.title}</strong><span>{release.artistName} · {release.primaryGenre}</span></div><b>{release.status}</b></article>
+                <article className={activeReleaseId === release.id ? "active-release" : ""} key={release.id} onClick={() => void selectRelease(release)}><div><strong>{release.title}</strong><span>{release.artistName} · {release.primaryGenre}</span></div><b>{activeReleaseId === release.id ? "ACTIVE" : release.status}</b></article>
               ))}
             </div>
             <div className="draft-workflow">

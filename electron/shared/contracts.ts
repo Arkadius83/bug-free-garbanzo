@@ -67,6 +67,31 @@ export interface SaveGeneratedDraftInput {
   model: string;
 }
 
+export type AssetKind = "audio" | "cover";
+
+export interface AssetSummary {
+  id: string;
+  releaseId: string;
+  trackId: string | null;
+  kind: AssetKind;
+  filePath: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  modifiedAt: string | null;
+  createdAt: string;
+}
+
+export interface AttachAssetInput {
+  releaseId: string;
+  kind: AssetKind;
+  filePath: string;
+  fileName: string;
+  mimeType: string | null;
+  sizeBytes: number;
+  modifiedAt: string | null;
+}
+
 export interface SystemStatus {
   appVersion: string;
   platform: string;
@@ -116,4 +141,6 @@ export interface StudioApi {
   listDrafts(releaseId?: string | null): Promise<DraftSummary[]>;
   saveGeneratedDraft(input: SaveGeneratedDraftInput): Promise<DraftSummary>;
   updateDraftStatus(draftId: string, status: DraftStatus): Promise<DraftSummary>;
+  listAssets(releaseId: string): Promise<AssetSummary[]>;
+  selectAndAttachAsset(releaseId: string, kind: AssetKind): Promise<AssetSummary | null>;
 }

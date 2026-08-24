@@ -22,6 +22,9 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(database.updateDraftStatus(draft.id, "scheduled").status, "scheduled");
     assert.equal(database.updateDraftStatus(draft.id, "published").status, "published");
     assert.throws(() => database.updateDraftStatus(draft.id, "draft"), /Invalid draft transition/);
+    const asset = database.attachAsset({ releaseId: created.id, kind: "audio", filePath: path.join(directory, "track.wav"), fileName: "track.wav", mimeType: "audio/wav", sizeBytes: 1234, modifiedAt: "2026-08-24T10:00:00.000Z" });
+    assert.equal(database.listAssets(created.id)[0]?.id, asset.id);
+    assert.equal(database.listAssets(created.id)[0]?.sizeBytes, 1234);
     database.setSetting("ai", { model: "small-model", language: "en" });
     assert.deepEqual(database.getSetting("ai", null), { model: "small-model", language: "en" });
   } finally {

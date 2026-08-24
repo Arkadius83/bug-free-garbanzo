@@ -47,3 +47,12 @@ Every creation and status transition writes an append-only Event record.
 - Generation receives only explicit release fields; it has no filesystem, shell or publishing access.
 - Marketing generation requests disabled reasoning, but DeepSeek R1 distillates may still reason internally. They receive a bounded budget large enough to reach final copy; reasoning fields and `<think>` blocks are never shown in the application.
 - Generated copy is always a preview and requires human approval.
+
+## Media Library V1
+
+- Audio and cover files are selected through the native Electron file dialog.
+- Large media is never copied into SQLite or the repository; the database stores an absolute path and metadata.
+- Each asset is linked to the owning Project and primary Track and is resolved through its Release.
+- Re-attaching the same path and kind to the same release is idempotent.
+- File-system access remains in the Electron main process; the renderer receives only typed asset summaries.
+- Audio analysis and managed project-local copies are separate future decisions and are not implied by attachment.
