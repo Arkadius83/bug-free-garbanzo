@@ -80,6 +80,8 @@ export interface AssetSummary {
   sizeBytes: number;
   modifiedAt: string | null;
   createdAt: string;
+  width: number | null;
+  height: number | null;
 }
 
 export interface AudioAnalysisSummary {
@@ -113,6 +115,8 @@ export interface AttachAssetInput {
   mimeType: string | null;
   sizeBytes: number;
   modifiedAt: string | null;
+  width: number | null;
+  height: number | null;
 }
 
 export interface SystemStatus {
@@ -168,11 +172,17 @@ export interface CreateReleaseDraftInput {
   releaseDate?: string | null;
 }
 
+export interface UpdateReleaseInput extends CreateReleaseDraftInput {
+  id: string;
+  status: ReleaseStatus;
+}
+
 export interface StudioApi {
   getSystemStatus(): Promise<SystemStatus>;
   getDatabaseHealth(): Promise<DatabaseHealth>;
   listReleases(): Promise<ReleaseSummary[]>;
   createReleaseDraft(input: CreateReleaseDraftInput): Promise<ReleaseSummary>;
+  updateRelease(input: UpdateReleaseInput): Promise<ReleaseSummary>;
   getAiSettings(): Promise<AiSettings>;
   saveAiSettings(settings: AiSettings): Promise<AiSettings>;
   generateCampaignDraft(input: GenerateCampaignDraftInput): Promise<GeneratedCampaignDraft>;
@@ -181,6 +191,7 @@ export interface StudioApi {
   updateDraftStatus(draftId: string, status: DraftStatus): Promise<DraftSummary>;
   listAssets(releaseId: string): Promise<AssetSummary[]>;
   selectAndAttachAsset(releaseId: string, kind: AssetKind): Promise<AssetSummary | null>;
+  detachAsset(assetId: string): Promise<void>;
   getAudioAnalysis(assetId: string): Promise<AudioAnalysisSummary | null>;
   analyzeAudio(assetId: string): Promise<AudioAnalysisSummary>;
   getReleaseReadiness(releaseId: string): Promise<ReleaseReadiness>;
