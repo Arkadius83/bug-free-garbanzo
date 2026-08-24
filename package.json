@@ -6,7 +6,7 @@
   "main": "dist-electron/main/index.js",
   "type": "module",
   "scripts": {
-    "dev": "concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "dev": "tsc -p electron/tsconfig.json && concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
     "typecheck": "tsc -b --pretty false && tsc -p electron/tsconfig.json --pretty false",
     "preview": "vite preview",
