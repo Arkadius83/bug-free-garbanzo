@@ -42,3 +42,18 @@
 }
 .analysis-row button:disabled { opacity: .55; cursor: wait; }
 .analysis-note { white-space: normal !important; line-height: 1.4; color: #8b728d !important; }
+.asset-title { display: flex; align-items: center; gap: 8px; }
+.asset-title strong { flex: 1; }
+.asset-title button {
+  border: 0;
+  background: transparent;
+  color: #9b7486;
+  font-size: 8px;
+  cursor: pointer;
+}
+.asset-title button:hover { color: #ff91a2; }
+.asset-warning {
+  margin-top: 7px !important;
+  color: #d9a35f !important;
+  white-space: normal !important;
+}
