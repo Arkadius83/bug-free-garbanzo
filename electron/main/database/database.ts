@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CatalogMatchSuggestion, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CampaignPackItem, CampaignPackKind, CatalogMatchSuggestion, ContentLanguage, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -498,6 +498,11 @@ export class StudioDatabase {
     for (const source of soundCloud) for (const target of spotify) { if (source.artistId !== target.artistId) continue; const score = titleSimilarity(source.title, target.name); if (score >= 0.72) suggestions.push({ soundCloudTrackId: source.id, soundCloudTitle: source.title, spotifyReleaseId: target.id, spotifyTitle: target.name, artistId: target.artistId, score: Math.round(score * 100), reason: score === 1 ? "Normalized titles are identical" : "Titles are strongly similar" }); }
     return suggestions.sort((a,b) => b.score-a.score);
   }
+  saveCampaignPackItems(releaseId: string, language: ContentLanguage, model: string, items: Array<{kind:CampaignPackKind;channel:string|null;content:string}>): CampaignPackItem[] {
+    if (!this.database.prepare("SELECT 1 FROM releases WHERE id=?").get(releaseId)) throw new Error("Release not found"); const now=new Date().toISOString(); const insert=this.database.prepare("INSERT INTO campaign_pack_items (id,release_id,kind,channel,language,content,model_name,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?)"); this.database.exec("BEGIN IMMEDIATE"); try{for(const item of items)insert.run(randomUUID(),releaseId,item.kind,item.channel,language,item.content,model,now,now);this.database.exec("COMMIT");}catch(error){this.database.exec("ROLLBACK");throw error;} return this.listCampaignPackItems(releaseId);
+  }
+  listCampaignPackItems(releaseId:string):CampaignPackItem[]{return this.database.prepare(`SELECT i.id,i.release_id AS releaseId,r.title AS releaseTitle,i.kind,i.channel,i.language,i.content,i.status,i.model_name AS model,i.created_at AS createdAt,i.updated_at AS updatedAt FROM campaign_pack_items i JOIN releases r ON r.id=i.release_id WHERE i.release_id=? ORDER BY i.created_at DESC,i.id`).all(releaseId) as unknown as CampaignPackItem[];}
+  updateCampaignPackItemStatus(itemId:string,status:DraftStatus):CampaignPackItem{const current=this.database.prepare("SELECT release_id AS releaseId,status FROM campaign_pack_items WHERE id=?").get(itemId) as {releaseId:string;status:DraftStatus}|undefined;if(!current)throw new Error("Campaign pack item not found");const allowed:Record<DraftStatus,DraftStatus[]>={draft:["approved","rejected"],approved:["draft","scheduled"],scheduled:["approved","published"],published:[],rejected:["draft"]};if(!allowed[current.status].includes(status))throw new Error(`Invalid campaign item transition: ${current.status} → ${status}`);this.database.prepare("UPDATE campaign_pack_items SET status=?,updated_at=? WHERE id=?").run(status,new Date().toISOString(),itemId);return this.listCampaignPackItems(current.releaseId).find((item)=>item.id===itemId)!;}
 
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): SoundCloudTrackSummary {
     if (!["unreviewed", "release", "gem", "archive", "exclude"].includes(input.catalogStatus)) throw new Error("Invalid SoundCloud catalog status");
