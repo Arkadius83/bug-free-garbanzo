@@ -278,6 +278,7 @@ export interface StudioApi {
   detachAsset(assetId: string): Promise<void>;
   getAudioAnalysis(assetId: string): Promise<AudioAnalysisSummary | null>;
   analyzeAudio(assetId: string): Promise<AudioAnalysisSummary>;
+  getAssetPlaybackUrl(assetId: string): Promise<string>;
   getReleaseReadiness(releaseId: string): Promise<ReleaseReadiness>;
   listTasks(releaseId?: string | null): Promise<TaskSummary[]>;
   createTask(input: CreateTaskInput): Promise<TaskSummary>;
