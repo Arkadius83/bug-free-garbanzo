@@ -1,5 +1,5 @@
 import type { OllamaModel } from "../shared/contracts.js";
-import type { GenerateCampaignDraftInput, GeneratedCampaignDraft } from "../shared/contracts.js";
+import type { CampaignChannel, CampaignPackKind, GenerateCampaignDraftInput, GenerateCampaignPackInput, GeneratedCampaignDraft } from "../shared/contracts.js";
 
 interface OllamaTagsResponse {
   models?: Array<{
@@ -112,4 +112,14 @@ export async function runPlanningAgent(model: string, task: string, releaseTitle
   const content = stripThinking(data.message?.content ?? "");
   if (!content) throw new Error(data.error || "Ollama agent returned an empty response");
   return content;
+}
+
+export interface GeneratedPackItem { kind: CampaignPackKind; channel: CampaignChannel | null; content: string; }
+export async function generateCampaignPackContent(input: GenerateCampaignPackInput): Promise<GeneratedPackItem[]> {
+  const response = await fetch("http://127.0.0.1:11434/api/chat", { method:"POST", headers:{"Content-Type":"application/json"}, signal:AbortSignal.timeout(300_000), body:JSON.stringify({ model:input.model, stream:false, think:false, format:"json", keep_alive:"15m", options:{temperature:.5,top_p:.9,num_ctx:6144,num_predict:2600}, messages:[{role:"system",content:`You create factual music promotion packs in ${languageNames[input.language]}. Return only valid JSON. Never invent links, achievements, quotes, collaborators or events. Image and visualizer prompts must describe original artwork and must not imitate a living artist.`},{role:"user",content:[`Artist: ${input.artistName}`,`Voice: ${input.artistVoice}`,`Track: ${input.title}`,`Genre: ${input.primaryGenre}`,`Story: ${input.story||"No story supplied"}`,`Release date: ${input.releaseDate||"not announced"}`,`Return this exact JSON object with string values:`,JSON.stringify({instagram:"Instagram caption with 4-7 hashtags",facebook:"Facebook post",tiktok:"TikTok caption with hook and hashtags",soundcloud:"SoundCloud description",youtube:"YouTube description",videoHook:"Spoken/on-screen hook under 12 words",videoScript:"15-30 second vertical video script with shots and text",imagePrompt:"Detailed square campaign artwork generation prompt; no embedded text",visualizerPrompt:"Detailed looping music visualizer prompt; no embedded text"})].join("\n")}]} ) });
+  if (!response.ok) throw new Error(`Ollama campaign pack failed with HTTP ${response.status}`);
+  const data=await response.json() as {message?:{content?:string};error?:string}; const raw=stripThinking(data.message?.content??"").replace(/^```json\s*|\s*```$/g,""); if(!raw) throw new Error(data.error||"Ollama returned an empty campaign pack");
+  let value:Record<string,unknown>; try{value=JSON.parse(raw) as Record<string,unknown>;}catch{throw new Error("The local model returned invalid campaign pack JSON. Retry with a warmed model.");}
+  const specs:Array<[string,CampaignPackKind,CampaignChannel|null]>=[["instagram","caption","Instagram"],["facebook","caption","Facebook"],["tiktok","caption","TikTok"],["soundcloud","caption","SoundCloud"],["youtube","caption","YouTube"],["videoHook","video-hook","TikTok"],["videoScript","video-script","TikTok"],["imagePrompt","image-prompt",null],["visualizerPrompt","visualizer-prompt","YouTube"]];
+  return specs.map(([key,kind,channel])=>({kind,channel,content:typeof value[key]==="string"?value[key].trim():""})).filter((item)=>item.content);
 }
