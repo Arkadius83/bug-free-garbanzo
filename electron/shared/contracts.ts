@@ -235,6 +235,10 @@ export interface SoundCloudPerformancePoint { capturedAt: string; playbackCount:
 export interface SoundCloudPerformanceWindow { days: 7 | 30 | 90; available: boolean; playsDelta: number | null; likesDelta: number | null; commentsDelta: number | null; repostsDelta: number | null; }
 export interface SoundCloudTrackPerformance { trackId: number; points: SoundCloudPerformancePoint[]; windows: SoundCloudPerformanceWindow[]; }
 
+export interface SpotifyConnection { configured: boolean; connected: boolean; accountId: string | null; displayName: string | null; callbackUrl: string; error: string | null; }
+export interface SpotifyArtistMapping { artistId: ArtistAlias; spotifyArtistId: string; }
+export interface SpotifyReleaseSummary { id: string; name: string; albumType: string; releaseDate: string; totalTracks: number; imageUrl: string | null; spotifyUrl: string; spotifyArtistId: string; artistId: ArtistAlias; importedAt: string; }
+
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
 export interface UpdateSoundCloudTrackInput { id: number; artistId: ArtistAlias | null; catalogStatus: SoundCloudCatalogStatus; contentType: SoundCloudContentType; }
@@ -285,4 +289,12 @@ export interface StudioApi {
   setSoundCloudTracksContentType(ids: number[], contentType: SoundCloudContentType): Promise<SoundCloudTrackSummary[]>;
   linkSoundCloudTrack(trackId: number, releaseId: string | null): Promise<SoundCloudTrackSummary>;
   getSoundCloudTrackPerformance(trackId: number): Promise<SoundCloudTrackPerformance>;
+  getSpotifyConnection(): Promise<SpotifyConnection>;
+  saveSpotifyClientId(clientId: string): Promise<SpotifyConnection>;
+  beginSpotifyConnect(): Promise<void>;
+  disconnectSpotify(): Promise<SpotifyConnection>;
+  getSpotifyArtistMappings(): Promise<SpotifyArtistMapping[]>;
+  saveSpotifyArtistMappings(mappings: SpotifyArtistMapping[]): Promise<SpotifyArtistMapping[]>;
+  syncSpotifyCatalog(): Promise<SpotifyReleaseSummary[]>;
+  listSpotifyReleases(): Promise<SpotifyReleaseSummary[]>;
 }
