@@ -8,6 +8,7 @@ const api: StudioApi = {
   listReleases: () => ipcRenderer.invoke("studio:list-releases"),
   createReleaseDraft: (input) => ipcRenderer.invoke("studio:create-release-draft", input),
   updateRelease: (input) => ipcRenderer.invoke("studio:update-release", input),
+  deleteRelease: (releaseId) => ipcRenderer.invoke("studio:delete-release", releaseId),
   getAiSettings: () => ipcRenderer.invoke("studio:get-ai-settings"),
   saveAiSettings: (settings) => ipcRenderer.invoke("studio:save-ai-settings", settings),
   generateCampaignDraft: (input) => ipcRenderer.invoke("studio:generate-campaign-draft", input),
