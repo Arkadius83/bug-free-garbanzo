@@ -278,5 +278,13 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX idx_spotify_releases_artist_date ON spotify_releases(artist_id, release_date DESC);
     `
+  },
+  {
+    version: 12,
+    name: "unified_catalog_matching_v1",
+    sql: `
+      ALTER TABLE spotify_releases ADD COLUMN release_id TEXT REFERENCES releases(id) ON DELETE SET NULL;
+      CREATE UNIQUE INDEX idx_spotify_releases_local_release ON spotify_releases(release_id) WHERE release_id IS NOT NULL;
+    `
   }
 ];
