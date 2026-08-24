@@ -3,7 +3,7 @@ import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, runPlanningAgent } from "./ollama.js";
-import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
+import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SoundCloudContentType, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
@@ -111,6 +111,7 @@ ipcMain.handle("studio:disconnect-soundcloud", () => soundCloudClient.disconnect
 ipcMain.handle("studio:sync-soundcloud-catalog", async () => studioDatabase.importSoundCloudTracks(await soundCloudClient.fetchAllTracks()));
 ipcMain.handle("studio:list-soundcloud-tracks", () => studioDatabase.listSoundCloudTracks());
 ipcMain.handle("studio:update-soundcloud-track", (_event, input: UpdateSoundCloudTrackInput) => studioDatabase.updateSoundCloudTrack(input));
+ipcMain.handle("studio:set-soundcloud-tracks-content-type", (_event, ids: number[], contentType: SoundCloudContentType) => studioDatabase.setSoundCloudTracksContentType(ids, contentType));
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
   const asset = studioDatabase.getAssetForAnalysis(assetId);
   if (!asset) throw new Error("Audio asset not found");
