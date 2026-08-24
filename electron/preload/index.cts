@@ -34,7 +34,15 @@ const api: StudioApi = {
   updateSoundCloudTrack: (input) => ipcRenderer.invoke("studio:update-soundcloud-track", input),
   setSoundCloudTracksContentType: (ids, contentType) => ipcRenderer.invoke("studio:set-soundcloud-tracks-content-type", ids, contentType),
   linkSoundCloudTrack: (trackId, releaseId) => ipcRenderer.invoke("studio:link-soundcloud-track", trackId, releaseId),
-  getSoundCloudTrackPerformance: (trackId) => ipcRenderer.invoke("studio:get-soundcloud-track-performance", trackId)
+  getSoundCloudTrackPerformance: (trackId) => ipcRenderer.invoke("studio:get-soundcloud-track-performance", trackId),
+  getSpotifyConnection: () => ipcRenderer.invoke("studio:get-spotify-connection"),
+  saveSpotifyClientId: (clientId) => ipcRenderer.invoke("studio:save-spotify-client-id", clientId),
+  beginSpotifyConnect: () => ipcRenderer.invoke("studio:begin-spotify-connect"),
+  disconnectSpotify: () => ipcRenderer.invoke("studio:disconnect-spotify"),
+  getSpotifyArtistMappings: () => ipcRenderer.invoke("studio:get-spotify-artist-mappings"),
+  saveSpotifyArtistMappings: (mappings) => ipcRenderer.invoke("studio:save-spotify-artist-mappings", mappings),
+  syncSpotifyCatalog: () => ipcRenderer.invoke("studio:sync-spotify-catalog"),
+  listSpotifyReleases: () => ipcRenderer.invoke("studio:list-spotify-releases")
 };
 
 contextBridge.exposeInMainWorld("studio", api);
