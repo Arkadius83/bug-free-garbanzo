@@ -61,6 +61,7 @@ ipcMain.handle("studio:get-database-health", () => studioDatabase.health());
 ipcMain.handle("studio:list-releases", () => studioDatabase.listReleases());
 ipcMain.handle("studio:create-release-draft", (_event, input: CreateReleaseDraftInput) => studioDatabase.createReleaseDraft(input));
 ipcMain.handle("studio:update-release", (_event, input: UpdateReleaseInput) => studioDatabase.updateRelease(input));
+ipcMain.handle("studio:delete-release", (_event, releaseId: string) => studioDatabase.deleteRelease(releaseId));
 ipcMain.handle("studio:get-ai-settings", (): AiSettings => studioDatabase.getSetting("ai.settings", { model: null, language: "en", channel: "Instagram" }));
 ipcMain.handle("studio:save-ai-settings", (_event, settings: AiSettings): AiSettings => {
   const safe: AiSettings = {
