@@ -435,13 +435,14 @@ export class StudioDatabase {
 
   listSoundCloudTracks(): SoundCloudTrackSummary[] {
     const rows = this.database.prepare(`
-      SELECT id, title, permalink_url AS permalinkUrl, artwork_url AS artworkUrl,
-             created_at_remote AS createdAt, duration_ms AS durationMs, sharing,
-             streamable, playback_count AS playbackCount, likes_count AS likesCount,
-             comment_count AS commentCount, reposts_count AS repostsCount,
-             genre, tag_list AS tagList, imported_at AS importedAt,
-             artist_id AS artistId, catalog_status AS catalogStatus, content_type AS contentType
-      FROM soundcloud_tracks ORDER BY created_at_remote DESC
+      SELECT sc.id, sc.title, sc.permalink_url AS permalinkUrl, sc.artwork_url AS artworkUrl,
+             sc.created_at_remote AS createdAt, sc.duration_ms AS durationMs, sc.sharing,
+             sc.streamable, sc.playback_count AS playbackCount, sc.likes_count AS likesCount,
+             sc.comment_count AS commentCount, sc.reposts_count AS repostsCount,
+             sc.genre, sc.tag_list AS tagList, sc.imported_at AS importedAt,
+             sc.artist_id AS artistId, sc.catalog_status AS catalogStatus, sc.content_type AS contentType,
+             sc.release_id AS releaseId, r.title AS releaseTitle
+      FROM soundcloud_tracks sc LEFT JOIN releases r ON r.id = sc.release_id ORDER BY sc.created_at_remote DESC
     `).all() as unknown as Array<Omit<SoundCloudTrackSummary, "streamable" | "engagementRate" | "engagementScore"> & { streamable: number }>;
     return rows.map((row) => {
       const engagements = (row.likesCount ?? 0) + (row.commentCount ?? 0) + (row.repostsCount ?? 0);
@@ -470,6 +471,19 @@ export class StudioDatabase {
     try { for (const id of uniqueIds) update.run(contentType, contentType, id); this.database.exec("COMMIT"); }
     catch (error) { this.database.exec("ROLLBACK"); throw error; }
     return this.listSoundCloudTracks();
+  }
+
+  linkSoundCloudTrack(trackId: number, releaseId: string | null): SoundCloudTrackSummary {
+    const track = this.listSoundCloudTracks().find((item) => item.id === trackId);
+    if (!track) throw new Error("SoundCloud track not found");
+    if (releaseId) {
+      const release = this.database.prepare("SELECT id, status FROM releases WHERE id = ?").get(releaseId) as { id: string; status: string } | undefined;
+      if (!release) throw new Error("Release not found");
+      if (track.contentType === "bootleg" && ["scheduled", "published"].includes(release.status)) throw new Error("An uncleared bootleg cannot be linked to an official scheduled or published release");
+    }
+    try { this.database.prepare("UPDATE soundcloud_tracks SET release_id = ? WHERE id = ?").run(releaseId, trackId); }
+    catch (error) { if (String(error).includes("UNIQUE")) throw new Error("This release is already linked to another SoundCloud track"); throw error; }
+    return this.listSoundCloudTracks().find((item) => item.id === trackId)!;
   }
 
   private syncReadinessTasks(releaseId: string, checks: ReleaseReadiness["checks"]): void {
