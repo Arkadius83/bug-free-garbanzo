@@ -242,6 +242,12 @@ export interface CatalogMatchSuggestion { soundCloudTrackId: number; soundCloudT
 export type CampaignPackKind = "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt";
 export interface CampaignPackItem { id: string; releaseId: string; releaseTitle: string; kind: CampaignPackKind; channel: CampaignChannel | null; language: ContentLanguage; content: string; status: DraftStatus; model: string; createdAt: string; updatedAt: string; }
 export interface GenerateCampaignPackInput extends GenerateCampaignDraftInput { releaseId: string; }
+export type MediaProvider = "openai" | "kling";
+export type GeneratedMediaType = "image" | "video";
+export type MediaGenerationStatus = "queued" | "generating" | "ready" | "failed" | "approved" | "rejected";
+export interface MediaGenerationSettings { openAiConfigured: boolean; klingConfigured: boolean; }
+export interface MediaGenerationSummary { id:string; releaseId:string; campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; prompt:string; status:MediaGenerationStatus; providerTaskId:string|null; mimeType:string|null; error:string|null; metadata:Record<string,unknown>; createdAt:string; updatedAt:string; }
+export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
@@ -307,4 +313,11 @@ export interface StudioApi {
   generateCampaignPack(input: GenerateCampaignPackInput): Promise<CampaignPackItem[]>;
   listCampaignPackItems(releaseId: string): Promise<CampaignPackItem[]>;
   updateCampaignPackItemStatus(itemId: string, status: DraftStatus): Promise<CampaignPackItem>;
+  getMediaGenerationSettings(): Promise<MediaGenerationSettings>;
+  saveMediaGenerationCredentials(openAiApiKey: string, klingApiKey: string): Promise<MediaGenerationSettings>;
+  generateMedia(input: GenerateMediaInput): Promise<MediaGenerationSummary>;
+  refreshMediaGeneration(generationId: string): Promise<MediaGenerationSummary>;
+  listMediaGenerations(releaseId: string): Promise<MediaGenerationSummary[]>;
+  updateMediaGenerationStatus(generationId: string, status: "approved" | "rejected"): Promise<MediaGenerationSummary>;
+  getGeneratedMediaUrl(generationId: string): Promise<string>;
 }
