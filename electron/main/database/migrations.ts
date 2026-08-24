@@ -240,5 +240,13 @@ export const migrations: Migration[] = [
         CHECK(content_type IN ('original', 'bootleg', 'official-remix', 'edit', 'dj-set'));
       CREATE INDEX idx_soundcloud_tracks_content_type ON soundcloud_tracks(content_type);
     `
+  },
+  {
+    version: 9,
+    name: "soundcloud_release_link_v1",
+    sql: `
+      ALTER TABLE soundcloud_tracks ADD COLUMN release_id TEXT REFERENCES releases(id) ON DELETE SET NULL;
+      CREATE UNIQUE INDEX idx_soundcloud_tracks_release ON soundcloud_tracks(release_id) WHERE release_id IS NOT NULL;
+    `
   }
 ];
