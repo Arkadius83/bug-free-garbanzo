@@ -219,7 +219,12 @@ export interface SoundCloudTrackSummary {
   genre: string | null;
   tagList: string | null;
   importedAt: string;
+  artistId: ArtistAlias | null;
+  catalogStatus: SoundCloudCatalogStatus;
 }
+
+export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
+export interface UpdateSoundCloudTrackInput { id: number; artistId: ArtistAlias | null; catalogStatus: SoundCloudCatalogStatus; }
 
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
@@ -263,4 +268,5 @@ export interface StudioApi {
   disconnectSoundCloud(): Promise<SoundCloudConnection>;
   syncSoundCloudCatalog(): Promise<SoundCloudTrackSummary[]>;
   listSoundCloudTracks(): Promise<SoundCloudTrackSummary[]>;
+  updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): Promise<SoundCloudTrackSummary>;
 }
