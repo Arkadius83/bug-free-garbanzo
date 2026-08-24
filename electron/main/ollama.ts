@@ -48,7 +48,7 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
         temperature: 0.55,
         top_p: 0.9,
         num_ctx: 3072,
-        num_predict: 320
+        num_predict: input.model.toLowerCase().startsWith("deepseek-r1") ? 900 : 400
       },
       messages: [
         {
@@ -73,8 +73,21 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
   });
 
   if (!response.ok) throw new Error(`Ollama generation failed with HTTP ${response.status}`);
-  const data = await response.json() as { message?: { content?: string }; error?: string };
-  const content = data.message?.content?.trim();
-  if (!content) throw new Error(data.error || "Ollama returned an empty response");
+  const data = await response.json() as {
+    message?: { content?: string; thinking?: string };
+    error?: string;
+    done_reason?: string;
+    eval_count?: number;
+  };
+  const content = stripThinking(data.message?.content ?? "");
+  if (!content) {
+    const reasoningTokens = data.message?.thinking?.trim().length ?? 0;
+    if (reasoningTokens > 0) throw new Error("DeepSeek finished its reasoning budget before producing the final copy. Please retry once with the warmed model.");
+    throw new Error(data.error || `Ollama returned an empty response${data.done_reason ? ` (${data.done_reason})` : ""}`);
+  }
   return { content, model: input.model, language: input.language, channel: input.channel, generatedAt: new Date().toISOString() };
+}
+
+function stripThinking(value: string): string {
+  return value.replace(/<think>[\s\S]*?<\/think>\s*/gi, "").trim();
 }
