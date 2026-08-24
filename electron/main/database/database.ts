@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -473,6 +473,18 @@ export class StudioDatabase {
     return { trackId, points, windows };
   }
 
+  getSpotifyArtistMappings(): SpotifyArtistMapping[] { return this.getSetting<SpotifyArtistMapping[]>("spotify.artistMappings", []); }
+  saveSpotifyArtistMappings(mappings: SpotifyArtistMapping[]): SpotifyArtistMapping[] {
+    const clean = mappings.filter((item) => seedArtists.some(([id]) => id === item.artistId) && item.spotifyArtistId.trim()).map((item) => ({ artistId: item.artistId, spotifyArtistId: spotifyArtistId(item.spotifyArtistId) }));
+    this.setSetting("spotify.artistMappings", clean); return clean;
+  }
+  importSpotifyReleases(artistId: SpotifyArtistMapping["artistId"], spotifyArtistIdValue: string, values: unknown[]): void {
+    const statement = this.database.prepare(`INSERT INTO spotify_releases (id,name,album_type,release_date,total_tracks,image_url,spotify_url,spotify_artist_id,artist_id,raw_json,imported_at) VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,album_type=excluded.album_type,release_date=excluded.release_date,total_tracks=excluded.total_tracks,image_url=excluded.image_url,spotify_url=excluded.spotify_url,spotify_artist_id=excluded.spotify_artist_id,artist_id=excluded.artist_id,raw_json=excluded.raw_json,imported_at=excluded.imported_at`);
+    const now = new Date().toISOString();
+    for (const value of values) { const album = value as Record<string, unknown>; const urls = album.external_urls as Record<string, unknown> | undefined, images = album.images as Array<Record<string, unknown>> | undefined; if (typeof album.id !== "string" || typeof album.name !== "string" || typeof urls?.spotify !== "string") continue; statement.run(album.id, album.name, typeof album.album_type === "string" ? album.album_type : "album", typeof album.release_date === "string" ? album.release_date : "", typeof album.total_tracks === "number" ? album.total_tracks : 0, typeof images?.[0]?.url === "string" ? images[0].url : null, urls.spotify, spotifyArtistIdValue, artistId, JSON.stringify(album), now); }
+  }
+  listSpotifyReleases(): SpotifyReleaseSummary[] { return this.database.prepare(`SELECT id,name,album_type AS albumType,release_date AS releaseDate,total_tracks AS totalTracks,image_url AS imageUrl,spotify_url AS spotifyUrl,spotify_artist_id AS spotifyArtistId,artist_id AS artistId,imported_at AS importedAt FROM spotify_releases ORDER BY release_date DESC`).all() as unknown as SpotifyReleaseSummary[]; }
+
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): SoundCloudTrackSummary {
     if (!["unreviewed", "release", "gem", "archive", "exclude"].includes(input.catalogStatus)) throw new Error("Invalid SoundCloud catalog status");
     if (!["original", "bootleg", "official-remix", "edit", "dj-set"].includes(input.contentType)) throw new Error("Invalid SoundCloud content type");
@@ -534,3 +546,4 @@ export class StudioDatabase {
 }
 
 function numberOrNull(value: unknown): number | null { return typeof value === "number" && Number.isFinite(value) ? value : null; }
+function spotifyArtistId(value: string): string { const match = value.trim().match(/(?:artist\/|spotify:artist:)?([A-Za-z0-9]{10,})/); if (!match) throw new Error("Invalid Spotify artist URL or ID"); return match[1]; }
