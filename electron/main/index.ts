@@ -3,17 +3,19 @@ import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
-import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
+import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
 import { SpotifyClient } from "./spotify.js";
+import { MediaGenerationClient } from "./media-generation.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
 let studioDatabase: StudioDatabase;
 let soundCloudClient: SoundCloudClient;
 let spotifyClient: SpotifyClient;
+let mediaGenerationClient: MediaGenerationClient;
 if (!app.requestSingleInstanceLock()) app.quit();
 
 function soundCloudCallbackFromArgs(args: string[]): string | null {
@@ -131,6 +133,13 @@ ipcMain.handle("studio:get-catalog-match-suggestions", () => studioDatabase.getC
 ipcMain.handle("studio:generate-campaign-pack", async (_event, input:GenerateCampaignPackInput) => studioDatabase.saveCampaignPackItems(input.releaseId, input.language, input.model, await generateCampaignPackContent(input)));
 ipcMain.handle("studio:list-campaign-pack-items", (_event, releaseId:string) => studioDatabase.listCampaignPackItems(releaseId));
 ipcMain.handle("studio:update-campaign-pack-item-status", (_event,itemId:string,status:DraftStatus)=>studioDatabase.updateCampaignPackItemStatus(itemId,status));
+ipcMain.handle("studio:get-media-generation-settings",()=>mediaGenerationClient.status());
+ipcMain.handle("studio:save-media-generation-credentials",(_event,openAiKey:string,klingKey:string)=>mediaGenerationClient.saveCredentials(openAiKey,klingKey));
+ipcMain.handle("studio:list-media-generations",(_event,releaseId:string)=>studioDatabase.listMediaGenerations(releaseId));
+ipcMain.handle("studio:get-generated-media-url",(_event,id:string)=>{if(!studioDatabase.getMediaGenerationFile(id))throw new Error("Generated media is not ready");return `studio-media://generation/${encodeURIComponent(id)}`;});
+ipcMain.handle("studio:update-media-generation-status",(_event,id:string,status:"approved"|"rejected")=>{const current=studioDatabase.getMediaGeneration(id);if(!current||!(["ready","approved","rejected"] as string[]).includes(current.status))throw new Error("Only completed media can be reviewed");return studioDatabase.updateMediaGeneration(id,{status});});
+ipcMain.handle("studio:generate-media",async(_event,input:GenerateMediaInput)=>{const item=studioDatabase.getCampaignPackItemForGeneration(input.campaignPackItemId);if(!item)throw new Error("Campaign prompt not found");if(item.status!=="approved")throw new Error("Approve the prompt before starting paid generation");if(input.mediaType==="image"&&item.kind!=="image-prompt")throw new Error("Select an approved image prompt");if(input.mediaType==="video"&&item.kind!=="visualizer-prompt"&&item.kind!=="video-script")throw new Error("Select an approved visualizer or video script");const row=studioDatabase.createMediaGeneration(item,input.provider,input.mediaType);studioDatabase.updateMediaGeneration(row.id,{status:"generating"});try{const result=await mediaGenerationClient.generate(input.provider,input.mediaType,item.content);if(result.bytes||result.remoteUrl){const saved=await mediaGenerationClient.saveRemoteResult(row.id,result,input.mediaType);return studioDatabase.updateMediaGeneration(row.id,{status:"ready",providerTaskId:result.providerTaskId,localPath:saved.localPath,mimeType:saved.mimeType,metadata:saved.metadata});}return studioDatabase.updateMediaGeneration(row.id,{status:"generating",providerTaskId:result.providerTaskId,metadata:result.metadata});}catch(error){studioDatabase.updateMediaGeneration(row.id,{status:"failed",error:error instanceof Error?error.message:"Generation failed"});throw error;}});
+ipcMain.handle("studio:refresh-media-generation",async(_event,id:string)=>{const row=studioDatabase.getMediaGeneration(id);if(!row)throw new Error("Media generation not found");if(row.provider!=="kling"||!row.providerTaskId)return row;try{const result=await mediaGenerationClient.refreshKling(row.providerTaskId,row.mediaType);if(!result)return row;const saved=await mediaGenerationClient.saveRemoteResult(row.id,result,row.mediaType);return studioDatabase.updateMediaGeneration(row.id,{status:"ready",localPath:saved.localPath,mimeType:saved.mimeType,metadata:saved.metadata});}catch(error){return studioDatabase.updateMediaGeneration(row.id,{status:"failed",error:error instanceof Error?error.message:"Kling generation failed"});}});
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
   const asset = studioDatabase.getAssetForAnalysis(assetId);
   if (!asset) throw new Error("Audio asset not found");
@@ -178,7 +187,8 @@ void app.whenReady().then(() => {
   studioDatabase.initialize();
   soundCloudClient = new SoundCloudClient(app.getPath("userData"));
   spotifyClient = new SpotifyClient(app.getPath("userData"));
-  protocol.handle("studio-media", (request) => { const url=new URL(request.url); if(url.hostname!=="asset")return new Response("Not found",{status:404}); const asset=studioDatabase.getAssetForAnalysis(decodeURIComponent(url.pathname.slice(1))); if(!asset||asset.kind!=="audio")return new Response("Not found",{status:404}); return net.fetch(pathToFileURL(asset.filePath).toString(), { headers: request.headers }); });
+  mediaGenerationClient = new MediaGenerationClient(app.getPath("userData"));
+  protocol.handle("studio-media", (request) => { const url=new URL(request.url),id=decodeURIComponent(url.pathname.slice(1));if(url.hostname==="asset"){const asset=studioDatabase.getAssetForAnalysis(id);if(!asset||asset.kind!=="audio")return new Response("Not found",{status:404});return net.fetch(pathToFileURL(asset.filePath).toString(),{headers:request.headers});}if(url.hostname==="generation"){const media=studioDatabase.getMediaGenerationFile(id);if(!media)return new Response("Not found",{status:404});return net.fetch(pathToFileURL(media.filePath).toString(),{headers:request.headers});}return new Response("Not found",{status:404});});
   if (process.platform === "win32" && !app.isPackaged) app.setAsDefaultProtocolClient("ai-studio-manager", process.execPath, [path.resolve(process.argv[1])]);
   else app.setAsDefaultProtocolClient("ai-studio-manager");
   createWindow();
