@@ -57,3 +57,23 @@
   color: #d9a35f !important;
   white-space: normal !important;
 }
+.header-actions { display: flex; align-items: center; gap: 8px; }
+.danger-button {
+  border: 1px solid #59303b;
+  border-radius: 7px;
+  padding: 11px 14px;
+  background: #1b1017;
+  color: #d78391;
+  font-size: 10px;
+  cursor: pointer;
+}
+.danger-button:hover { border-color: #ba5265; color: #ff9aaa; }
+.release-item-actions { display: flex; align-items: center; gap: 9px; }
+.release-item-actions button {
+  border: 0;
+  background: transparent;
+  color: #8d6672;
+  font-size: 8px;
+  cursor: pointer;
+}
+.release-item-actions button:hover { color: #ff91a2; }
