@@ -86,7 +86,7 @@ export interface AudioAnalysisSummary {
   id: string;
   assetId: string;
   status: "complete" | "limited";
-  analyzer: "ffmpeg-ebur128" | "wav-native";
+  analyzer: "ffmpeg-ebur128" | "ffmpeg-ebur128-v2" | "wav-native";
   format: string;
   durationSeconds: number;
   sampleRate: number;
