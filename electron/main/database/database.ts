@@ -440,17 +440,29 @@ export class StudioDatabase {
              streamable, playback_count AS playbackCount, likes_count AS likesCount,
              comment_count AS commentCount, reposts_count AS repostsCount,
              genre, tag_list AS tagList, imported_at AS importedAt,
-             artist_id AS artistId, catalog_status AS catalogStatus
+             artist_id AS artistId, catalog_status AS catalogStatus, content_type AS contentType
       FROM soundcloud_tracks ORDER BY created_at_remote DESC
     `).all().map((row) => ({ ...row, streamable: Boolean(row.streamable) })) as unknown as SoundCloudTrackSummary[];
   }
 
   updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): SoundCloudTrackSummary {
     if (!["unreviewed", "release", "gem", "archive", "exclude"].includes(input.catalogStatus)) throw new Error("Invalid SoundCloud catalog status");
+    if (!["original", "bootleg", "official-remix", "edit", "dj-set"].includes(input.contentType)) throw new Error("Invalid SoundCloud content type");
+    if (input.contentType === "bootleg" && input.catalogStatus === "release") throw new Error("An uncleared bootleg cannot be marked for official release");
     if (input.artistId && !seedArtists.some(([id]) => id === input.artistId)) throw new Error("Invalid artist alias");
-    const result = this.database.prepare("UPDATE soundcloud_tracks SET artist_id = ?, catalog_status = ? WHERE id = ?").run(input.artistId, input.catalogStatus, input.id);
+    const result = this.database.prepare("UPDATE soundcloud_tracks SET artist_id = ?, catalog_status = ?, content_type = ? WHERE id = ?").run(input.artistId, input.catalogStatus, input.contentType, input.id);
     if (!result.changes) throw new Error("SoundCloud track not found");
     return this.listSoundCloudTracks().find((track) => track.id === input.id)!;
+  }
+
+  setSoundCloudTracksContentType(ids: number[], contentType: SoundCloudTrackSummary["contentType"]): SoundCloudTrackSummary[] {
+    if (!["original", "bootleg", "official-remix", "edit", "dj-set"].includes(contentType)) throw new Error("Invalid SoundCloud content type");
+    const uniqueIds = [...new Set(ids.filter((id) => Number.isSafeInteger(id)))];
+    const update = this.database.prepare("UPDATE soundcloud_tracks SET content_type = ?, catalog_status = CASE WHEN ? = 'bootleg' AND catalog_status = 'release' THEN 'unreviewed' ELSE catalog_status END WHERE id = ?");
+    this.database.exec("BEGIN IMMEDIATE");
+    try { for (const id of uniqueIds) update.run(contentType, contentType, id); this.database.exec("COMMIT"); }
+    catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.listSoundCloudTracks();
   }
 
   private syncReadinessTasks(releaseId: string, checks: ReleaseReadiness["checks"]): void {
