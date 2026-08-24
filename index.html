@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AI Studio Manager</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app-shell">
+  <aside class="sidebar" aria-label="AI Studio Manager navigation">
+    <div class="brand-lockup">
+      <div class="brand-mark">ARK</div>
+      <div>
+        <p class="eyebrow">AI Operating System</p>
+        <h1>AI Studio Manager</h1>
+      </div>
+    </div>
+    <nav class="nav-list" aria-label="Modules">
+      <a href="#release" data-page-link="release">Release Manager</a>
+      <a href="#content" data-page-link="content">Content Creator</a>
+      <a href="#visuals" data-page-link="visuals">Image + Video</a>
+      <a href="#schedule" data-page-link="schedule">Social Media</a>
+      <a href="#website" data-page-link="website">Website Manager</a>
+      <a href="#engagement" data-page-link="engagement">Fan Engagement</a>
+      <a href="#trends" data-page-link="trends">Trend Hunter</a>
+      <a href="#analytics" data-page-link="analytics">Analytics</a>
+      <a href="#business" data-page-link="business">Booking + Label</a>
+      <a href="#memory" data-page-link="memory">Knowledge Database</a>
+      <a href="#knowledge" data-page-link="knowledge">Knowledge Module</a>
+    </nav>
+  </aside>
+
+  <main class="workspace">
+    <section class="topbar" aria-label="Overview">
+      <div>
+        <p class="eyebrow" id="pageEyebrow">The Arkadiusz</p>
+        <h2 id="pageTitle">Release Manager</h2>
+      </div>
+      <button class="primary-action" id="generateAll" type="button">Run AI Studio</button>
+    </section>
+
+    <section class="page is-active" id="release" data-page="release">
+      <div class="metrics-strip" aria-label="Weekly status">
+        <article>
+          <span>Studio modules</span>
+          <strong id="assetCount">13</strong>
+        </article>
+        <article>
+          <span>Generated assets</span>
+          <strong>42</strong>
+        </article>
+        <article>
+          <span>Next action</span>
+          <strong>Upload song</strong>
+        </article>
+        <article>
+          <span>Brand tone</span>
+          <strong>Cosmic tribal</strong>
+        </article>
+      </div>
+
+      <article class="panel studio-flow" aria-label="AI Studio Manager flow">
+        <div class="flow-input">
+          <p class="eyebrow">You</p>
+          <h3>Upload new song</h3>
+          <div class="upload-grid">
+            <label>
+              New track WAV/MP3
+              <input id="trackFile" type="file" accept="audio/*">
+            </label>
+            <label>
+              Cover artwork
+              <input id="coverFile" type="file" accept="image/*">
+            </label>
+          </div>
+        </div>
+        <div class="flow-arrow" aria-hidden="true">v</div>
+        <div class="studio-core">
+          <span>AI STUDIO MANAGER</span>
+        </div>
+        <div class="module-map" id="moduleMap" aria-live="polite"></div>
+      </article>
+
+      <div class="grid two-column">
+        <article class="panel">
+        <div class="panel-header">
+          <div>
+          <p class="eyebrow">Release Manager</p>
+            <h3>Release Manager</h3>
+          </div>
+          <button class="ghost-action" id="generateRelease" type="button">Refresh Copy</button>
+        </div>
+        <div class="form-grid">
+          <label>
+            Track title
+            <input id="trackTitle" type="text" value="Amazonian Signal">
+          </label>
+          <label>
+            Release date
+            <input id="releaseDate" type="date" value="2026-08-08">
+          </label>
+          <label>
+            Genre
+            <select id="genre">
+              <option>Psytrance</option>
+              <option>Progressive Psytrance</option>
+              <option>Dark Psy</option>
+              <option>Techno</option>
+              <option>Melodic Techno</option>
+            </select>
+          </label>
+          <label>
+            BPM
+            <input id="bpm" type="number" min="80" max="190" value="145">
+          </label>
+          <label class="wide">
+            Story behind the track
+            <textarea id="story" rows="5">A ritual transmission built from forest percussion, high-tech bass pressure, and the feeling of receiving a signal from deep space during an Amazonian ceremony.</textarea>
+          </label>
+        </div>
+      </article>
+
+      <article class="panel output-panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Generated assets</p>
+            <h3>Channel Copy</h3>
+          </div>
+          <select id="copyChannel" aria-label="Copy channel">
+            <option>Instagram</option>
+            <option>Facebook</option>
+            <option>TikTok</option>
+            <option>SoundCloud</option>
+            <option>YouTube</option>
+            <option>Spotify Canvas</option>
+            <option>LinkedIn</option>
+            <option>X</option>
+            <option>Telegram</option>
+            <option>Discord</option>
+          </select>
+        </div>
+        <div class="copy-output" id="copyOutput" aria-live="polite"></div>
+      </article>
+      </div>
+    </section>
+
+    <section class="page" id="content" data-page="content">
+      <article class="panel">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Content Creator</p>
+          <h3>30-Day Content Creator</h3>
+        </div>
+        <button class="ghost-action" id="generateCalendar" type="button">Build 30 Days</button>
+      </div>
+      <div class="calendar-grid" id="calendarGrid" aria-live="polite"></div>
+      </article>
+    </section>
+
+    <section class="page" id="visuals" data-page="visuals">
+      <div class="grid two-column">
+      <article class="panel compact">
+        <p class="eyebrow">Image Generator</p>
+        <h3>AI Image Generator</h3>
+        <ul class="asset-list" id="imageIdeas"></ul>
+      </article>
+      <article class="panel compact">
+        <p class="eyebrow">Video Generator</p>
+        <h3>Video Creator</h3>
+        <ul class="asset-list" id="videoIdeas"></ul>
+      </article>
+      </div>
+    </section>
+
+    <section class="page" id="schedule" data-page="schedule">
+      <article class="panel compact">
+        <p class="eyebrow">Social Media Manager</p>
+        <h3>Social Scheduler</h3>
+        <div class="schedule-list" id="scheduleList"></div>
+      </article>
+    </section>
+
+    <section class="page" id="engagement" data-page="engagement">
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Fan Engagement</p>
+            <h3>Fan Engagement</h3>
+          </div>
+          <button class="ghost-action" id="suggestReply" type="button">Suggest Reply</button>
+        </div>
+        <label>
+          Fan comment
+          <textarea id="fanComment" rows="3">Amazing track!</textarea>
+        </label>
+        <div class="reply-box" id="replyBox"></div>
+      </article>
+    </section>
+
+    <section class="page" id="trends" data-page="trends">
+      <article class="panel">
+        <div class="panel-header">
+          <div>
+            <p class="eyebrow">Trend Hunter</p>
+            <h3>Trend Hunter</h3>
+          </div>
+          <button class="ghost-action" id="huntTrend" type="button">Find Angle</button>
+        </div>
+        <div class="trend-box" id="trendBox"></div>
+      </article>
+    </section>
+
+    <section class="page" id="analytics" data-page="analytics">
+      <article class="panel">
+        <p class="eyebrow">Analytics</p>
+        <h3>Weekly Analytics</h3>
+        <div class="analytics-grid" id="analyticsGrid"></div>
+      </article>
+    </section>
+
+    <section class="page" id="business" data-page="business">
+      <article class="panel">
+        <p class="eyebrow">Booking + Email + Label</p>
+        <h3>Business Assistants</h3>
+        <div class="business-grid" id="businessGrid"></div>
+      </article>
+    </section>
+
+    <section class="page" id="website" data-page="website">
+      <article class="panel">
+        <p class="eyebrow">Website Manager</p>
+        <h3>Release Website Updates</h3>
+        <div class="website-list" id="websiteList"></div>
+      </article>
+    </section>
+
+    <section class="page" id="memory" data-page="memory">
+      <article class="panel">
+        <p class="eyebrow">Knowledge Database</p>
+        <h3>Artist Memory</h3>
+        <div class="memory-grid">
+          <label>
+            Artist
+            <input id="artist" type="text" value="The Arkadiusz">
+          </label>
+          <label>
+            Style words
+            <textarea id="styleWords" rows="4">Cosmic, Tribal, Amazonian, Spiritual, High-tech, Consciousness, AI, Space, Sacred Geometry</textarea>
+          </label>
+          <label>
+            Signature voice
+            <textarea id="voice" rows="4">Mystical but grounded, energetic without hype, inviting listeners into a ritual journey through sound.</textarea>
+          </label>
+        </div>
+      </article>
+    </section>
+
+    <section class="page" id="knowledge" data-page="knowledge">
+      <article class="panel knowledge-lab">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Knowledge Module</p>
+          <h3>Psytrance Promotion Research Brain</h3>
+        </div>
+        <button class="ghost-action" id="applyKnowledge" type="button">Apply to Campaign</button>
+      </div>
+      <div class="knowledge-grid" id="knowledgeGrid"></div>
+      <div class="knowledge-application" id="knowledgeApplication" aria-live="polite"></div>
+      <div class="source-list" id="sourceList"></div>
+      </article>
+    </section>
+  </main>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
