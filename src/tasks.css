@@ -1,0 +1,26 @@
+.tasks-page header h1 { margin: 10px 0 8px; font-size: 38px; }
+.tasks-page header p { margin: 0; color: #6e7488; font-size: 11px; }
+.task-creator { display: grid; grid-template-columns: 2fr .8fr .8fr .8fr auto; gap: 8px; margin-top: 25px; padding: 15px; }
+.task-creator input, .task-creator select { margin: 0; }
+.task-creator button:disabled { opacity: .45; cursor: not-allowed; }
+.task-message { color: #a678e5; font-size: 10px; }
+.task-board { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 16px; align-items: start; }
+.task-column { min-height: 220px; padding: 12px; border: 1px solid #24283a; border-radius: 10px; background: #0b0e17; }
+.task-column-title { display: flex; justify-content: space-between; padding: 5px 4px 13px; color: #b6bac8; font-size: 11px; }
+.task-column-title span { display: grid; place-items: center; min-width: 20px; height: 20px; border-radius: 10px; background: #1d2130; color: #777e92; font-size: 8px; }
+.managed-task { margin-top: 8px; padding: 13px; border: 1px solid #292e40; border-left: 2px solid #7050a7; border-radius: 7px; background: #11141f; }
+.managed-task.priority-high { border-left-color: #c35b70; }
+.managed-task.priority-low { border-left-color: #497d71; }
+.managed-task-meta { display: flex; justify-content: space-between; color: #8064a9; font-size: 7px; letter-spacing: .1em; }
+.managed-task-meta b { color: #656c80; text-transform: uppercase; }
+.managed-task h3 { margin: 11px 0 6px; font-size: 11px; font-weight: 600; }
+.managed-task > p { margin: 0; color: #666d80; font-size: 8px; }
+.managed-task-actions { display: flex; gap: 6px; margin-top: 12px; }
+.managed-task-actions button { border: 1px solid #343a4e; border-radius: 5px; padding: 6px 8px; background: #171b28; color: #9da3b4; font-size: 8px; cursor: pointer; }
+.managed-task-actions .agent-button { margin-left: auto; border-color: #644194; color: #b47fe8; background: #21162f; }
+.managed-task-actions button:disabled { opacity: .5; cursor: wait; }
+.agent-output { margin-top: 11px; padding: 10px; border: 1px solid #3c3052; border-radius: 6px; background: #161121; }
+.agent-output strong { color: #b58ae9; font-size: 8px; }
+.agent-output p { max-height: 135px; overflow: auto; margin: 8px 0; color: #b7bac5; white-space: pre-wrap; font-size: 9px; line-height: 1.45; }
+.agent-output small { color: #b8856c; font-size: 7px; text-transform: uppercase; }
+@media (max-width: 1050px) { .task-creator { grid-template-columns: 1fr 1fr; } .task-board { grid-template-columns: 1fr; } }
