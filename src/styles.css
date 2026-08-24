@@ -41,6 +41,14 @@ textarea { resize: vertical; }
 .dropzone { margin-top: 18px; border: 1px dashed #42504c; border-radius: 9px; padding: 22px; text-align: center; color: #aab1ae; }
 .dropzone span { display: block; color: #69726f; font-size: 12px; margin-top: 5px; }
 .draft { border: 1px solid #303a37; border-radius: 9px; overflow: hidden; background: #090d0f; }
+.ai-controls { display: grid; grid-template-columns: 1.5fr .8fr 1fr auto; gap: 9px; align-items: end; margin-bottom: 12px; }
+.ai-controls label { margin: 0; }
+.ai-controls select { min-height: 42px; }
+.generate-button { min-height: 42px; border: 1px solid #b4d84a; border-radius: 7px; padding: 0 14px; background: transparent; color: #d9f57c; font-weight: 800; cursor: pointer; }
+.generate-button:hover:not(:disabled) { background: #b4d84a; color: #121609; }
+.generate-button:disabled { opacity: .5; cursor: wait; }
+.generation-message { margin: 0 0 12px; color: #9da6a2; font-size: 12px; }
+.generation-message.error { color: #ff9f92; }
 .draft > span { display: block; padding: 10px 13px; border-bottom: 1px solid #262e2c; color: #b4d84a; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .1em; }
 pre { margin: 0; padding: 20px; min-height: 210px; color: #d7dcda; white-space: pre-wrap; font: 14px/1.65 inherit; }
 .architecture-note { margin-top: 18px; padding: 18px; border-radius: 9px; background: #151d19; }
@@ -58,4 +66,5 @@ pre { margin: 0; padding: 20px; min-height: 210px; color: #d7dcda; white-space: 
   main { padding: 28px; }
   .artist-strip { grid-template-columns: repeat(2, 1fr); }
   .workspace { grid-template-columns: 1fr; }
+  .ai-controls { grid-template-columns: 1fr 1fr; }
 }

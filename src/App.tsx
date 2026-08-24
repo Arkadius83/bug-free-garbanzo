@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ArtistAlias, DatabaseHealth, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import type { AiSettings, ArtistAlias, DatabaseHealth, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
 const modules = ["Release", "Content", "Visuals", "Schedule", "Website", "Engagement", "Trends", "Analytics", "Business", "Memory"];
@@ -11,6 +11,10 @@ export function App() {
   const [releases, setReleases] = useState<ReleaseSummary[]>([]);
   const [saveMessage, setSaveMessage] = useState("");
   const [bridgeError, setBridgeError] = useState("");
+  const [aiSettings, setAiSettings] = useState<AiSettings>({ model: null, language: "en", channel: "Instagram" });
+  const [generatedDraft, setGeneratedDraft] = useState<GeneratedCampaignDraft | null>(null);
+  const [generationState, setGenerationState] = useState<"idle" | "generating" | "error">("idle");
+  const [generationMessage, setGenerationMessage] = useState("");
   const [title, setTitle] = useState("Different Perspective");
   const [story, setStory] = useState("Seeing beyond ego reveals another perspective.");
   const [releaseDate, setReleaseDate] = useState("");
@@ -21,12 +25,64 @@ export function App() {
       setBridgeError("Desktop bridge unavailable — restart after updating the application.");
       return;
     }
-    void Promise.all([
-      window.studio.getSystemStatus().then(setStatus),
-      window.studio.getDatabaseHealth().then(setDatabase),
-      window.studio.listReleases().then(setReleases)
-    ]);
+    void (async () => {
+      try {
+        const [system, databaseHealth, savedReleases, savedAiSettings] = await Promise.all([
+          window.studio!.getSystemStatus(),
+          window.studio!.getDatabaseHealth(),
+          window.studio!.listReleases(),
+          window.studio!.getAiSettings()
+        ]);
+        setStatus(system);
+        setDatabase(databaseHealth);
+        setReleases(savedReleases);
+        const savedModelStillExists = system.ollama.models.some((model) => model.name === savedAiSettings.model);
+        const preferredModel = system.ollama.models.find((model) => /^deepseek-r1(?::|$)/i.test(model.name)) ?? system.ollama.models[0];
+        const resolvedSettings = savedModelStillExists || system.ollama.models.length === 0
+          ? savedAiSettings
+          : await window.studio!.saveAiSettings({ ...savedAiSettings, model: preferredModel.name });
+        setAiSettings(resolvedSettings);
+      } catch (error) {
+        setBridgeError(error instanceof Error ? error.message : "Desktop services could not be initialized.");
+      }
+    })();
   }, []);
+
+  async function updateAiSettings(next: AiSettings) {
+    setAiSettings(next);
+    if (!window.studio) return;
+    try { setAiSettings(await window.studio.saveAiSettings(next)); }
+    catch (error) { setGenerationMessage(error instanceof Error ? error.message : "Could not save AI settings"); }
+  }
+
+  async function generateWithOllama() {
+    if (!window.studio || !aiSettings.model) {
+      setGenerationState("error");
+      setGenerationMessage("Select a local Ollama model first.");
+      return;
+    }
+    setGenerationState("generating");
+    setGenerationMessage(`Generating with ${aiSettings.model}...`);
+    try {
+      const result = await window.studio.generateCampaignDraft({
+        ...aiSettings,
+        model: aiSettings.model,
+        artistId: selectedArtist,
+        artistName: artist.name,
+        artistVoice: artist.voice,
+        title,
+        primaryGenre: artist.genres[0],
+        story,
+        releaseDate: releaseDate || null
+      });
+      setGeneratedDraft(result);
+      setGenerationState("idle");
+      setGenerationMessage(`Generated locally with ${result.model}`);
+    } catch (error) {
+      setGenerationState("error");
+      setGenerationMessage(error instanceof Error ? error.message : "Ollama generation failed");
+    }
+  }
 
   async function saveRelease() {
     if (!window.studio) return;
@@ -46,7 +102,8 @@ export function App() {
     }
   }
 
-  const draft = `${artist.name} presents ${title}.\n\n${story}\n\nA ${artist.genres[0]} transmission shaped for listeners who want more than background music.`;
+  const fallbackDraft = `${artist.name} presents ${title}.\n\n${story}\n\nA ${artist.genres[0]} transmission shaped for listeners who want more than background music.`;
+  const draft = generatedDraft?.content ?? fallbackDraft;
 
   return (
     <div className="shell">
@@ -92,7 +149,20 @@ export function App() {
 
           <section className="panel output-panel">
             <div className="panel-heading"><span className="eyebrow">02 / Draft</span><h2>Campaign preview</h2></div>
-            <div className="draft"><span>Instagram · English</span><pre>{draft}</pre></div>
+            <div className="ai-controls">
+              <label>Local model<select value={aiSettings.model ?? ""} onChange={(event) => void updateAiSettings({ ...aiSettings, model: event.target.value || null })}>
+                {status?.ollama.models.length ? status.ollama.models.map((model) => <option key={model.name} value={model.name}>{model.name}</option>) : <option value="">No models available</option>}
+              </select></label>
+              <label>Language<select value={aiSettings.language} onChange={(event) => void updateAiSettings({ ...aiSettings, language: event.target.value as AiSettings["language"] })}>
+                <option value="en">English</option><option value="de">Deutsch</option><option value="pl">Polski</option>
+              </select></label>
+              <label>Channel<select value={aiSettings.channel} onChange={(event) => void updateAiSettings({ ...aiSettings, channel: event.target.value as AiSettings["channel"] })}>
+                <option>Instagram</option><option>Facebook</option><option>TikTok</option><option>SoundCloud</option><option>YouTube</option>
+              </select></label>
+              <button className="generate-button" disabled={generationState === "generating" || !aiSettings.model} onClick={() => void generateWithOllama()}>{generationState === "generating" ? "Generating..." : "Generate with Ollama"}</button>
+            </div>
+            {generationMessage && <p className={`generation-message ${generationState === "error" ? "error" : ""}`}>{generationMessage}</p>}
+            <div className="draft"><span>{aiSettings.channel} · {aiSettings.language.toUpperCase()} {generatedDraft ? "· AI generated" : "· template preview"}</span><pre>{draft}</pre></div>
             <div className="architecture-note">
               <strong>Foundation status</strong>
               <ul>

@@ -1,9 +1,8 @@
 import { app, BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { discoverOllamaModels } from "./ollama.js";
-import type { SystemStatus } from "../shared/contracts.js";
-import type { CreateReleaseDraftInput } from "../shared/contracts.js";
+import { discoverOllamaModels, generateCampaignDraft } from "./ollama.js";
+import type { AiSettings, CreateReleaseDraftInput, GenerateCampaignDraftInput, SystemStatus } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +58,17 @@ ipcMain.handle("studio:get-system-status", async (): Promise<SystemStatus> => {
 ipcMain.handle("studio:get-database-health", () => studioDatabase.health());
 ipcMain.handle("studio:list-releases", () => studioDatabase.listReleases());
 ipcMain.handle("studio:create-release-draft", (_event, input: CreateReleaseDraftInput) => studioDatabase.createReleaseDraft(input));
+ipcMain.handle("studio:get-ai-settings", (): AiSettings => studioDatabase.getSetting("ai.settings", { model: null, language: "en", channel: "Instagram" }));
+ipcMain.handle("studio:save-ai-settings", (_event, settings: AiSettings): AiSettings => {
+  const safe: AiSettings = {
+    model: typeof settings.model === "string" && settings.model.trim() ? settings.model : null,
+    language: ["pl", "de", "en"].includes(settings.language) ? settings.language : "en",
+    channel: ["Instagram", "Facebook", "TikTok", "SoundCloud", "YouTube"].includes(settings.channel) ? settings.channel : "Instagram"
+  };
+  studioDatabase.setSetting("ai.settings", safe);
+  return safe;
+});
+ipcMain.handle("studio:generate-campaign-draft", (_event, input: GenerateCampaignDraftInput) => generateCampaignDraft(input));
 
 void app.whenReady().then(() => {
   studioDatabase = new StudioDatabase(path.join(app.getPath("userData"), "ai-studio-manager.sqlite"));

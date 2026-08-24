@@ -16,6 +16,8 @@ test("creates a clean database, applies migrations and persists a release", () =
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
     assert.equal(database.listReleases()[0]?.title, "Different Perspective");
+    database.setSetting("ai", { model: "small-model", language: "en" });
+    assert.deepEqual(database.getSetting("ai", null), { model: "small-model", language: "en" });
   } finally {
     database.close();
     rmSync(directory, { recursive: true, force: true });

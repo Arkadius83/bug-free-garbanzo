@@ -13,6 +13,36 @@ export interface OllamaModel {
   modifiedAt: string;
 }
 
+export type ContentLanguage = "pl" | "de" | "en";
+export type CampaignChannel = "Instagram" | "Facebook" | "TikTok" | "SoundCloud" | "YouTube";
+
+export interface AiSettings {
+  model: string | null;
+  language: ContentLanguage;
+  channel: CampaignChannel;
+}
+
+export interface GenerateCampaignDraftInput {
+  model: string;
+  language: ContentLanguage;
+  channel: CampaignChannel;
+  artistId: ArtistAlias;
+  artistName: string;
+  artistVoice: string;
+  title: string;
+  primaryGenre: string;
+  story: string;
+  releaseDate?: string | null;
+}
+
+export interface GeneratedCampaignDraft {
+  content: string;
+  model: string;
+  language: ContentLanguage;
+  channel: CampaignChannel;
+  generatedAt: string;
+}
+
 export interface SystemStatus {
   appVersion: string;
   platform: string;
@@ -56,4 +86,7 @@ export interface StudioApi {
   getDatabaseHealth(): Promise<DatabaseHealth>;
   listReleases(): Promise<ReleaseSummary[]>;
   createReleaseDraft(input: CreateReleaseDraftInput): Promise<ReleaseSummary>;
+  getAiSettings(): Promise<AiSettings>;
+  saveAiSettings(settings: AiSettings): Promise<AiSettings>;
+  generateCampaignDraft(input: GenerateCampaignDraftInput): Promise<GeneratedCampaignDraft>;
 }

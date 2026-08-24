@@ -89,6 +89,20 @@ export class StudioDatabase {
     return { id: releaseId, title, artistId: input.artistId, artistName: artist.name, primaryGenre: genre, story, status: "draft", releaseDate: input.releaseDate || null, createdAt: now };
   }
 
+  getSetting<T>(key: string, fallback: T): T {
+    const row = this.database.prepare("SELECT value_json AS valueJson FROM settings WHERE key = ?").get(key) as { valueJson: string } | undefined;
+    if (!row) return fallback;
+    try { return JSON.parse(row.valueJson) as T; } catch { return fallback; }
+  }
+
+  setSetting<T>(key: string, value: T): void {
+    const now = new Date().toISOString();
+    this.database.prepare(`
+      INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+    `).run(key, JSON.stringify(value), now);
+  }
+
   close(): void { this.database.close(); }
 
   private seedArtistProfiles(): void {

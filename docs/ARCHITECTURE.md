@@ -27,3 +27,12 @@ Supporting entities: Asset, ReleaseTrack, CampaignAsset, Task, Event and Setting
 ## Publishing rule
 
 Generated content remains a draft until explicitly approved. No platform adapter may publish autonomously in the MVP.
+
+## Ollama V1
+
+- Ollama is accessed only by the Electron main process at `127.0.0.1:11434`.
+- The renderer receives model metadata and generated text through typed IPC.
+- Selected model, language and channel are persisted in SQLite settings.
+- On first launch, an installed `deepseek-r1` variant is preferred as the default model; the user can override it.
+- Generation receives only explicit release fields; it has no filesystem, shell or publishing access.
+- Generated copy is always a preview and requires human approval.
