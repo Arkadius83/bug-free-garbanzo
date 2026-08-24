@@ -196,5 +196,30 @@ export const migrations: Migration[] = [
       CREATE UNIQUE INDEX idx_tasks_source_key ON tasks(source_key) WHERE source_key IS NOT NULL;
       CREATE INDEX idx_tasks_release ON tasks(release_id, due_at);
     `
+  },
+  {
+    version: 6,
+    name: "soundcloud_catalog_v1",
+    sql: `
+      CREATE TABLE soundcloud_tracks (
+        id INTEGER PRIMARY KEY,
+        title TEXT NOT NULL,
+        permalink_url TEXT NOT NULL,
+        artwork_url TEXT,
+        created_at_remote TEXT NOT NULL,
+        duration_ms INTEGER NOT NULL,
+        sharing TEXT NOT NULL,
+        streamable INTEGER NOT NULL,
+        playback_count INTEGER,
+        likes_count INTEGER,
+        comment_count INTEGER,
+        reposts_count INTEGER,
+        genre TEXT,
+        tag_list TEXT,
+        raw_json TEXT NOT NULL,
+        imported_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_soundcloud_tracks_created ON soundcloud_tracks(created_at_remote DESC);
+    `
   }
 ];
