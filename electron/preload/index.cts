@@ -16,7 +16,8 @@ const api: StudioApi = {
   listAssets: (releaseId) => ipcRenderer.invoke("studio:list-assets", releaseId),
   selectAndAttachAsset: (releaseId, kind) => ipcRenderer.invoke("studio:select-and-attach-asset", releaseId, kind),
   getAudioAnalysis: (assetId) => ipcRenderer.invoke("studio:get-audio-analysis", assetId),
-  analyzeAudio: (assetId) => ipcRenderer.invoke("studio:analyze-audio", assetId)
+  analyzeAudio: (assetId) => ipcRenderer.invoke("studio:analyze-audio", assetId),
+  getReleaseReadiness: (releaseId) => ipcRenderer.invoke("studio:get-release-readiness", releaseId)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
