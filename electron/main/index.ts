@@ -2,8 +2,8 @@ import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { readFile, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import { discoverOllamaModels, generateCampaignDraft, runPlanningAgent } from "./ollama.js";
-import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
+import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
+import type { AiSettings, AssetKind, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
@@ -126,6 +126,9 @@ ipcMain.handle("studio:list-spotify-releases", () => studioDatabase.listSpotifyR
 ipcMain.handle("studio:sync-spotify-catalog", async () => { for (const mapping of studioDatabase.getSpotifyArtistMappings()) studioDatabase.importSpotifyReleases(mapping.artistId, mapping.spotifyArtistId, await spotifyClient.fetchArtistReleases(mapping.spotifyArtistId)); return studioDatabase.listSpotifyReleases(); });
 ipcMain.handle("studio:link-spotify-release", (_event, spotifyReleaseId: string, releaseId: string | null) => studioDatabase.linkSpotifyRelease(spotifyReleaseId, releaseId));
 ipcMain.handle("studio:get-catalog-match-suggestions", () => studioDatabase.getCatalogMatchSuggestions());
+ipcMain.handle("studio:generate-campaign-pack", async (_event, input:GenerateCampaignPackInput) => studioDatabase.saveCampaignPackItems(input.releaseId, input.language, input.model, await generateCampaignPackContent(input)));
+ipcMain.handle("studio:list-campaign-pack-items", (_event, releaseId:string) => studioDatabase.listCampaignPackItems(releaseId));
+ipcMain.handle("studio:update-campaign-pack-item-status", (_event,itemId:string,status:DraftStatus)=>studioDatabase.updateCampaignPackItemStatus(itemId,status));
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
   const asset = studioDatabase.getAssetForAnalysis(assetId);
   if (!asset) throw new Error("Audio asset not found");
