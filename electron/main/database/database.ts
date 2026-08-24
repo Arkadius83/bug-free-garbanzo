@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudTrackSummary, TaskStatus, TaskSummary, UpdateReleaseInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudTrackSummary, TaskStatus, TaskSummary, UpdateReleaseInput, UpdateSoundCloudTrackInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -439,9 +439,18 @@ export class StudioDatabase {
              created_at_remote AS createdAt, duration_ms AS durationMs, sharing,
              streamable, playback_count AS playbackCount, likes_count AS likesCount,
              comment_count AS commentCount, reposts_count AS repostsCount,
-             genre, tag_list AS tagList, imported_at AS importedAt
+             genre, tag_list AS tagList, imported_at AS importedAt,
+             artist_id AS artistId, catalog_status AS catalogStatus
       FROM soundcloud_tracks ORDER BY created_at_remote DESC
     `).all().map((row) => ({ ...row, streamable: Boolean(row.streamable) })) as unknown as SoundCloudTrackSummary[];
+  }
+
+  updateSoundCloudTrack(input: UpdateSoundCloudTrackInput): SoundCloudTrackSummary {
+    if (!["unreviewed", "release", "gem", "archive", "exclude"].includes(input.catalogStatus)) throw new Error("Invalid SoundCloud catalog status");
+    if (input.artistId && !seedArtists.some(([id]) => id === input.artistId)) throw new Error("Invalid artist alias");
+    const result = this.database.prepare("UPDATE soundcloud_tracks SET artist_id = ?, catalog_status = ? WHERE id = ?").run(input.artistId, input.catalogStatus, input.id);
+    if (!result.changes) throw new Error("SoundCloud track not found");
+    return this.listSoundCloudTracks().find((track) => track.id === input.id)!;
   }
 
   private syncReadinessTasks(releaseId: string, checks: ReleaseReadiness["checks"]): void {
