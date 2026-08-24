@@ -242,10 +242,10 @@ export interface CatalogMatchSuggestion { soundCloudTrackId: number; soundCloudT
 export type CampaignPackKind = "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt";
 export interface CampaignPackItem { id: string; releaseId: string; releaseTitle: string; kind: CampaignPackKind; channel: CampaignChannel | null; language: ContentLanguage; content: string; status: DraftStatus; model: string; createdAt: string; updatedAt: string; }
 export interface GenerateCampaignPackInput extends GenerateCampaignDraftInput { releaseId: string; }
-export type MediaProvider = "openai" | "kling";
+export type MediaProvider = "openai" | "kling" | "comfyui";
 export type GeneratedMediaType = "image" | "video";
 export type MediaGenerationStatus = "queued" | "generating" | "ready" | "failed" | "approved" | "rejected";
-export interface MediaGenerationSettings { openAiConfigured: boolean; klingConfigured: boolean; }
+export interface MediaGenerationSettings { openAiConfigured: boolean; klingConfigured: boolean; comfyUiUrl:string; comfyUiAvailable:boolean; comfyUiCheckpoints:string[]; comfyUiCheckpoint:string|null; comfyUiError:string|null; }
 export interface MediaGenerationSummary { id:string; releaseId:string; campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; prompt:string; status:MediaGenerationStatus; providerTaskId:string|null; mimeType:string|null; error:string|null; metadata:Record<string,unknown>; createdAt:string; updatedAt:string; }
 export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; }
 
@@ -315,6 +315,8 @@ export interface StudioApi {
   updateCampaignPackItemStatus(itemId: string, status: DraftStatus): Promise<CampaignPackItem>;
   getMediaGenerationSettings(): Promise<MediaGenerationSettings>;
   saveMediaGenerationCredentials(openAiApiKey: string, klingApiKey: string): Promise<MediaGenerationSettings>;
+  testComfyUi(comfyUiUrl:string):Promise<MediaGenerationSettings>;
+  saveComfyUiSettings(comfyUiUrl:string,checkpoint:string):Promise<MediaGenerationSettings>;
   generateMedia(input: GenerateMediaInput): Promise<MediaGenerationSummary>;
   refreshMediaGeneration(generationId: string): Promise<MediaGenerationSummary>;
   listMediaGenerations(releaseId: string): Promise<MediaGenerationSummary[]>;
