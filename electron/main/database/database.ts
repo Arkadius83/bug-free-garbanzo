@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, TaskStatus, TaskSummary, UpdateReleaseInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudTrackSummary, TaskStatus, TaskSummary, UpdateReleaseInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -397,6 +397,53 @@ export class StudioDatabase {
     return this.listTasks().find((item) => item.id === taskId)!;
   }
 
+  importSoundCloudTracks(items: unknown[]): SoundCloudTrackSummary[] {
+    const statement = this.database.prepare(`
+      INSERT INTO soundcloud_tracks (
+        id, title, permalink_url, artwork_url, created_at_remote, duration_ms, sharing,
+        streamable, playback_count, likes_count, comment_count, reposts_count,
+        genre, tag_list, raw_json, imported_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET title=excluded.title, permalink_url=excluded.permalink_url,
+        artwork_url=excluded.artwork_url, created_at_remote=excluded.created_at_remote,
+        duration_ms=excluded.duration_ms, sharing=excluded.sharing, streamable=excluded.streamable,
+        playback_count=excluded.playback_count, likes_count=excluded.likes_count,
+        comment_count=excluded.comment_count, reposts_count=excluded.reposts_count,
+        genre=excluded.genre, tag_list=excluded.tag_list, raw_json=excluded.raw_json,
+        imported_at=excluded.imported_at
+    `);
+    const importedAt = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      for (const value of items) {
+        const track = value as Record<string, unknown>;
+        if (typeof track.id !== "number" || typeof track.title !== "string" || typeof track.permalink_url !== "string") continue;
+        statement.run(
+          track.id, track.title, track.permalink_url, typeof track.artwork_url === "string" ? track.artwork_url : null,
+          typeof track.created_at === "string" ? track.created_at : importedAt,
+          typeof track.duration === "number" ? track.duration : 0, typeof track.sharing === "string" ? track.sharing : "public",
+          track.streamable === false ? 0 : 1, numberOrNull(track.playback_count), numberOrNull(track.likes_count),
+          numberOrNull(track.comment_count), numberOrNull(track.reposts_count),
+          typeof track.genre === "string" ? track.genre : null, typeof track.tag_list === "string" ? track.tag_list : null,
+          JSON.stringify(track), importedAt
+        );
+      }
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.listSoundCloudTracks();
+  }
+
+  listSoundCloudTracks(): SoundCloudTrackSummary[] {
+    return this.database.prepare(`
+      SELECT id, title, permalink_url AS permalinkUrl, artwork_url AS artworkUrl,
+             created_at_remote AS createdAt, duration_ms AS durationMs, sharing,
+             streamable, playback_count AS playbackCount, likes_count AS likesCount,
+             comment_count AS commentCount, reposts_count AS repostsCount,
+             genre, tag_list AS tagList, imported_at AS importedAt
+      FROM soundcloud_tracks ORDER BY created_at_remote DESC
+    `).all().map((row) => ({ ...row, streamable: Boolean(row.streamable) })) as unknown as SoundCloudTrackSummary[];
+  }
+
   private syncReadinessTasks(releaseId: string, checks: ReleaseReadiness["checks"]): void {
     const link = this.database.prepare("SELECT project_id AS projectId FROM releases WHERE id = ?").get(releaseId) as { projectId: string };
     const now = new Date().toISOString();
@@ -423,3 +470,5 @@ export class StudioDatabase {
     for (const [id, name, genres, voice] of seedArtists) insert.run(id, name, JSON.stringify(genres), voice, now, now);
   }
 }
+
+function numberOrNull(value: unknown): number | null { return typeof value === "number" && Number.isFinite(value) ? value : null; }
