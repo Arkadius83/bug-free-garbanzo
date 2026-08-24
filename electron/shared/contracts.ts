@@ -95,6 +95,12 @@ export interface AudioAnalysisSummary {
   integratedLufs: number | null;
   loudnessRangeLu: number | null;
   truePeakDbtp: number | null;
+  bpm: number | null;
+  bpmConfidence: number | null;
+  alternateBpm: number | null;
+  musicalKey: string | null;
+  keyConfidence: number | null;
+  alternateKey: string | null;
   analyzedAt: string;
   note: string | null;
 }
