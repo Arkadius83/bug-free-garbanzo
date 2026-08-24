@@ -44,7 +44,10 @@ const api: StudioApi = {
   syncSpotifyCatalog: () => ipcRenderer.invoke("studio:sync-spotify-catalog"),
   listSpotifyReleases: () => ipcRenderer.invoke("studio:list-spotify-releases"),
   linkSpotifyRelease: (spotifyReleaseId, releaseId) => ipcRenderer.invoke("studio:link-spotify-release", spotifyReleaseId, releaseId),
-  getCatalogMatchSuggestions: () => ipcRenderer.invoke("studio:get-catalog-match-suggestions")
+  getCatalogMatchSuggestions: () => ipcRenderer.invoke("studio:get-catalog-match-suggestions"),
+  generateCampaignPack: (input) => ipcRenderer.invoke("studio:generate-campaign-pack", input),
+  listCampaignPackItems: (releaseId) => ipcRenderer.invoke("studio:list-campaign-pack-items", releaseId),
+  updateCampaignPackItemStatus: (itemId, status) => ipcRenderer.invoke("studio:update-campaign-pack-item-status", itemId, status)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
