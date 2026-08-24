@@ -248,7 +248,10 @@ export type MediaGenerationStatus = "queued" | "generating" | "ready" | "failed"
 export interface MediaGenerationSettings { openAiConfigured: boolean; klingConfigured: boolean; comfyUiUrl:string; comfyUiAvailable:boolean; comfyUiCheckpoints:string[]; comfyUiCheckpoint:string|null; comfyUiError:string|null; }
 export interface LocalServiceStatus { ollama:{running:boolean;managed:boolean;error:string|null}; comfyUi:{running:boolean;managed:boolean;batchPath:string|null;error:string|null}; autoStart:boolean; }
 export interface MediaGenerationSummary { id:string; releaseId:string; campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; prompt:string; status:MediaGenerationStatus; providerTaskId:string|null; mimeType:string|null; error:string|null; metadata:Record<string,unknown>; createdAt:string; updatedAt:string; }
-export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; }
+export type MediaAspectRatio="1:1"|"4:5"|"9:16"|"16:9";
+export interface BrandProfile { artistId:ArtistAlias; artistName:string; visualDirection:string; palette:string; typography:string; requiredElements:string; forbiddenElements:string; negativePrompt:string; defaultAspectRatio:MediaAspectRatio; updatedAt:string; }
+export interface UpdateBrandProfileInput extends Omit<BrandProfile,"artistName"|"updatedAt"> {}
+export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; aspectRatio?:MediaAspectRatio; }
 export type PublishingStatus="draft"|"approved"|"scheduled"|"published"|"failed";
 export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; createdAt:string; updatedAt:string; }
 export interface CreatePublishingQueueInput { releaseId:string; campaignPackItemId:string; mediaGenerationId:string|null; platform:CampaignChannel; scheduledAt:string|null; }
@@ -335,4 +338,6 @@ export interface StudioApi {
   createPublishingQueueItem(input:CreatePublishingQueueInput):Promise<PublishingQueueItem>;
   updatePublishingQueueStatus(itemId:string,status:PublishingStatus):Promise<PublishingQueueItem>;
   exportPublishingPack(itemId:string):Promise<string|null>;
+  listBrandProfiles():Promise<BrandProfile[]>;
+  updateBrandProfile(input:UpdateBrandProfileInput):Promise<BrandProfile>;
 }
