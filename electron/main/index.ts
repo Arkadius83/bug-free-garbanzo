@@ -9,6 +9,7 @@ import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
 import { SpotifyClient } from "./spotify.js";
 import { MediaGenerationClient } from "./media-generation.js";
+import { LocalServicesManager } from "./local-services.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -16,6 +17,7 @@ let studioDatabase: StudioDatabase;
 let soundCloudClient: SoundCloudClient;
 let spotifyClient: SpotifyClient;
 let mediaGenerationClient: MediaGenerationClient;
+let localServicesManager: LocalServicesManager;
 if (!app.requestSingleInstanceLock()) app.quit();
 
 function soundCloudCallbackFromArgs(args: string[]): string | null {
@@ -137,6 +139,11 @@ ipcMain.handle("studio:get-media-generation-settings",()=>mediaGenerationClient.
 ipcMain.handle("studio:save-media-generation-credentials",(_event,openAiKey:string,klingKey:string)=>mediaGenerationClient.saveCredentials(openAiKey,klingKey));
 ipcMain.handle("studio:test-comfy-ui",(_event,url:string)=>mediaGenerationClient.testComfyUi(url));
 ipcMain.handle("studio:save-comfy-ui-settings",(_event,url:string,checkpoint:string)=>mediaGenerationClient.saveComfyUiSettings(url,checkpoint));
+ipcMain.handle("studio:get-local-service-status",()=>localServicesManager.status());
+ipcMain.handle("studio:set-local-services-auto-start",(_event,enabled:boolean)=>localServicesManager.setAutoStart(Boolean(enabled)));
+ipcMain.handle("studio:start-local-service",(_event,service:"ollama"|"comfyui")=>localServicesManager.start(service));
+ipcMain.handle("studio:stop-local-service",(_event,service:"ollama"|"comfyui")=>localServicesManager.stop(service));
+ipcMain.handle("studio:select-comfy-ui-launcher",async(event)=>{const owner=BrowserWindow.fromWebContents(event.sender)??undefined;const options={properties:["openFile"] as ("openFile")[],filters:[{name:"Windows batch files",extensions:["bat"]}]};const result=owner?await dialog.showOpenDialog(owner,options):await dialog.showOpenDialog(options);if(result.canceled||!result.filePaths[0])return localServicesManager.status();return localServicesManager.setComfyLauncher(result.filePaths[0]);});
 ipcMain.handle("studio:list-media-generations",(_event,releaseId:string)=>studioDatabase.listMediaGenerations(releaseId));
 ipcMain.handle("studio:get-generated-media-url",(_event,id:string)=>{if(!studioDatabase.getMediaGenerationFile(id))throw new Error("Generated media is not ready");return `studio-media://generation/${encodeURIComponent(id)}`;});
 ipcMain.handle("studio:update-media-generation-status",(_event,id:string,status:"approved"|"rejected")=>{const current=studioDatabase.getMediaGeneration(id);if(!current||!(["ready","approved","rejected"] as string[]).includes(current.status))throw new Error("Only completed media can be reviewed");return studioDatabase.updateMediaGeneration(id,{status});});
@@ -184,12 +191,14 @@ function inferMimeType(filePath: string): string | null {
   return types[extension] ?? null;
 }
 
-void app.whenReady().then(() => {
+void app.whenReady().then(async () => {
   studioDatabase = new StudioDatabase(path.join(app.getPath("userData"), "ai-studio-manager.sqlite"));
   studioDatabase.initialize();
   soundCloudClient = new SoundCloudClient(app.getPath("userData"));
   spotifyClient = new SpotifyClient(app.getPath("userData"));
   mediaGenerationClient = new MediaGenerationClient(app.getPath("userData"));
+  localServicesManager = new LocalServicesManager(app.getPath("userData"));
+  await localServicesManager.startConfigured();
   protocol.handle("studio-media", (request) => { const url=new URL(request.url),id=decodeURIComponent(url.pathname.slice(1));if(url.hostname==="asset"){const asset=studioDatabase.getAssetForAnalysis(id);if(!asset||asset.kind!=="audio")return new Response("Not found",{status:404});return net.fetch(pathToFileURL(asset.filePath).toString(),{headers:request.headers});}if(url.hostname==="generation"){const media=studioDatabase.getMediaGenerationFile(id);if(!media)return new Response("Not found",{status:404});return net.fetch(pathToFileURL(media.filePath).toString(),{headers:request.headers});}return new Response("Not found",{status:404});});
   if (process.platform === "win32" && !app.isPackaged) app.setAsDefaultProtocolClient("ai-studio-manager", process.execPath, [path.resolve(process.argv[1])]);
   else app.setAsDefaultProtocolClient("ai-studio-manager");
@@ -212,7 +221,7 @@ app.on("second-instance", (_event, argv) => {
   if (callback && soundCloudClient) void handleSoundCloudCallback(callback);
 });
 
-app.on("before-quit", () => studioDatabase?.close());
+app.on("before-quit", () => { localServicesManager?.stopManaged(); studioDatabase?.close(); });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
