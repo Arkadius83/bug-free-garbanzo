@@ -13,7 +13,7 @@ export async function analyzeAudioFile(assetId: string, filePath: string): Promi
   const analyzedAt = new Date().toISOString();
   try {
     const measurements = await analyzeWithFfmpeg(filePath);
-    return { id: randomUUID(), assetId, status: "complete", analyzer: "ffmpeg-ebur128", ...measurements, analyzedAt, note: null };
+    return { id: randomUUID(), assetId, status: "complete", analyzer: "ffmpeg-ebur128-v2", ...measurements, analyzedAt, note: null };
   } catch (ffmpegError) {
     if (path.extname(filePath).toLowerCase() !== ".wav") {
       throw new Error("FFmpeg is required to analyze this audio format. Install FFmpeg and make sure ffmpeg is available in PATH.", { cause: ffmpegError });
@@ -33,20 +33,36 @@ function analyzeWithFfmpeg(filePath: string): Promise<Measurements> {
     child.on("error", reject);
     child.on("close", (code) => {
       if (code !== 0) return reject(new Error("FFmpeg exited with code " + code));
-      const duration = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
-      const audio = stderr.match(/Audio: ([^,]+),\s*(\d+) Hz,\s*([^,]+)/);
-      const summaries = [...stderr.matchAll(/I:\s*(-?\d+(?:\.\d+)?) LUFS[\s\S]*?LRA:\s*(-?\d+(?:\.\d+)?) LU[\s\S]*?Peak:\s*(-?\d+(?:\.\d+)?) dBFS/g)];
-      const summary = summaries.at(-1);
-      if (!duration || !audio || !summary) return reject(new Error("FFmpeg output did not contain a complete EBU R128 summary"));
-      const channelText = audio[3].toLowerCase();
-      const channels = channelText.includes("mono") ? 1 : channelText.includes("stereo") ? 2 : Number(channelText.match(/(\d+) channels?/)?.[1] ?? 0);
-      const sampleFormat = stderr.match(/Audio: [^\n]*?\b(s(?:16|24|32|64)|u8|flt|dbl)(?:p)?\b/i)?.[1]?.toLowerCase();
-      const bitDepth = sampleFormat === "u8" ? 8 : sampleFormat?.startsWith("s") ? Number(sampleFormat.slice(1)) : sampleFormat === "flt" ? 32 : sampleFormat === "dbl" ? 64 : null;
-      resolve({ format: audio[1].trim(), durationSeconds: Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3]),
-        sampleRate: Number(audio[2]), channels: channels || 2, bitDepth, integratedLufs: Number(summary[1]),
-        loudnessRangeLu: Number(summary[2]), truePeakDbtp: Number(summary[3]) });
+      try { resolve(parseFfmpegEbur128Output(stderr)); }
+      catch (error) { reject(error); }
     });
   });
+}
+
+export function parseFfmpegEbur128Output(stderr: string): Measurements {
+  const duration = stderr.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  const audio = stderr.match(/Audio: ([^,]+),\s*(\d+) Hz,\s*([^,]+)/);
+  const summaryStart = stderr.lastIndexOf("Summary:");
+  if (!duration || !audio || summaryStart < 0) throw new Error("FFmpeg output did not contain a final EBU R128 summary");
+  const summaryText = stderr.slice(summaryStart);
+  const integrated = summaryText.match(/Integrated loudness:[\s\S]*?I:\s*(-?\d+(?:\.\d+)?) LUFS/);
+  const range = summaryText.match(/Loudness range:[\s\S]*?LRA:\s*(-?\d+(?:\.\d+)?) LU/);
+  const peak = summaryText.match(/True peak:[\s\S]*?Peak:\s*(-?\d+(?:\.\d+)?) dBFS/);
+  if (!integrated || !range || !peak) throw new Error("FFmpeg final summary is incomplete");
+  const integratedLufs = Number(integrated[1]);
+  const loudnessRangeLu = Number(range[1]);
+  const truePeakDbtp = Number(peak[1]);
+  if (![integratedLufs, loudnessRangeLu, truePeakDbtp].every(Number.isFinite)) throw new Error("FFmpeg returned non-numeric loudness values");
+  if (integratedLufs <= -69.9 && truePeakDbtp > -40) throw new Error("FFmpeg returned contradictory loudness and peak values");
+  if (loudnessRangeLu < 0) throw new Error("FFmpeg returned an invalid negative loudness range");
+  const channelText = audio[3].toLowerCase();
+  const channels = channelText.includes("mono") ? 1 : channelText.includes("stereo") ? 2 : Number(channelText.match(/(\d+) channels?/)?.[1] ?? 0);
+  const sampleFormat = stderr.match(/Audio: [^\n]*?\b(s(?:16|24|32|64)|u8|flt|dbl)(?:p)?\b/i)?.[1]?.toLowerCase();
+  const bitDepth = sampleFormat === "u8" ? 8 : sampleFormat?.startsWith("s") ? Number(sampleFormat.slice(1)) : sampleFormat === "flt" ? 32 : sampleFormat === "dbl" ? 64 : null;
+  return {
+    format: audio[1].trim(), durationSeconds: Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3]),
+    sampleRate: Number(audio[2]), channels: channels || 2, bitDepth, integratedLufs, loudnessRangeLu, truePeakDbtp
+  };
 }
 
 async function analyzeWav(filePath: string): Promise<Measurements> {
