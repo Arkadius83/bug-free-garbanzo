@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SoundCloudConnection, SoundCloudTrackSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudTrackSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
 type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "integrations";
@@ -50,6 +50,9 @@ export function App() {
   const [soundCloudClientSecret, setSoundCloudClientSecret] = useState("");
   const [soundCloudMessage, setSoundCloudMessage] = useState("");
   const [soundCloudBusy, setSoundCloudBusy] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogStatusFilter, setCatalogStatusFilter] = useState<SoundCloudCatalogStatus | "all">("all");
+  const [catalogArtistFilter, setCatalogArtistFilter] = useState<ArtistAlias | "all" | "unassigned">("all");
   const artist = useMemo(() => artists.find((item) => item.id === selectedArtist) ?? artists[0], [selectedArtist]);
 
   useEffect(() => {
@@ -157,6 +160,14 @@ export function App() {
     try { setSoundCloud(await window.studio.disconnectSoundCloud()); setSoundCloudMessage("SoundCloud disconnected. The imported catalog remains available locally."); }
     catch (error) { setSoundCloudMessage(error instanceof Error ? error.message : "Could not disconnect SoundCloud"); }
     finally { setSoundCloudBusy(false); }
+  }
+
+  async function classifySoundCloudTrack(track: SoundCloudTrackSummary, artistId: ArtistAlias | null, catalogStatus: SoundCloudCatalogStatus) {
+    if (!window.studio) return;
+    try {
+      const updated = await window.studio.updateSoundCloudTrack({ id: track.id, artistId, catalogStatus });
+      setSoundCloudTracks((current) => current.map((item) => item.id === updated.id ? updated : item));
+    } catch (error) { setSoundCloudMessage(error instanceof Error ? error.message : "Could not classify track"); }
   }
 
   async function generateWithOllama() {
@@ -410,6 +421,12 @@ export function App() {
     draft: ["draft", "planned"], planned: ["draft", "planned", "scheduled"],
     scheduled: ["planned", "scheduled", "published"], published: ["published", "archived"], archived: ["draft", "archived"]
   };
+  const visibleSoundCloudTracks = soundCloudTracks.filter((track) => {
+    const matchesQuery = !catalogQuery.trim() || `${track.title} ${track.genre ?? ""} ${track.tagList ?? ""}`.toLowerCase().includes(catalogQuery.trim().toLowerCase());
+    const matchesStatus = catalogStatusFilter === "all" || track.catalogStatus === catalogStatusFilter;
+    const matchesArtist = catalogArtistFilter === "all" || (catalogArtistFilter === "unassigned" ? !track.artistId : track.artistId === catalogArtistFilter);
+    return matchesQuery && matchesStatus && matchesArtist;
+  });
 
   function openReleaseWorkspace(release?: ReleaseSummary) {
     if (release) void selectRelease(release);
@@ -484,7 +501,7 @@ export function App() {
             </section>
             <section className="panel catalog-panel">
               <div className="catalog-heading"><div><span className="eyebrow">Local catalog</span><h2>{soundCloudTracks.length} tracks imported</h2></div>{soundCloudTracks.length > 0 && <small>Latest sync is stored in SQLite</small>}</div>
-              {soundCloudTracks.length === 0 ? <div className="empty-catalog"><span>♫</span><strong>No SoundCloud tracks imported yet</strong><p>Connect your account and select Sync catalog. Nothing is published or changed on SoundCloud.</p></div> : <div className="soundcloud-track-list">{soundCloudTracks.map((track) => <article key={track.id}>{track.artworkUrl ? <img src={track.artworkUrl} alt="" /> : <span className="track-placeholder">♫</span>}<div className="track-main"><strong>{track.title}</strong><small>{new Date(track.createdAt).toLocaleDateString()} · {track.genre ?? "No genre"} · {Math.round(track.durationMs / 6000) / 10} min</small></div><div className="track-stats"><span><b>{track.playbackCount ?? "—"}</b> plays</span><span><b>{track.likesCount ?? "—"}</b> likes</span><span><b>{track.commentCount ?? "—"}</b> comments</span></div><b className="sharing-label">{track.sharing}</b></article>)}</div>}
+              {soundCloudTracks.length === 0 ? <div className="empty-catalog"><span>♫</span><strong>No SoundCloud tracks imported yet</strong><p>Connect your account and select Sync catalog. Nothing is published or changed on SoundCloud.</p></div> : <><div className="catalog-tools"><input placeholder="Search title, genre or tags..." value={catalogQuery} onChange={(event) => setCatalogQuery(event.target.value)} /><select value={catalogStatusFilter} onChange={(event) => setCatalogStatusFilter(event.target.value as SoundCloudCatalogStatus | "all")}><option value="all">All statuses</option><option value="unreviewed">Unreviewed</option><option value="release">Release</option><option value="gem">Gem</option><option value="archive">Archive</option><option value="exclude">Exclude</option></select><select value={catalogArtistFilter} onChange={(event) => setCatalogArtistFilter(event.target.value as ArtistAlias | "all" | "unassigned")}><option value="all">All aliases</option><option value="unassigned">Unassigned</option>{artists.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select><b>{visibleSoundCloudTracks.length} shown</b></div><div className="soundcloud-track-list">{visibleSoundCloudTracks.map((track) => <article className={`catalog-${track.catalogStatus}`} key={track.id}>{track.artworkUrl ? <img src={track.artworkUrl} alt="" /> : <span className="track-placeholder">♫</span>}<div className="track-main"><strong>{track.title}</strong><small>{new Date(track.createdAt).toLocaleDateString()} · {track.genre ?? "No genre"} · {Math.round(track.durationMs / 6000) / 10} min</small><div className="track-classification"><select aria-label="Artist alias" value={track.artistId ?? ""} onChange={(event) => void classifySoundCloudTrack(track, (event.target.value || null) as ArtistAlias | null, track.catalogStatus)}><option value="">Unassigned alias</option>{artists.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select><select aria-label="Catalog status" value={track.catalogStatus} onChange={(event) => void classifySoundCloudTrack(track, track.artistId, event.target.value as SoundCloudCatalogStatus)}><option value="unreviewed">Unreviewed</option><option value="release">Release</option><option value="gem">Gem</option><option value="archive">Archive</option><option value="exclude">Exclude</option></select></div></div><div className="track-stats"><span><b>{track.playbackCount ?? "—"}</b> plays</span><span><b>{track.likesCount ?? "—"}</b> likes</span><span><b>{track.commentCount ?? "—"}</b> comments</span></div><b className="sharing-label">{track.sharing}</b></article>)}</div></>}
             </section>
           </div>
         </div>}
