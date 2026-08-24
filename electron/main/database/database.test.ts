@@ -50,6 +50,9 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(database.getReleaseReadiness(created.id).score, 100);
     database.detachAsset(cover.id);
     assert.equal(database.getReleaseReadiness(created.id).score, 85);
+    database.deleteRelease(created.id);
+    assert.equal(database.listReleases().length, 0);
+    assert.throws(() => database.getReleaseReadiness(created.id), /Release not found/);
     database.setSetting("ai", { model: "small-model", language: "en" });
     assert.deepEqual(database.getSetting("ai", null), { model: "small-model", language: "en" });
   } finally {
