@@ -124,6 +124,8 @@ ipcMain.handle("studio:get-spotify-artist-mappings", () => studioDatabase.getSpo
 ipcMain.handle("studio:save-spotify-artist-mappings", (_event, mappings: SpotifyArtistMapping[]) => studioDatabase.saveSpotifyArtistMappings(mappings));
 ipcMain.handle("studio:list-spotify-releases", () => studioDatabase.listSpotifyReleases());
 ipcMain.handle("studio:sync-spotify-catalog", async () => { for (const mapping of studioDatabase.getSpotifyArtistMappings()) studioDatabase.importSpotifyReleases(mapping.artistId, mapping.spotifyArtistId, await spotifyClient.fetchArtistReleases(mapping.spotifyArtistId)); return studioDatabase.listSpotifyReleases(); });
+ipcMain.handle("studio:link-spotify-release", (_event, spotifyReleaseId: string, releaseId: string | null) => studioDatabase.linkSpotifyRelease(spotifyReleaseId, releaseId));
+ipcMain.handle("studio:get-catalog-match-suggestions", () => studioDatabase.getCatalogMatchSuggestions());
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
   const asset = studioDatabase.getAssetForAnalysis(assetId);
   if (!asset) throw new Error("Audio asset not found");
