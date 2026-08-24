@@ -221,6 +221,9 @@ export class StudioDatabase {
              duration_seconds AS durationSeconds, sample_rate AS sampleRate,
              channels, bit_depth AS bitDepth, integrated_lufs AS integratedLufs,
              loudness_range_lu AS loudnessRangeLu, true_peak_dbtp AS truePeakDbtp,
+             bpm, bpm_confidence AS bpmConfidence, alternate_bpm AS alternateBpm,
+             musical_key AS musicalKey, key_confidence AS keyConfidence,
+             alternate_key AS alternateKey,
              analyzed_at AS analyzedAt, note
       FROM audio_analyses WHERE asset_id = ?
     `).get(assetId) as unknown as AudioAnalysisSummary | undefined) ?? null;
@@ -231,19 +234,25 @@ export class StudioDatabase {
       INSERT INTO audio_analyses (
         id, asset_id, status, analyzer, format, duration_seconds, sample_rate,
         channels, bit_depth, integrated_lufs, loudness_range_lu, true_peak_dbtp,
+        bpm, bpm_confidence, alternate_bpm, musical_key, key_confidence, alternate_key,
         note, analyzed_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(asset_id) DO UPDATE SET
         id=excluded.id, status=excluded.status, analyzer=excluded.analyzer,
         format=excluded.format, duration_seconds=excluded.duration_seconds,
         sample_rate=excluded.sample_rate, channels=excluded.channels,
         bit_depth=excluded.bit_depth, integrated_lufs=excluded.integrated_lufs,
         loudness_range_lu=excluded.loudness_range_lu, true_peak_dbtp=excluded.true_peak_dbtp,
+        bpm=excluded.bpm, bpm_confidence=excluded.bpm_confidence,
+        alternate_bpm=excluded.alternate_bpm, musical_key=excluded.musical_key,
+        key_confidence=excluded.key_confidence, alternate_key=excluded.alternate_key,
         note=excluded.note, analyzed_at=excluded.analyzed_at
     `).run(
       analysis.id, analysis.assetId, analysis.status, analysis.analyzer, analysis.format,
       analysis.durationSeconds, analysis.sampleRate, analysis.channels, analysis.bitDepth,
       analysis.integratedLufs, analysis.loudnessRangeLu, analysis.truePeakDbtp,
+      analysis.bpm, analysis.bpmConfidence, analysis.alternateBpm,
+      analysis.musicalKey, analysis.keyConfidence, analysis.alternateKey,
       analysis.note, analysis.analyzedAt
     );
     this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('asset', ?, 'audio.analyzed', ?, ?)").run(analysis.assetId, JSON.stringify({ analyzer: analysis.analyzer, status: analysis.status }), analysis.analyzedAt);
