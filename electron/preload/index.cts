@@ -32,7 +32,8 @@ const api: StudioApi = {
   syncSoundCloudCatalog: () => ipcRenderer.invoke("studio:sync-soundcloud-catalog"),
   listSoundCloudTracks: () => ipcRenderer.invoke("studio:list-soundcloud-tracks"),
   updateSoundCloudTrack: (input) => ipcRenderer.invoke("studio:update-soundcloud-track", input),
-  setSoundCloudTracksContentType: (ids, contentType) => ipcRenderer.invoke("studio:set-soundcloud-tracks-content-type", ids, contentType)
+  setSoundCloudTracksContentType: (ids, contentType) => ipcRenderer.invoke("studio:set-soundcloud-tracks-content-type", ids, contentType),
+  linkSoundCloudTrack: (trackId, releaseId) => ipcRenderer.invoke("studio:link-soundcloud-track", trackId, releaseId)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
