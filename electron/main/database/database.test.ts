@@ -65,7 +65,8 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.ok((soundCloudTracks[0]?.engagementScore ?? 0) > 0);
     assert.equal(soundCloudTracks[0]?.trend, "baseline");
     assert.equal(database.getSoundCloudTrackPerformance(42).points.length, 1);
-    assert.equal(database.saveSpotifyArtistMappings([{ artistId: "the-arkadiusz", spotifyArtistId: "https://open.spotify.com/artist/1234567890ABCDEF" }])[0]?.spotifyArtistId, "1234567890ABCDEF");
+    assert.equal(database.saveSpotifyArtistMappings([{ artistId: "the-arkadiusz", spotifyArtistId: "https://open.spotify.com/artist/1234567890ABCDEFGHIJKL" }])[0]?.spotifyArtistId, "1234567890ABCDEFGHIJKL");
+    assert.equal(database.saveSpotifyArtistMappings([{ artistId: "the-arkadiusz", spotifyArtistId: "https://open.spotify.com/intl-de/artist/1wzJc2v61Ydpl7IB35w4NK?si=test" }])[0]?.spotifyArtistId, "1wzJc2v61Ydpl7IB35w4NK");
     database.importSpotifyReleases("the-arkadiusz", "1234567890ABCDEF", [{ id: "album1", name: "Album", album_type: "album", release_date: "2026-01-01", total_tracks: 8, images: [{ url: "https://image" }], external_urls: { spotify: "https://open.spotify.com/album/album1" } }]);
     assert.equal(database.listSpotifyReleases()[0]?.name, "Album");
     const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem", contentType: "bootleg" });
