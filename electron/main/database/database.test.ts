@@ -11,7 +11,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 3);
+    assert.equal(database.health().schemaVersion, 4);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
@@ -29,10 +29,14 @@ test("creates a clean database, applies migrations and persists a release", () =
       id: "analysis-1", assetId: asset.id, status: "complete", analyzer: "ffmpeg-ebur128",
       format: "pcm_s24le", durationSeconds: 360, sampleRate: 48000, channels: 2,
       bitDepth: 24, integratedLufs: -9.2, loudnessRangeLu: 4.1, truePeakDbtp: -0.8,
+      bpm: 150, bpmConfidence: 91, alternateBpm: 75,
+      musicalKey: "F♯ minor", keyConfidence: 78, alternateKey: "A major",
       analyzedAt: "2026-08-24T12:00:00.000Z", note: null
     });
     assert.equal(database.getAudioAnalysis(asset.id)?.id, analysis.id);
     assert.equal(database.getAudioAnalysis(asset.id)?.integratedLufs, -9.2);
+    assert.equal(database.getAudioAnalysis(asset.id)?.bpm, 150);
+    assert.equal(database.getAudioAnalysis(asset.id)?.musicalKey, "F♯ minor");
     database.setSetting("ai", { model: "small-model", language: "en" });
     assert.deepEqual(database.getSetting("ai", null), { model: "small-model", language: "en" });
   } finally {
