@@ -164,6 +164,34 @@ export interface ReleaseReadiness {
   missing: string[];
 }
 
+export type TaskStatus = "todo" | "doing" | "done" | "cancelled";
+export type TaskPriority = "low" | "medium" | "high";
+export type TaskAssignee = "human" | "ai" | "automatic";
+
+export interface TaskSummary {
+  id: string;
+  releaseId: string | null;
+  releaseTitle: string | null;
+  title: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  assignee: TaskAssignee;
+  dueAt: string | null;
+  sourceKey: string | null;
+  agentOutput: string | null;
+  model: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTaskInput {
+  releaseId: string | null;
+  title: string;
+  priority: TaskPriority;
+  assignee: TaskAssignee;
+  dueAt: string | null;
+}
+
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
   title: string;
@@ -196,4 +224,8 @@ export interface StudioApi {
   getAudioAnalysis(assetId: string): Promise<AudioAnalysisSummary | null>;
   analyzeAudio(assetId: string): Promise<AudioAnalysisSummary>;
   getReleaseReadiness(releaseId: string): Promise<ReleaseReadiness>;
+  listTasks(releaseId?: string | null): Promise<TaskSummary[]>;
+  createTask(input: CreateTaskInput): Promise<TaskSummary>;
+  updateTaskStatus(taskId: string, status: TaskStatus): Promise<TaskSummary>;
+  runTaskAgent(taskId: string, model: string): Promise<TaskSummary>;
 }
