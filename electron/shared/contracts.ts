@@ -222,6 +222,8 @@ export interface SoundCloudTrackSummary {
   artistId: ArtistAlias | null;
   catalogStatus: SoundCloudCatalogStatus;
   contentType: SoundCloudContentType;
+  engagementRate: number | null;
+  engagementScore: number;
 }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
