@@ -44,6 +44,13 @@ textarea { resize: vertical; }
 pre { margin: 0; padding: 20px; min-height: 210px; color: #d7dcda; white-space: pre-wrap; font: 14px/1.65 inherit; }
 .architecture-note { margin-top: 18px; padding: 18px; border-radius: 9px; background: #151d19; }
 .architecture-note ul { margin: 12px 0 0; padding-left: 20px; color: #9da6a2; line-height: 1.8; }
+.save-message { margin: 12px 0 0; color: #b4d84a; font-size: 13px; }
+.release-list { margin-top: 18px; display: grid; gap: 8px; }
+.release-list > p { color: #77817e; font-size: 13px; }
+.release-list article { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 11px 12px; border: 1px solid #293431; border-radius: 8px; background: #0a0f10; }
+.release-list article strong, .release-list article span { display: block; }
+.release-list article span { margin-top: 3px; color: #77817e; font-size: 11px; }
+.release-list article b { color: #b4d84a; font-size: 10px; text-transform: uppercase; letter-spacing: .1em; }
 
 @media (max-width: 1050px) {
   .shell { grid-template-columns: 200px 1fr; }

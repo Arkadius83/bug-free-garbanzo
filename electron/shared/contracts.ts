@@ -23,6 +23,37 @@ export interface SystemStatus {
   };
 }
 
+export interface DatabaseHealth {
+  ready: boolean;
+  schemaVersion: number;
+  path: string;
+}
+
+export type ReleaseStatus = "draft" | "planned" | "scheduled" | "published" | "archived";
+
+export interface ReleaseSummary {
+  id: string;
+  title: string;
+  artistId: ArtistAlias;
+  artistName: string;
+  primaryGenre: string;
+  story: string;
+  status: ReleaseStatus;
+  releaseDate: string | null;
+  createdAt: string;
+}
+
+export interface CreateReleaseDraftInput {
+  artistId: ArtistAlias;
+  title: string;
+  primaryGenre: string;
+  story: string;
+  releaseDate?: string | null;
+}
+
 export interface StudioApi {
   getSystemStatus(): Promise<SystemStatus>;
+  getDatabaseHealth(): Promise<DatabaseHealth>;
+  listReleases(): Promise<ReleaseSummary[]>;
+  createReleaseDraft(input: CreateReleaseDraftInput): Promise<ReleaseSummary>;
 }
