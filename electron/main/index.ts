@@ -5,6 +5,7 @@ import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft } from "./ollama.js";
 import type { AiSettings, AssetKind, CreateReleaseDraftInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
+import { analyzeAudioFile } from "./audio-analysis.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 let studioDatabase: StudioDatabase;
@@ -74,6 +75,13 @@ ipcMain.handle("studio:list-drafts", (_event, releaseId?: string | null) => stud
 ipcMain.handle("studio:save-generated-draft", (_event, input: SaveGeneratedDraftInput) => studioDatabase.saveGeneratedDraft(input));
 ipcMain.handle("studio:update-draft-status", (_event, draftId: string, status: DraftStatus) => studioDatabase.updateDraftStatus(draftId, status));
 ipcMain.handle("studio:list-assets", (_event, releaseId: string) => studioDatabase.listAssets(releaseId));
+ipcMain.handle("studio:get-audio-analysis", (_event, assetId: string) => studioDatabase.getAudioAnalysis(assetId));
+ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
+  const asset = studioDatabase.getAssetForAnalysis(assetId);
+  if (!asset) throw new Error("Audio asset not found");
+  if (asset.kind !== "audio") throw new Error("Only audio assets can be analyzed");
+  return studioDatabase.saveAudioAnalysis(await analyzeAudioFile(asset.id, asset.filePath));
+});
 ipcMain.handle("studio:select-and-attach-asset", async (event, releaseId: string, kind: AssetKind) => {
   const owner = BrowserWindow.fromWebContents(event.sender) ?? undefined;
   const filters = kind === "audio"
