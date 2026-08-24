@@ -246,6 +246,7 @@ export type MediaProvider = "openai" | "kling" | "comfyui";
 export type GeneratedMediaType = "image" | "video";
 export type MediaGenerationStatus = "queued" | "generating" | "ready" | "failed" | "approved" | "rejected";
 export interface MediaGenerationSettings { openAiConfigured: boolean; klingConfigured: boolean; comfyUiUrl:string; comfyUiAvailable:boolean; comfyUiCheckpoints:string[]; comfyUiCheckpoint:string|null; comfyUiError:string|null; }
+export interface LocalServiceStatus { ollama:{running:boolean;managed:boolean;error:string|null}; comfyUi:{running:boolean;managed:boolean;batchPath:string|null;error:string|null}; autoStart:boolean; }
 export interface MediaGenerationSummary { id:string; releaseId:string; campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; prompt:string; status:MediaGenerationStatus; providerTaskId:string|null; mimeType:string|null; error:string|null; metadata:Record<string,unknown>; createdAt:string; updatedAt:string; }
 export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; }
 
@@ -317,6 +318,11 @@ export interface StudioApi {
   saveMediaGenerationCredentials(openAiApiKey: string, klingApiKey: string): Promise<MediaGenerationSettings>;
   testComfyUi(comfyUiUrl:string):Promise<MediaGenerationSettings>;
   saveComfyUiSettings(comfyUiUrl:string,checkpoint:string):Promise<MediaGenerationSettings>;
+  getLocalServiceStatus():Promise<LocalServiceStatus>;
+  selectComfyUiLauncher():Promise<LocalServiceStatus>;
+  setLocalServicesAutoStart(enabled:boolean):Promise<LocalServiceStatus>;
+  startLocalService(service:"ollama"|"comfyui"):Promise<LocalServiceStatus>;
+  stopLocalService(service:"ollama"|"comfyui"):Promise<LocalServiceStatus>;
   generateMedia(input: GenerateMediaInput): Promise<MediaGenerationSummary>;
   refreshMediaGeneration(generationId: string): Promise<MediaGenerationSummary>;
   listMediaGenerations(releaseId: string): Promise<MediaGenerationSummary[]>;
