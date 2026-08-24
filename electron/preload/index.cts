@@ -66,7 +66,9 @@ const api: StudioApi = {
   listPublishingQueue: () => ipcRenderer.invoke("studio:list-publishing-queue"),
   createPublishingQueueItem: (input) => ipcRenderer.invoke("studio:create-publishing-queue-item",input),
   updatePublishingQueueStatus: (itemId,status) => ipcRenderer.invoke("studio:update-publishing-queue-status",itemId,status),
-  exportPublishingPack: (itemId) => ipcRenderer.invoke("studio:export-publishing-pack",itemId)
+  exportPublishingPack: (itemId) => ipcRenderer.invoke("studio:export-publishing-pack",itemId),
+  listBrandProfiles: () => ipcRenderer.invoke("studio:list-brand-profiles"),
+  updateBrandProfile: (input) => ipcRenderer.invoke("studio:update-brand-profile",input)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
