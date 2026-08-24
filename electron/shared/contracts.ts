@@ -239,6 +239,9 @@ export interface SpotifyConnection { configured: boolean; connected: boolean; ac
 export interface SpotifyArtistMapping { artistId: ArtistAlias; spotifyArtistId: string; }
 export interface SpotifyReleaseSummary { id: string; name: string; albumType: string; releaseDate: string; totalTracks: number; imageUrl: string | null; spotifyUrl: string; spotifyArtistId: string; artistId: ArtistAlias; importedAt: string; releaseId: string | null; releaseTitle: string | null; }
 export interface CatalogMatchSuggestion { soundCloudTrackId: number; soundCloudTitle: string; spotifyReleaseId: string; spotifyTitle: string; artistId: ArtistAlias; score: number; reason: string; }
+export type CampaignPackKind = "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt";
+export interface CampaignPackItem { id: string; releaseId: string; releaseTitle: string; kind: CampaignPackKind; channel: CampaignChannel | null; language: ContentLanguage; content: string; status: DraftStatus; model: string; createdAt: string; updatedAt: string; }
+export interface GenerateCampaignPackInput extends GenerateCampaignDraftInput { releaseId: string; }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
@@ -300,4 +303,7 @@ export interface StudioApi {
   listSpotifyReleases(): Promise<SpotifyReleaseSummary[]>;
   linkSpotifyRelease(spotifyReleaseId: string, releaseId: string | null): Promise<SpotifyReleaseSummary>;
   getCatalogMatchSuggestions(): Promise<CatalogMatchSuggestion[]>;
+  generateCampaignPack(input: GenerateCampaignPackInput): Promise<CampaignPackItem[]>;
+  listCampaignPackItems(releaseId: string): Promise<CampaignPackItem[]>;
+  updateCampaignPackItemStatus(itemId: string, status: DraftStatus): Promise<CampaignPackItem>;
 }
