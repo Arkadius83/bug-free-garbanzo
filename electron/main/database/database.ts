@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, UpdateReleaseInput } from "../../shared/contracts.js";
+import type { AssetSummary, AttachAssetInput, AudioAnalysisSummary, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, TaskStatus, TaskSummary, UpdateReleaseInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -343,12 +343,72 @@ export class StudioDatabase {
       { id: "metadata", label: "Core metadata", complete: metadata, weight: 15, detail: metadata ? "Title, artist, genre and story complete" : "Complete title, artist, genre and story" },
       { id: "campaign", label: "Approved campaign", complete: approved, weight: 20, detail: approved ? "At least one draft approved" : "Approve a campaign draft" }
     ];
-    return {
+    const result = {
       releaseId,
       score: checks.reduce((score, check) => score + (check.complete ? check.weight : 0), 0),
       checks,
       missing: checks.filter((check) => !check.complete).map((check) => check.detail)
     };
+    this.syncReadinessTasks(releaseId, checks);
+    return result;
+  }
+
+  listTasks(releaseId?: string | null): TaskSummary[] {
+    const where = releaseId ? "WHERE t.release_id = ?" : "";
+    const statement = this.database.prepare(`
+      SELECT t.id, t.release_id AS releaseId, r.title AS releaseTitle, t.title,
+             t.status, t.priority, t.assignee, t.due_at AS dueAt,
+             t.source_key AS sourceKey, t.agent_output AS agentOutput,
+             t.model_name AS model, t.created_at AS createdAt, t.updated_at AS updatedAt
+      FROM tasks t LEFT JOIN releases r ON r.id = t.release_id
+      ${where}
+      ORDER BY CASE t.status WHEN 'doing' THEN 0 WHEN 'todo' THEN 1 WHEN 'done' THEN 2 ELSE 3 END,
+               CASE t.priority WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+               COALESCE(t.due_at, '9999-12-31'), t.created_at DESC
+    `);
+    return (releaseId ? statement.all(releaseId) : statement.all()) as unknown as TaskSummary[];
+  }
+
+  createTask(input: CreateTaskInput): TaskSummary {
+    const title = input.title.trim();
+    if (!title) throw new Error("Task title is required");
+    if (!input.releaseId) throw new Error("Select and save a release before creating a task");
+    const link = this.database.prepare("SELECT project_id AS projectId FROM releases WHERE id = ?").get(input.releaseId) as { projectId: string } | undefined;
+    if (!link) throw new Error("Release not found");
+    const id = randomUUID(), now = new Date().toISOString();
+    this.database.prepare("INSERT INTO tasks (id, project_id, release_id, title, status, priority, assignee, due_at, created_at, updated_at) VALUES (?, ?, ?, ?, 'todo', ?, ?, ?, ?, ?)").run(id, link.projectId, input.releaseId, title, input.priority, input.assignee, input.dueAt || null, now, now);
+    return this.listTasks().find((task) => task.id === id)!;
+  }
+
+  updateTaskStatus(taskId: string, status: TaskStatus): TaskSummary {
+    const task = this.database.prepare("SELECT id, status FROM tasks WHERE id = ?").get(taskId) as { id: string; status: TaskStatus } | undefined;
+    if (!task) throw new Error("Task not found");
+    const now = new Date().toISOString();
+    this.database.prepare("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?").run(status, now, taskId);
+    this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('task', ?, 'task.status_changed', ?, ?)").run(taskId, JSON.stringify({ from: task.status, to: status }), now);
+    return this.listTasks().find((item) => item.id === taskId)!;
+  }
+
+  saveTaskAgentOutput(taskId: string, model: string, output: string): TaskSummary {
+    const now = new Date().toISOString();
+    const result = this.database.prepare("UPDATE tasks SET status = 'done', agent_output = ?, model_name = ?, updated_at = ? WHERE id = ?").run(output, model, now, taskId);
+    if (!result.changes) throw new Error("Task not found");
+    this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('task', ?, 'task.agent_completed', ?, ?)").run(taskId, JSON.stringify({ model }), now);
+    return this.listTasks().find((item) => item.id === taskId)!;
+  }
+
+  private syncReadinessTasks(releaseId: string, checks: ReleaseReadiness["checks"]): void {
+    const link = this.database.prepare("SELECT project_id AS projectId FROM releases WHERE id = ?").get(releaseId) as { projectId: string };
+    const now = new Date().toISOString();
+    for (const check of checks) {
+      const sourceKey = "readiness:" + releaseId + ":" + check.id;
+      const assignee = check.id === "analysis" ? "automatic" : check.id === "campaign" ? "ai" : "human";
+      this.database.prepare(`
+        INSERT OR IGNORE INTO tasks (id, project_id, release_id, title, status, priority, assignee, source_key, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(randomUUID(), link.projectId, releaseId, check.detail, check.complete ? "done" : "todo", check.weight >= 20 ? "high" : "medium", assignee, sourceKey, now, now);
+      this.database.prepare("UPDATE tasks SET title = ?, status = ?, priority = ?, assignee = ?, updated_at = ? WHERE source_key = ?").run(check.detail, check.complete ? "done" : "todo", check.weight >= 20 ? "high" : "medium", assignee, now, sourceKey);
+    }
   }
 
   close(): void { this.database.close(); }
