@@ -99,10 +99,15 @@ export function App() {
       setGenerationMessage("Select a local Ollama model first.");
       return;
     }
+    if (!activeReleaseId) {
+      setGenerationState("error");
+      setGenerationMessage("Create the release first. Unsaved releases are never added automatically.");
+      return;
+    }
     setGenerationState("generating");
     setGenerationMessage(`Generating with ${aiSettings.model}...`);
     try {
-      const releaseId = activeReleaseId ?? (await persistRelease()).id;
+      const releaseId = activeReleaseId;
       const result = await window.studio.generateCampaignDraft({
         ...aiSettings,
         model: aiSettings.model,
@@ -202,10 +207,15 @@ export function App() {
 
   async function attachAsset(kind: AssetKind) {
     if (!window.studio) return;
+    if (!activeReleaseId) {
+      setAssetMessage("Create the release first. Media cannot be attached to an unsaved release.");
+      return;
+    }
     setAssetMessage(kind === "audio" ? "Choose the source audio file..." : "Choose the cover artwork...");
     try {
-      const release = await persistRelease();
-      const asset = await window.studio.selectAndAttachAsset(release.id, kind);
+      const release = releases.find((item) => item.id === activeReleaseId);
+      if (!release) throw new Error("Saved release not found");
+      const asset = await window.studio.selectAndAttachAsset(activeReleaseId, kind);
       if (!asset) {
         setAssetMessage("File selection cancelled");
         return;
@@ -254,6 +264,23 @@ export function App() {
       setAssetMessage("Media reference removed; the original file was not deleted");
     } catch (error) {
       setAssetMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not remove media reference");
+    }
+  }
+
+  async function deleteRelease(release: ReleaseSummary) {
+    if (!window.studio) return;
+    const confirmed = window.confirm(`Delete "${release.title}" and its saved drafts, analyses and media references? Original media files will remain on disk.`);
+    if (!confirmed) return;
+    try {
+      await window.studio.deleteRelease(release.id);
+      const remaining = releases.filter((item) => item.id !== release.id);
+      setReleases(remaining);
+      setDrafts((current) => current.filter((draft) => draft.releaseId !== release.id));
+      if (remaining[0]) await selectRelease(remaining[0]);
+      else startNewRelease();
+      setSaveMessage("Release deleted. Original media files were not removed.");
+    } catch (error) {
+      setSaveMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not delete release");
     }
   }
 
@@ -333,7 +360,7 @@ export function App() {
         {(activeView === "releases" || activeView === "ai-studio") && <div className="page-content release-page">
         <header>
           <div><span className="eyebrow">{activeView === "ai-studio" ? "AI Studio" : "Release Manager"}</span><h1>{activeView === "ai-studio" ? "Create campaign content." : "Build the next release."}</h1></div>
-          <button className="primary" onClick={saveRelease}>{activeReleaseId ? "Save changes" : "Create release"}</button>
+          <div className="header-actions">{activeReleaseId && currentRelease && <button className="danger-button" onClick={() => void deleteRelease(currentRelease)}>Delete release</button>}<button className="primary" onClick={saveRelease}>{activeReleaseId ? "Save changes" : "Create release"}</button></div>
         </header>
         <section className="artist-strip">
           {artists.map((profile) => (
@@ -384,7 +411,7 @@ export function App() {
             <div className="release-list">
               <strong>Saved releases</strong>
               {releases.length === 0 ? <p>No releases saved yet.</p> : releases.slice(0, 6).map((release) => (
-                <article className={activeReleaseId === release.id ? "active-release" : ""} key={release.id} onClick={() => void selectRelease(release)}><div><strong>{release.title}</strong><span>{release.artistName} · {release.primaryGenre}</span></div><b>{activeReleaseId === release.id ? "ACTIVE" : release.status}</b></article>
+                <article className={activeReleaseId === release.id ? "active-release" : ""} key={release.id} onClick={() => void selectRelease(release)}><div><strong>{release.title}</strong><span>{release.artistName} · {release.primaryGenre}</span></div><div className="release-item-actions"><b>{activeReleaseId === release.id ? "ACTIVE" : release.status}</b><button title="Delete release" onClick={(event) => { event.stopPropagation(); void deleteRelease(release); }}>Delete</button></div></article>
               ))}
             </div>
             <div className="draft-workflow">
