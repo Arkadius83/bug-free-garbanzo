@@ -192,6 +192,35 @@ export interface CreateTaskInput {
   dueAt: string | null;
 }
 
+export interface SoundCloudConnection {
+  configured: boolean;
+  connected: boolean;
+  userId: number | null;
+  username: string | null;
+  permalinkUrl: string | null;
+  tokenExpiresAt: string | null;
+  callbackUrl: string;
+  error: string | null;
+}
+
+export interface SoundCloudTrackSummary {
+  id: number;
+  title: string;
+  permalinkUrl: string;
+  artworkUrl: string | null;
+  createdAt: string;
+  durationMs: number;
+  sharing: string;
+  streamable: boolean;
+  playbackCount: number | null;
+  likesCount: number | null;
+  commentCount: number | null;
+  repostsCount: number | null;
+  genre: string | null;
+  tagList: string | null;
+  importedAt: string;
+}
+
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
   title: string;
@@ -228,4 +257,10 @@ export interface StudioApi {
   createTask(input: CreateTaskInput): Promise<TaskSummary>;
   updateTaskStatus(taskId: string, status: TaskStatus): Promise<TaskSummary>;
   runTaskAgent(taskId: string, model: string): Promise<TaskSummary>;
+  getSoundCloudConnection(): Promise<SoundCloudConnection>;
+  saveSoundCloudCredentials(clientId: string, clientSecret: string): Promise<SoundCloudConnection>;
+  beginSoundCloudConnect(): Promise<void>;
+  disconnectSoundCloud(): Promise<SoundCloudConnection>;
+  syncSoundCloudCatalog(): Promise<SoundCloudTrackSummary[]>;
+  listSoundCloudTracks(): Promise<SoundCloudTrackSummary[]>;
 }
