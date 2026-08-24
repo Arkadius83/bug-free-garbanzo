@@ -11,7 +11,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 12);
+    assert.equal(database.health().schemaVersion, 13);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
@@ -71,6 +71,8 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(database.listSpotifyReleases()[0]?.name, "Album");
     assert.equal(database.linkSpotifyRelease("album1", created.id).releaseTitle, "Different Perspective V2");
     assert.equal(database.linkSpotifyRelease("album1", null).releaseId, null);
+    const pack=database.saveCampaignPackItems(created.id,"en","deepseek-r1:14b",[{kind:"caption",channel:"Instagram",content:"Campaign caption"}]);
+    assert.equal(pack[0]?.content,"Campaign caption"); assert.equal(database.updateCampaignPackItemStatus(pack[0]!.id,"approved").status,"approved");
     const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem", contentType: "bootleg" });
     assert.equal(classifiedTrack.artistId, "the-arkadiusz");
     assert.equal(classifiedTrack.catalogStatus, "gem");
