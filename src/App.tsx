@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
 type AppView = "overview" | "releases" | "ai-studio";
@@ -35,6 +35,8 @@ export function App() {
   const [title, setTitle] = useState("Different Perspective");
   const [story, setStory] = useState("Seeing beyond ego reveals another perspective.");
   const [releaseDate, setReleaseDate] = useState("");
+  const [primaryGenre, setPrimaryGenre] = useState("Full-On Psytrance");
+  const [releaseStatus, setReleaseStatus] = useState<ReleaseStatus>("draft");
   const artist = useMemo(() => artists.find((item) => item.id === selectedArtist) ?? artists[0], [selectedArtist]);
 
   useEffect(() => {
@@ -61,6 +63,8 @@ export function App() {
           setTitle(savedReleases[0].title);
           setStory(savedReleases[0].story);
           setReleaseDate(savedReleases[0].releaseDate ?? "");
+          setPrimaryGenre(savedReleases[0].primaryGenre);
+          setReleaseStatus(savedReleases[0].status);
           const [initialAssets, initialReadiness] = await Promise.all([
             window.studio!.listAssets(savedReleases[0].id),
             window.studio!.getReleaseReadiness(savedReleases[0].id)
@@ -106,7 +110,7 @@ export function App() {
         artistName: artist.name,
         artistVoice: artist.voice,
         title,
-        primaryGenre: artist.genres[0],
+        primaryGenre,
         story,
         releaseDate: releaseDate || null
       });
@@ -134,13 +138,18 @@ export function App() {
   async function persistRelease(): Promise<ReleaseSummary> {
     if (!window.studio) throw new Error("Desktop bridge unavailable");
     if (activeReleaseId) {
-      const existing = releases.find((release) => release.id === activeReleaseId);
-      if (existing) return existing;
+      const updated = await window.studio.updateRelease({
+        id: activeReleaseId, artistId: selectedArtist, title, primaryGenre, story,
+        releaseDate: releaseDate || null, status: releaseStatus
+      });
+      setReleases((current) => current.map((release) => release.id === updated.id ? updated : release));
+      setReleaseReadiness(await window.studio.getReleaseReadiness(updated.id));
+      return updated;
     }
     const created = await window.studio.createReleaseDraft({
       artistId: selectedArtist,
       title,
-      primaryGenre: artist.genres[0],
+      primaryGenre,
       story,
       releaseDate: releaseDate || null
     });
@@ -151,10 +160,11 @@ export function App() {
   }
 
   async function saveRelease() {
-    setSaveMessage("Saving...");
+    const editing = Boolean(activeReleaseId);
+    setSaveMessage(editing ? "Saving changes..." : "Creating release...");
     try {
       await persistRelease();
-      setSaveMessage("Release draft saved locally");
+      setSaveMessage(editing ? "Release changes saved locally" : "Release created locally");
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "Could not save release");
     }
@@ -178,6 +188,8 @@ export function App() {
     setTitle(release.title);
     setStory(release.story);
     setReleaseDate(release.releaseDate ?? "");
+    setPrimaryGenre(release.primaryGenre);
+    setReleaseStatus(release.status);
     const releaseAssets = window.studio ? await window.studio.listAssets(release.id) : [];
     setAssets(releaseAssets);
     if (window.studio) {
@@ -198,7 +210,7 @@ export function App() {
         setAssetMessage("File selection cancelled");
         return;
       }
-      setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id)]);
+      setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id && item.kind !== kind)]);
       setReleaseReadiness(await window.studio.getReleaseReadiness(release.id));
       setAssetMessage(`${asset.fileName} attached to ${release.title}`);
     } catch (error) {
@@ -227,6 +239,24 @@ export function App() {
     }
   }
 
+  async function detachAsset(assetId: string) {
+    if (!window.studio || !activeReleaseId) return;
+    setAssetMessage("Removing media reference...");
+    try {
+      await window.studio.detachAsset(assetId);
+      setAssets((current) => current.filter((asset) => asset.id !== assetId));
+      setAudioAnalyses((current) => {
+        const next = { ...current };
+        delete next[assetId];
+        return next;
+      });
+      setReleaseReadiness(await window.studio.getReleaseReadiness(activeReleaseId));
+      setAssetMessage("Media reference removed; the original file was not deleted");
+    } catch (error) {
+      setAssetMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not remove media reference");
+    }
+  }
+
   function formatDuration(seconds: number): string {
     const minutes = Math.floor(seconds / 60);
     return `${minutes}:${Math.round(seconds % 60).toString().padStart(2, "0")}`;
@@ -240,14 +270,34 @@ export function App() {
     return [];
   }
 
-  const fallbackDraft = `${artist.name} presents ${title}.\n\n${story}\n\nA ${artist.genres[0]} transmission shaped for listeners who want more than background music.`;
+  const fallbackDraft = `${artist.name} presents ${title}.\n\n${story}\n\nA ${primaryGenre} transmission shaped for listeners who want more than background music.`;
   const draft = generatedDraft?.content ?? fallbackDraft;
   const currentRelease = releases.find((release) => release.id === activeReleaseId) ?? releases[0];
   const readinessScore = releaseReadiness?.score ?? 0;
   const readinessCheck = (id: ReleaseReadiness["checks"][number]["id"]) => releaseReadiness?.checks.find((check) => check.id === id);
+  const persistedStatus = releases.find((release) => release.id === activeReleaseId)?.status ?? "draft";
+  const allowedReleaseStatuses: Record<ReleaseStatus, ReleaseStatus[]> = {
+    draft: ["draft", "planned"], planned: ["draft", "planned", "scheduled"],
+    scheduled: ["planned", "scheduled", "published"], published: ["published", "archived"], archived: ["draft", "archived"]
+  };
 
   function openReleaseWorkspace(release?: ReleaseSummary) {
     if (release) void selectRelease(release);
+    setActiveView("releases");
+  }
+
+  function startNewRelease() {
+    setActiveReleaseId(null);
+    setTitle("");
+    setStory("");
+    setReleaseDate("");
+    setPrimaryGenre(artist.genres[0]);
+    setReleaseStatus("draft");
+    setAssets([]);
+    setAudioAnalyses({});
+    setReleaseReadiness(null);
+    setSaveMessage("");
+    setAssetMessage("");
     setActiveView("releases");
   }
 
@@ -264,7 +314,7 @@ export function App() {
       </aside>
 
       <main className="app-main">
-        <div className="topbar"><div className="search">⌕<span>Search releases, tracks, tasks...</span><kbd>⌘ K</kbd></div><div className="top-actions"><span><i className={`dot ${status?.ollama.available && database?.ready ? "online" : ""}`} />{status?.ollama.available && database?.ready ? "All systems synced" : "Systems starting"}</span><button className="icon-button">♧</button><button className="primary" onClick={() => openReleaseWorkspace()}>+ New release</button></div></div>
+        <div className="topbar"><div className="search">⌕<span>Search releases, tracks, tasks...</span><kbd>⌘ K</kbd></div><div className="top-actions"><span><i className={`dot ${status?.ollama.available && database?.ready ? "online" : ""}`} />{status?.ollama.available && database?.ready ? "All systems synced" : "Systems starting"}</span><button className="icon-button">♧</button><button className="primary" onClick={startNewRelease}>+ New release</button></div></div>
         {bridgeError && <div className="bridge-error">{bridgeError}</div>}
         {activeView === "overview" && <div className="overview page-content">
           <div className="overview-heading"><div><span className="date-label">MONDAY, AUG 24</span><h1>Your music. <em>Ready for the world.</em></h1><p>Everything that needs your attention, in one place.</p></div><button className="daily-brief"><span>✦</span><small>RELEASE CHECK</small><strong>{releaseReadiness?.missing.length ?? 0} actions →<br />remaining</strong></button></div>
@@ -283,11 +333,11 @@ export function App() {
         {(activeView === "releases" || activeView === "ai-studio") && <div className="page-content release-page">
         <header>
           <div><span className="eyebrow">{activeView === "ai-studio" ? "AI Studio" : "Release Manager"}</span><h1>{activeView === "ai-studio" ? "Create campaign content." : "Build the next release."}</h1></div>
-          <button className="primary" onClick={saveRelease}>Save release draft</button>
+          <button className="primary" onClick={saveRelease}>{activeReleaseId ? "Save changes" : "Create release"}</button>
         </header>
         <section className="artist-strip">
           {artists.map((profile) => (
-            <button className={profile.id === selectedArtist ? "selected" : ""} key={profile.id} onClick={() => setSelectedArtist(profile.id)}>
+            <button className={profile.id === selectedArtist ? "selected" : ""} key={profile.id} onClick={() => { setSelectedArtist(profile.id); setPrimaryGenre(profile.genres[0]); }}>
               <strong>{profile.name}</strong><span>{profile.genres.slice(0, 2).join(" · ")}</span>
             </button>
           ))}
@@ -298,14 +348,16 @@ export function App() {
             <div className="panel-heading"><span className="eyebrow">01 / Source</span><h2>Release foundation</h2></div>
             <label>Track title<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
             <label>Artist<input value={artist.name} readOnly /></label>
-            <label>Primary genre<input value={artist.genres[0]} readOnly /></label>
+            <label>Primary genre<input value={primaryGenre} onChange={(event) => setPrimaryGenre(event.target.value)} /></label>
             <label>Release date<input type="date" value={releaseDate} onChange={(event) => setReleaseDate(event.target.value)} /></label>
+            <label>Release status<select value={releaseStatus} onChange={(event) => setReleaseStatus(event.target.value as ReleaseStatus)}>{(["draft","planned","scheduled","published","archived"] as ReleaseStatus[]).map((statusOption) => <option disabled={activeReleaseId ? !allowedReleaseStatuses[persistedStatus].includes(statusOption) : statusOption !== "draft"} value={statusOption} key={statusOption}>{statusOption[0].toUpperCase() + statusOption.slice(1)}</option>)}</select></label>
             <label>Track story<textarea rows={6} value={story} onChange={(event) => setStory(event.target.value)} /></label>
             {saveMessage && <p className="save-message">{saveMessage}</p>}
             <div className="dropzone"><strong>Release media library</strong><span>Files remain in their original folders; the application stores secure references.</span><div className="asset-buttons"><button onClick={() => void attachAsset("audio")}>Choose audio</button><button onClick={() => void attachAsset("cover")}>Choose cover</button></div>{assetMessage && <p>{assetMessage}</p>}</div>
             {assets.length > 0 && <div className="asset-list-local">{assets.map((asset) => {
               const analysis = audioAnalyses[asset.id];
-              return <article key={asset.id}><b>{asset.kind}</b><div><strong>{asset.fileName}</strong><span>{formatBytes(asset.sizeBytes)} · {asset.mimeType ?? "unknown type"}</span><small title={asset.filePath}>{asset.filePath}</small>
+              return <article key={asset.id}><b>{asset.kind}</b><div><div className="asset-title"><strong>{asset.fileName}</strong><button onClick={() => void detachAsset(asset.id)}>Detach</button></div><span>{formatBytes(asset.sizeBytes)} · {asset.mimeType ?? "unknown type"}{asset.width && asset.height ? ` · ${asset.width} × ${asset.height}px` : ""}</span><small title={asset.filePath}>{asset.filePath}</small>
+                {asset.kind === "cover" && asset.width && asset.height && (asset.width !== asset.height || asset.width < 3000) && <small className="asset-warning">Cover recommendation: square artwork, at least 3000 × 3000 px.</small>}
                 {asset.kind === "audio" && <div className="analysis-row">{analysis ? <><span><b>{formatDuration(analysis.durationSeconds)}</b> duration</span><span><b>{(analysis.sampleRate / 1000).toFixed(1)} kHz</b> sample rate</span><span><b>{analysis.bitDepth ?? "—"} bit</b> depth</span><span><b>{analysis.integratedLufs ?? "—"} LUFS</b> loudness</span><span><b>{analysis.truePeakDbtp ?? "—"} dBTP</b> peak</span>{analysis.loudnessRangeLu !== null && <span><b>{analysis.loudnessRangeLu} LU</b> range</span>}<span className="musical-result"><b>{analysis.bpm ?? "—"} BPM</b>{analysis.bpmConfidence !== null ? `${analysis.bpmConfidence}% confidence` : "tempo unavailable"}{analysis.alternateBpm !== null && <small>alt. {analysis.alternateBpm}</small>}</span><span className="musical-result"><b>{analysis.musicalKey ?? "—"}</b>{analysis.keyConfidence !== null ? `${analysis.keyConfidence}% confidence` : "key unavailable"}{analysis.alternateKey && <small>alt. {analysis.alternateKey}</small>}</span></> : <span>No analysis saved</span>}<button disabled={analyzingAssetId === asset.id} onClick={() => void analyzeAsset(asset.id)}>{analyzingAssetId === asset.id ? "Analyzing..." : analysis ? "Analyze again" : "Analyze audio"}</button></div>}
                 {analysis?.note && <small className="analysis-note">{analysis.note}</small>}
               </div></article>;
