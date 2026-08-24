@@ -11,7 +11,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 4);
+    assert.equal(database.health().schemaVersion, 5);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
@@ -50,6 +50,12 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(database.getReleaseReadiness(created.id).score, 100);
     database.detachAsset(cover.id);
     assert.equal(database.getReleaseReadiness(created.id).score, 85);
+    assert.equal(database.listTasks(created.id).filter((task) => task.sourceKey?.startsWith("readiness:")).length, 6);
+    const task = database.createTask({ releaseId: created.id, title: "Prepare short pitch", priority: "high", assignee: "ai", dueAt: "2026-09-01" });
+    assert.equal(database.updateTaskStatus(task.id, "doing").status, "doing");
+    const completedTask = database.saveTaskAgentOutput(task.id, "deepseek-r1:14b", "Draft pitch for human review.");
+    assert.equal(completedTask.status, "done");
+    assert.equal(completedTask.agentOutput, "Draft pitch for human review.");
     database.deleteRelease(created.id);
     assert.equal(database.listReleases().length, 0);
     assert.throws(() => database.getReleaseReadiness(created.id), /Release not found/);
