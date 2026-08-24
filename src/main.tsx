@@ -4,6 +4,7 @@ import { App } from "./App";
 import "./styles.css";
 import "./audio-analysis.css";
 import "./tasks.css";
+import "./integrations.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
