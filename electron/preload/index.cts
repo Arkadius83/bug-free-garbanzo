@@ -14,7 +14,9 @@ const api: StudioApi = {
   saveGeneratedDraft: (input) => ipcRenderer.invoke("studio:save-generated-draft", input),
   updateDraftStatus: (draftId, status) => ipcRenderer.invoke("studio:update-draft-status", draftId, status),
   listAssets: (releaseId) => ipcRenderer.invoke("studio:list-assets", releaseId),
-  selectAndAttachAsset: (releaseId, kind) => ipcRenderer.invoke("studio:select-and-attach-asset", releaseId, kind)
+  selectAndAttachAsset: (releaseId, kind) => ipcRenderer.invoke("studio:select-and-attach-asset", releaseId, kind),
+  getAudioAnalysis: (assetId) => ipcRenderer.invoke("studio:get-audio-analysis", assetId),
+  analyzeAudio: (assetId) => ipcRenderer.invoke("studio:analyze-audio", assetId)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
