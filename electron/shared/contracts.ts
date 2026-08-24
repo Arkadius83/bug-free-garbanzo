@@ -43,6 +43,30 @@ export interface GeneratedCampaignDraft {
   generatedAt: string;
 }
 
+export type DraftStatus = "draft" | "approved" | "scheduled" | "published" | "rejected";
+
+export interface DraftSummary {
+  id: string;
+  releaseId: string;
+  campaignId: string;
+  releaseTitle: string;
+  channel: CampaignChannel;
+  language: ContentLanguage;
+  content: string;
+  status: DraftStatus;
+  model: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveGeneratedDraftInput {
+  releaseId: string;
+  channel: CampaignChannel;
+  language: ContentLanguage;
+  content: string;
+  model: string;
+}
+
 export interface SystemStatus {
   appVersion: string;
   platform: string;
@@ -89,4 +113,7 @@ export interface StudioApi {
   getAiSettings(): Promise<AiSettings>;
   saveAiSettings(settings: AiSettings): Promise<AiSettings>;
   generateCampaignDraft(input: GenerateCampaignDraftInput): Promise<GeneratedCampaignDraft>;
+  listDrafts(releaseId?: string | null): Promise<DraftSummary[]>;
+  saveGeneratedDraft(input: SaveGeneratedDraftInput): Promise<DraftSummary>;
+  updateDraftStatus(draftId: string, status: DraftStatus): Promise<DraftSummary>;
 }

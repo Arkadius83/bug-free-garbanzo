@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain } from "electron";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft } from "./ollama.js";
-import type { AiSettings, CreateReleaseDraftInput, GenerateCampaignDraftInput, SystemStatus } from "../shared/contracts.js";
+import type { AiSettings, CreateReleaseDraftInput, DraftStatus, GenerateCampaignDraftInput, SaveGeneratedDraftInput, SystemStatus } from "../shared/contracts.js";
 import { StudioDatabase } from "./database/database.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -69,6 +69,9 @@ ipcMain.handle("studio:save-ai-settings", (_event, settings: AiSettings): AiSett
   return safe;
 });
 ipcMain.handle("studio:generate-campaign-draft", (_event, input: GenerateCampaignDraftInput) => generateCampaignDraft(input));
+ipcMain.handle("studio:list-drafts", (_event, releaseId?: string | null) => studioDatabase.listDrafts(releaseId));
+ipcMain.handle("studio:save-generated-draft", (_event, input: SaveGeneratedDraftInput) => studioDatabase.saveGeneratedDraft(input));
+ipcMain.handle("studio:update-draft-status", (_event, draftId: string, status: DraftStatus) => studioDatabase.updateDraftStatus(draftId, status));
 
 void app.whenReady().then(() => {
   studioDatabase = new StudioDatabase(path.join(app.getPath("userData"), "ai-studio-manager.sqlite"));

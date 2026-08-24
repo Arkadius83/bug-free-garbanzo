@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, ArtistAlias, DatabaseHealth, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import type { AiSettings, ArtistAlias, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 
 const modules = ["Release", "Content", "Visuals", "Schedule", "Website", "Engagement", "Trends", "Analytics", "Business", "Memory"];
@@ -9,6 +9,8 @@ export function App() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [database, setDatabase] = useState<DatabaseHealth | null>(null);
   const [releases, setReleases] = useState<ReleaseSummary[]>([]);
+  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  const [activeReleaseId, setActiveReleaseId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState("");
   const [bridgeError, setBridgeError] = useState("");
   const [aiSettings, setAiSettings] = useState<AiSettings>({ model: null, language: "en", channel: "Instagram" });
@@ -27,15 +29,17 @@ export function App() {
     }
     void (async () => {
       try {
-        const [system, databaseHealth, savedReleases, savedAiSettings] = await Promise.all([
+        const [system, databaseHealth, savedReleases, savedDrafts, savedAiSettings] = await Promise.all([
           window.studio!.getSystemStatus(),
           window.studio!.getDatabaseHealth(),
           window.studio!.listReleases(),
+          window.studio!.listDrafts(),
           window.studio!.getAiSettings()
         ]);
         setStatus(system);
         setDatabase(databaseHealth);
         setReleases(savedReleases);
+        setDrafts(savedDrafts);
         const savedModelStillExists = system.ollama.models.some((model) => model.name === savedAiSettings.model);
         const preferredModel = system.ollama.models.find((model) => /^deepseek-r1(?::|$)/i.test(model.name)) ?? system.ollama.models[0];
         const resolvedSettings = savedModelStillExists || system.ollama.models.length === 0
@@ -64,6 +68,7 @@ export function App() {
     setGenerationState("generating");
     setGenerationMessage(`Generating with ${aiSettings.model}...`);
     try {
+      const releaseId = activeReleaseId ?? (await persistRelease()).id;
       const result = await window.studio.generateCampaignDraft({
         ...aiSettings,
         model: aiSettings.model,
@@ -75,9 +80,17 @@ export function App() {
         story,
         releaseDate: releaseDate || null
       });
+      const savedDraft = await window.studio.saveGeneratedDraft({
+        releaseId,
+        channel: result.channel,
+        language: result.language,
+        content: result.content,
+        model: result.model
+      });
       setGeneratedDraft(result);
+      setDrafts((current) => [savedDraft, ...current]);
       setGenerationState("idle");
-      setGenerationMessage(`Generated locally with ${result.model}`);
+      setGenerationMessage(`Generated locally with ${result.model} and saved as Draft`);
     } catch (error) {
       setGenerationState("error");
       const message = error instanceof Error ? error.message : "Ollama generation failed";
@@ -87,22 +100,51 @@ export function App() {
     }
   }
 
+  async function persistRelease(): Promise<ReleaseSummary> {
+    if (!window.studio) throw new Error("Desktop bridge unavailable");
+    if (activeReleaseId) {
+      const existing = releases.find((release) => release.id === activeReleaseId);
+      if (existing) return existing;
+    }
+    const created = await window.studio.createReleaseDraft({
+      artistId: selectedArtist,
+      title,
+      primaryGenre: artist.genres[0],
+      story,
+      releaseDate: releaseDate || null
+    });
+    setReleases((current) => [created, ...current]);
+    setActiveReleaseId(created.id);
+    return created;
+  }
+
   async function saveRelease() {
-    if (!window.studio) return;
     setSaveMessage("Saving...");
     try {
-      const created = await window.studio.createReleaseDraft({
-        artistId: selectedArtist,
-        title,
-        primaryGenre: artist.genres[0],
-        story,
-        releaseDate: releaseDate || null
-      });
-      setReleases((current) => [created, ...current]);
+      await persistRelease();
       setSaveMessage("Release draft saved locally");
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "Could not save release");
     }
+  }
+
+  async function changeDraftStatus(draftId: string, status: DraftStatus) {
+    if (!window.studio) return;
+    try {
+      const updated = await window.studio.updateDraftStatus(draftId, status);
+      setDrafts((current) => current.map((draft) => draft.id === updated.id ? updated : draft));
+    } catch (error) {
+      setGenerationState("error");
+      setGenerationMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not update draft");
+    }
+  }
+
+  function nextDraftActions(status: DraftStatus): DraftStatus[] {
+    if (status === "draft") return ["approved", "rejected"];
+    if (status === "approved") return ["draft", "scheduled"];
+    if (status === "scheduled") return ["approved", "published"];
+    if (status === "rejected") return ["draft"];
+    return [];
   }
 
   const fallbackDraft = `${artist.name} presents ${title}.\n\n${story}\n\nA ${artist.genres[0]} transmission shaped for listeners who want more than background music.`;
@@ -180,6 +222,15 @@ export function App() {
               <strong>Saved releases</strong>
               {releases.length === 0 ? <p>No releases saved yet.</p> : releases.slice(0, 6).map((release) => (
                 <article key={release.id}><div><strong>{release.title}</strong><span>{release.artistName} · {release.primaryGenre}</span></div><b>{release.status}</b></article>
+              ))}
+            </div>
+            <div className="draft-workflow">
+              <strong>Campaign drafts</strong>
+              {drafts.length === 0 ? <p>No AI drafts saved yet.</p> : drafts.slice(0, 8).map((item) => (
+                <article key={item.id}>
+                  <div className="draft-summary"><strong>{item.channel} · {item.language.toUpperCase()}</strong><span>{item.releaseTitle} · {item.model}</span><p>{item.content}</p></div>
+                  <div className="draft-actions"><b className={`status-${item.status}`}>{item.status}</b>{nextDraftActions(item.status).map((next) => <button key={next} onClick={() => void changeDraftStatus(item.id, next)}>{next}</button>)}</div>
+                </article>
               ))}
             </div>
           </section>

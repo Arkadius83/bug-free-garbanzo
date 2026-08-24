@@ -28,6 +28,16 @@ Supporting entities: Asset, ReleaseTrack, CampaignAsset, Task, Event and Setting
 
 Generated content remains a draft until explicitly approved. No platform adapter may publish autonomously in the MVP.
 
+Draft workflow is enforced in the database boundary:
+
+- `draft → approved | rejected`
+- `approved → draft | scheduled`
+- `scheduled → approved | published`
+- `rejected → draft`
+- `published` is terminal
+
+Every creation and status transition writes an append-only Event record.
+
 ## Ollama V1
 
 - Ollama is accessed only by the Electron main process at `127.0.0.1:11434`.

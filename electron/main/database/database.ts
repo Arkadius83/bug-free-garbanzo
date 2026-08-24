@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { CreateReleaseDraftInput, DatabaseHealth, ReleaseSummary } from "../../shared/contracts.js";
+import type { CreateReleaseDraftInput, DatabaseHealth, DraftStatus, DraftSummary, ReleaseSummary, SaveGeneratedDraftInput } from "../../shared/contracts.js";
 import { migrations } from "./migrations.js";
 
 const seedArtists = [
@@ -101,6 +101,73 @@ export class StudioDatabase {
       INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
     `).run(key, JSON.stringify(value), now);
+  }
+
+  listDrafts(releaseId?: string | null): DraftSummary[] {
+    const where = releaseId ? "WHERE r.id = ?" : "";
+    const statement = this.database.prepare(`
+      SELECT d.id, r.id AS releaseId, d.campaign_id AS campaignId, r.title AS releaseTitle,
+             d.channel, d.language, d.content, d.status, d.model_name AS model,
+             d.created_at AS createdAt, d.updated_at AS updatedAt
+      FROM drafts d
+      JOIN campaigns c ON c.id = d.campaign_id
+      JOIN releases r ON r.id = c.release_id
+      ${where}
+      ORDER BY d.created_at DESC, d.id DESC
+      LIMIT 100
+    `);
+    return (releaseId ? statement.all(releaseId) : statement.all()) as unknown as DraftSummary[];
+  }
+
+  saveGeneratedDraft(input: SaveGeneratedDraftInput): DraftSummary {
+    const content = input.content.trim();
+    if (!content) throw new Error("Draft content cannot be empty");
+    const release = this.database.prepare("SELECT id, title FROM releases WHERE id = ?").get(input.releaseId) as { id: string; title: string } | undefined;
+    if (!release) throw new Error("Release not found");
+    const now = new Date().toISOString();
+    let campaign = this.database.prepare("SELECT id FROM campaigns WHERE release_id = ? AND status = 'draft' ORDER BY created_at LIMIT 1").get(input.releaseId) as { id: string } | undefined;
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      if (!campaign) {
+        campaign = { id: randomUUID() };
+        this.database.prepare("INSERT INTO campaigns (id, release_id, name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)").run(campaign.id, input.releaseId, `${release.title} Campaign`, now, now);
+      }
+      const draftId = randomUUID();
+      this.database.prepare(`
+        INSERT INTO drafts (id, campaign_id, channel, language, content, model_name, prompt_version, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'ollama-campaign-v1', ?, ?)
+      `).run(draftId, campaign.id, input.channel, input.language, content, input.model, now, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('draft', ?, 'draft.created', ?, ?)").run(draftId, JSON.stringify({ releaseId: input.releaseId, campaignId: campaign.id }), now);
+      this.database.exec("COMMIT");
+      return { id: draftId, releaseId: input.releaseId, campaignId: campaign.id, releaseTitle: release.title, channel: input.channel, language: input.language, content, status: "draft", model: input.model, createdAt: now, updatedAt: now };
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  updateDraftStatus(draftId: string, nextStatus: DraftStatus): DraftSummary {
+    const current = this.database.prepare("SELECT status FROM drafts WHERE id = ?").get(draftId) as { status: DraftStatus } | undefined;
+    if (!current) throw new Error("Draft not found");
+    const transitions: Record<DraftStatus, DraftStatus[]> = {
+      draft: ["approved", "rejected"],
+      approved: ["draft", "scheduled"],
+      scheduled: ["approved", "published"],
+      published: [],
+      rejected: ["draft"]
+    };
+    if (!transitions[current.status].includes(nextStatus)) throw new Error(`Invalid draft transition: ${current.status} → ${nextStatus}`);
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("UPDATE drafts SET status = ?, updated_at = ? WHERE id = ?").run(nextStatus, now, draftId);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('draft', ?, 'draft.status_changed', ?, ?)").run(draftId, JSON.stringify({ from: current.status, to: nextStatus }), now);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return this.listDrafts().find((draft) => draft.id === draftId)!;
   }
 
   close(): void { this.database.close(); }

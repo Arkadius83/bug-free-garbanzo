@@ -9,7 +9,10 @@ const api: StudioApi = {
   createReleaseDraft: (input) => ipcRenderer.invoke("studio:create-release-draft", input),
   getAiSettings: () => ipcRenderer.invoke("studio:get-ai-settings"),
   saveAiSettings: (settings) => ipcRenderer.invoke("studio:save-ai-settings", settings),
-  generateCampaignDraft: (input) => ipcRenderer.invoke("studio:generate-campaign-draft", input)
+  generateCampaignDraft: (input) => ipcRenderer.invoke("studio:generate-campaign-draft", input),
+  listDrafts: (releaseId) => ipcRenderer.invoke("studio:list-drafts", releaseId),
+  saveGeneratedDraft: (input) => ipcRenderer.invoke("studio:save-generated-draft", input),
+  updateDraftStatus: (draftId, status) => ipcRenderer.invoke("studio:update-draft-status", draftId, status)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
