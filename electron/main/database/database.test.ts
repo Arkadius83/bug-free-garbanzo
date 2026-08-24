@@ -37,6 +37,11 @@ test("creates a clean database, applies migrations and persists a release", () =
     assert.equal(database.getAudioAnalysis(asset.id)?.integratedLufs, -9.2);
     assert.equal(database.getAudioAnalysis(asset.id)?.bpm, 150);
     assert.equal(database.getAudioAnalysis(asset.id)?.musicalKey, "F♯ minor");
+    const readiness = database.getReleaseReadiness(created.id);
+    assert.equal(readiness.score, 70);
+    assert.equal(readiness.checks.find((check) => check.id === "audio")?.complete, true);
+    assert.equal(readiness.checks.find((check) => check.id === "cover")?.complete, false);
+    assert.ok(readiness.missing.includes("Attach release artwork"));
     database.setSetting("ai", { model: "small-model", language: "en" });
     assert.deepEqual(database.getSetting("ai", null), { model: "small-model", language: "en" });
   } finally {
