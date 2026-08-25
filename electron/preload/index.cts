@@ -68,7 +68,11 @@ const api: StudioApi = {
   updatePublishingQueueStatus: (itemId,status) => ipcRenderer.invoke("studio:update-publishing-queue-status",itemId,status),
   exportPublishingPack: (itemId) => ipcRenderer.invoke("studio:export-publishing-pack",itemId),
   listBrandProfiles: () => ipcRenderer.invoke("studio:list-brand-profiles"),
-  updateBrandProfile: (input) => ipcRenderer.invoke("studio:update-brand-profile",input)
+  updateBrandProfile: (input) => ipcRenderer.invoke("studio:update-brand-profile",input),
+  listContacts: () => ipcRenderer.invoke("studio:list-contacts"),
+  saveContact: (input) => ipcRenderer.invoke("studio:save-contact",input),
+  deleteContact: (contactId) => ipcRenderer.invoke("studio:delete-contact",contactId),
+  addContactInteraction: (input) => ipcRenderer.invoke("studio:add-contact-interaction",input)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
