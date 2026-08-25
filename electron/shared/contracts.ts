@@ -264,6 +264,7 @@ export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle
 export interface CreatePublishingQueueInput { releaseId:string; campaignPackItemId:string; mediaGenerationId:string|null; platform:CampaignChannel; scheduledAt:string|null; }
 export interface MetaDestination { id:string; platform:"Facebook"|"Instagram";pageId:string;name:string;username:string|null; }
 export interface MetaConnection { configured:boolean;connected:boolean;callbackUrl:string;graphVersion:string;destinations:MetaDestination[];error:string|null; }
+export interface MediaBridgeStatus { configured:boolean;provider:"cloudflare-r2";accountId:string|null;bucket:string|null;error:string|null; }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
@@ -358,4 +359,6 @@ export interface StudioApi {
   beginMetaConnect():Promise<void>;
   disconnectMeta():Promise<MetaConnection>;
   publishMetaQueueItem(itemId:string,destinationId:string):Promise<PublishingQueueItem>;
+  getMediaBridgeStatus():Promise<MediaBridgeStatus>;
+  saveMediaBridgeSettings(accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string):Promise<MediaBridgeStatus>;
 }
