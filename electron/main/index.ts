@@ -28,9 +28,20 @@ function soundCloudCallbackFromArgs(args: string[]): string | null {
   return args.find((value) => value.startsWith("ai-studio-manager://soundcloud/callback")) ?? null;
 }
 
+function metaCallbackFromArgs(args: string[]): string | null {
+  return args.find((value) => value.startsWith("ai-studio-manager://meta/callback")) ?? null;
+}
+
 async function handleSoundCloudCallback(url: string): Promise<void> {
   try { await soundCloudClient.handleCallback(url); }
   catch (error) { console.error("SoundCloud callback failed", error); }
+  const window = BrowserWindow.getAllWindows()[0];
+  if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
+}
+
+async function handleMetaCallback(url: string): Promise<void> {
+  try { await metaClient.handleCallback(url); }
+  catch (error) { console.error("Meta callback failed", error); }
   const window = BrowserWindow.getAllWindows()[0];
   if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
 }
@@ -228,20 +239,25 @@ void app.whenReady().then(async () => {
   createWindow();
   const initialCallback = soundCloudCallbackFromArgs(process.argv);
   if (initialCallback) void handleSoundCloudCallback(initialCallback);
+  const initialMetaCallback = metaCallbackFromArgs(process.argv);
+  if (initialMetaCallback) void handleMetaCallback(initialMetaCallback);
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
 
 app.on("open-url", (event, url) => {
-  if (!url.startsWith("ai-studio-manager://soundcloud/callback")) return;
+  if (!url.startsWith("ai-studio-manager://soundcloud/callback") && !url.startsWith("ai-studio-manager://meta/callback")) return;
   event.preventDefault();
-  if (soundCloudClient) void handleSoundCloudCallback(url);
+  if (url.startsWith("ai-studio-manager://meta/callback")) { if (metaClient) void handleMetaCallback(url); }
+  else if (soundCloudClient) void handleSoundCloudCallback(url);
 });
 
 app.on("second-instance", (_event, argv) => {
-  const callback = soundCloudCallbackFromArgs(argv);
-  if (callback && soundCloudClient) void handleSoundCloudCallback(callback);
+  const soundCloudCallback = soundCloudCallbackFromArgs(argv);
+  if (soundCloudCallback && soundCloudClient) void handleSoundCloudCallback(soundCloudCallback);
+  const metaCallback = metaCallbackFromArgs(argv);
+  if (metaCallback && metaClient) void handleMetaCallback(metaCallback);
 });
 
 app.on("before-quit", () => { localServicesManager?.stopManaged(); studioDatabase?.close(); });
