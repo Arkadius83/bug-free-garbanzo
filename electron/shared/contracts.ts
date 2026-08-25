@@ -260,8 +260,10 @@ export interface UpsertContactInput { id?:string; name:string; contactType:Conta
 export interface AddContactInteractionInput { contactId:string; channel:ContactChannel|"meeting"; direction:"outbound"|"inbound"|"note"; summary:string; occurredAt:string; }
 export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; aspectRatio?:MediaAspectRatio; }
 export type PublishingStatus="draft"|"approved"|"scheduled"|"published"|"failed";
-export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; createdAt:string; updatedAt:string; }
+export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; remotePostId:string|null; publishedAt:string|null; destinationId:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; createdAt:string; updatedAt:string; }
 export interface CreatePublishingQueueInput { releaseId:string; campaignPackItemId:string; mediaGenerationId:string|null; platform:CampaignChannel; scheduledAt:string|null; }
+export interface MetaDestination { id:string; platform:"Facebook"|"Instagram";pageId:string;name:string;username:string|null; }
+export interface MetaConnection { configured:boolean;connected:boolean;callbackUrl:string;graphVersion:string;destinations:MetaDestination[];error:string|null; }
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
@@ -351,4 +353,9 @@ export interface StudioApi {
   saveContact(input:UpsertContactInput):Promise<ContactSummary>;
   deleteContact(contactId:string):Promise<void>;
   addContactInteraction(input:AddContactInteractionInput):Promise<ContactSummary>;
+  getMetaConnection():Promise<MetaConnection>;
+  saveMetaCredentials(appId:string,appSecret:string):Promise<MetaConnection>;
+  beginMetaConnect():Promise<void>;
+  disconnectMeta():Promise<MetaConnection>;
+  publishMetaQueueItem(itemId:string,destinationId:string):Promise<PublishingQueueItem>;
 }
