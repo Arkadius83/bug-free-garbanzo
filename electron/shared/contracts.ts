@@ -251,6 +251,13 @@ export interface MediaGenerationSummary { id:string; releaseId:string; campaignP
 export type MediaAspectRatio="1:1"|"4:5"|"9:16"|"16:9";
 export interface BrandProfile { artistId:ArtistAlias; artistName:string; visualDirection:string; palette:string; typography:string; requiredElements:string; forbiddenElements:string; negativePrompt:string; defaultAspectRatio:MediaAspectRatio; updatedAt:string; }
 export interface UpdateBrandProfileInput extends Omit<BrandProfile,"artistName"|"updatedAt"> {}
+export type ContactType="artist"|"vocalist"|"producer"|"label"|"promoter"|"playlist-curator"|"press"|"other";
+export type ContactRelationshipStatus="new"|"to-contact"|"contacted"|"conversation"|"collaboration"|"declined"|"inactive";
+export type ContactChannel="email"|"instagram"|"tiktok"|"soundcloud"|"phone"|"other";
+export interface ContactInteraction { id:string; contactId:string; channel:ContactChannel|"meeting"; direction:"outbound"|"inbound"|"note"; summary:string; occurredAt:string; createdAt:string; }
+export interface ContactSummary { id:string; name:string; contactType:ContactType; relationshipStatus:ContactRelationshipStatus; artistId:ArtistAlias|null; artistName:string|null; releaseId:string|null; releaseTitle:string|null; organization:string|null; email:string|null; phone:string|null; website:string|null; socialHandle:string|null; preferredChannel:ContactChannel; consent:boolean; notes:string; nextFollowUpAt:string|null; lastContactAt:string|null; interactions:ContactInteraction[]; createdAt:string; updatedAt:string; }
+export interface UpsertContactInput { id?:string; name:string; contactType:ContactType; relationshipStatus:ContactRelationshipStatus; artistId:ArtistAlias|null; releaseId:string|null; organization:string; email:string; phone:string; website:string; socialHandle:string; preferredChannel:ContactChannel; consent:boolean; notes:string; nextFollowUpAt:string|null; createFollowUpTask?:boolean; }
+export interface AddContactInteractionInput { contactId:string; channel:ContactChannel|"meeting"; direction:"outbound"|"inbound"|"note"; summary:string; occurredAt:string; }
 export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; aspectRatio?:MediaAspectRatio; }
 export type PublishingStatus="draft"|"approved"|"scheduled"|"published"|"failed";
 export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; createdAt:string; updatedAt:string; }
@@ -340,4 +347,8 @@ export interface StudioApi {
   exportPublishingPack(itemId:string):Promise<string|null>;
   listBrandProfiles():Promise<BrandProfile[]>;
   updateBrandProfile(input:UpdateBrandProfileInput):Promise<BrandProfile>;
+  listContacts():Promise<ContactSummary[]>;
+  saveContact(input:UpsertContactInput):Promise<ContactSummary>;
+  deleteContact(contactId:string):Promise<void>;
+  addContactInteraction(input:AddContactInteractionInput):Promise<ContactSummary>;
 }
