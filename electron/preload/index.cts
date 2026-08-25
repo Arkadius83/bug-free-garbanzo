@@ -72,7 +72,12 @@ const api: StudioApi = {
   listContacts: () => ipcRenderer.invoke("studio:list-contacts"),
   saveContact: (input) => ipcRenderer.invoke("studio:save-contact",input),
   deleteContact: (contactId) => ipcRenderer.invoke("studio:delete-contact",contactId),
-  addContactInteraction: (input) => ipcRenderer.invoke("studio:add-contact-interaction",input)
+  addContactInteraction: (input) => ipcRenderer.invoke("studio:add-contact-interaction",input),
+  getMetaConnection: () => ipcRenderer.invoke("studio:get-meta-connection"),
+  saveMetaCredentials: (appId,appSecret) => ipcRenderer.invoke("studio:save-meta-credentials",appId,appSecret),
+  beginMetaConnect: () => ipcRenderer.invoke("studio:begin-meta-connect"),
+  disconnectMeta: () => ipcRenderer.invoke("studio:disconnect-meta"),
+  publishMetaQueueItem: (itemId,destinationId) => ipcRenderer.invoke("studio:publish-meta-queue-item",itemId,destinationId)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
