@@ -384,5 +384,34 @@ export const migrations: Migration[] = [
         updated_at TEXT NOT NULL
       );
     `
+  },
+  {
+    version: 18,
+    name: "contacts_crm_v1",
+    sql: `
+      CREATE TABLE contacts (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        contact_type TEXT NOT NULL CHECK(contact_type IN ('artist','vocalist','producer','label','promoter','playlist-curator','press','other')),
+        relationship_status TEXT NOT NULL CHECK(relationship_status IN ('new','to-contact','contacted','conversation','collaboration','declined','inactive')),
+        artist_id TEXT REFERENCES artist_profiles(id) ON DELETE SET NULL,
+        release_id TEXT REFERENCES releases(id) ON DELETE SET NULL,
+        organization TEXT, email TEXT, phone TEXT, website TEXT, social_handle TEXT,
+        preferred_channel TEXT NOT NULL CHECK(preferred_channel IN ('email','instagram','tiktok','soundcloud','phone','other')),
+        consent INTEGER NOT NULL DEFAULT 0 CHECK(consent IN (0,1)),
+        notes TEXT NOT NULL DEFAULT '', next_follow_up_at TEXT, last_contact_at TEXT,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_contacts_status ON contacts(relationship_status, next_follow_up_at);
+      CREATE INDEX idx_contacts_artist ON contacts(artist_id, contact_type);
+      CREATE TABLE contact_interactions (
+        id TEXT PRIMARY KEY,
+        contact_id TEXT NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+        channel TEXT NOT NULL CHECK(channel IN ('email','instagram','tiktok','soundcloud','phone','meeting','other')),
+        direction TEXT NOT NULL CHECK(direction IN ('outbound','inbound','note')),
+        summary TEXT NOT NULL, occurred_at TEXT NOT NULL, created_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_contact_interactions_contact ON contact_interactions(contact_id, occurred_at DESC);
+    `
   }
 ];
