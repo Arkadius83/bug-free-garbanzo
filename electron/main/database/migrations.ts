@@ -413,5 +413,14 @@ export const migrations: Migration[] = [
       );
       CREATE INDEX idx_contact_interactions_contact ON contact_interactions(contact_id, occurred_at DESC);
     `
+  },
+  {
+    version: 19,
+    name: "meta_publishing_v1",
+    sql: `
+      ALTER TABLE publishing_queue ADD COLUMN remote_post_id TEXT;
+      ALTER TABLE publishing_queue ADD COLUMN published_at TEXT;
+      ALTER TABLE publishing_queue ADD COLUMN destination_id TEXT;
+    `
   }
 ];
