@@ -5,7 +5,7 @@ import path from "node:path";
 import { safeStorage, shell } from "electron";
 import type { MetaConnection, MetaDestination } from "../shared/contracts.js";
 
-const graphVersion="v26.0",callbackUrl="http://127.0.0.1:43822/callback";
+const graphVersion="v26.0",callbackUrl="http://localhost:43822/callback";
 interface StoredDestination extends MetaDestination { pageTokenEncrypted:string; }
 interface StoredMeta { appId:string;appSecretEncrypted:string;userTokenEncrypted?:string;destinations?:StoredDestination[]; }
 
