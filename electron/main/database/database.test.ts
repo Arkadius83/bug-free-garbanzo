@@ -11,7 +11,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 17);
+    assert.equal(database.health().schemaVersion, 18);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");
@@ -80,6 +80,8 @@ test("creates a clean database, applies migrations and persists a release", () =
     const queued=database.createPublishingQueueItem({releaseId:created.id,campaignPackItemId:pack[0]!.id,mediaGenerationId:null,platform:"Instagram",scheduledAt:"2026-09-10T18:00:00.000Z"});
     assert.equal(queued.status,"draft");assert.equal(database.updatePublishingQueueStatus(queued.id,"approved").status,"approved");assert.equal(database.updatePublishingQueueStatus(queued.id,"scheduled").status,"scheduled");
     const brand=database.listBrandProfiles().find((profile)=>profile.artistId==="the-arkadiusz")!;assert.equal(brand.defaultAspectRatio,"1:1");assert.equal(database.updateBrandProfile({...brand,palette:"violet and cyan"}).palette,"violet and cyan");
+    const contact=database.saveContact({name:"Test Vocalist",contactType:"vocalist",relationshipStatus:"to-contact",artistId:"the-arkadiusz",releaseId:created.id,organization:"",email:"voice@example.com",phone:"",website:"",socialHandle:"",preferredChannel:"email",consent:true,notes:"Potential collaboration",nextFollowUpAt:"2026-09-12T12:00:00.000Z",createFollowUpTask:true});
+    assert.equal(contact.consent,true);assert.equal(database.addContactInteraction({contactId:contact.id,channel:"email",direction:"outbound",summary:"Sent demo",occurredAt:"2026-09-10T12:00:00.000Z"}).interactions.length,1);assert.ok(database.listTasks().some((task)=>task.sourceKey?.startsWith(`contact-followup:${contact.id}:`)));database.deleteContact(contact.id);assert.equal(database.listContacts().length,0);
     const classifiedTrack = database.updateSoundCloudTrack({ id: 42, artistId: "the-arkadiusz", catalogStatus: "gem", contentType: "bootleg" });
     assert.equal(classifiedTrack.artistId, "the-arkadiusz");
     assert.equal(classifiedTrack.catalogStatus, "gem");
