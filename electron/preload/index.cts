@@ -77,7 +77,9 @@ const api: StudioApi = {
   saveMetaCredentials: (appId,appSecret) => ipcRenderer.invoke("studio:save-meta-credentials",appId,appSecret),
   beginMetaConnect: () => ipcRenderer.invoke("studio:begin-meta-connect"),
   disconnectMeta: () => ipcRenderer.invoke("studio:disconnect-meta"),
-  publishMetaQueueItem: (itemId,destinationId) => ipcRenderer.invoke("studio:publish-meta-queue-item",itemId,destinationId)
+  publishMetaQueueItem: (itemId,destinationId) => ipcRenderer.invoke("studio:publish-meta-queue-item",itemId,destinationId),
+  getMediaBridgeStatus: () => ipcRenderer.invoke("studio:get-media-bridge-status"),
+  saveMediaBridgeSettings: (accountId,bucket,accessKeyId,secretAccessKey) => ipcRenderer.invoke("studio:save-media-bridge-settings",accountId,bucket,accessKeyId,secretAccessKey)
 };
 
 contextBridge.exposeInMainWorld("studio", api);
