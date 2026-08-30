@@ -36,6 +36,16 @@ jobs:
           PY
       - name: Extract Tasks and Publishing
         run: node scripts/refactor-tasks-publishing.cjs
+      - name: Tighten callback types
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/features/tasks/TasksPage.tsx')
+          s=p.read_text()
+          s=s.replace('onItemChange={(id)=>','onItemChange={(id:string)=>')
+          s=s.replace('onDestinationChange={(id,destinationId)=>','onDestinationChange={(id:string,destinationId:string)=>')
+          p.write_text(s)
+          PY
       - name: Verify generated tree
         run: |
           npm ci
