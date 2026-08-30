@@ -13,6 +13,10 @@ import { MediaBridgePanel } from "./features/integrations/MediaBridgePanel";
 import { MediaProvidersPanel } from "./features/integrations/MediaProvidersPanel";
 import { SoundCloudPanel } from "./features/integrations/SoundCloudPanel";
 import { SpotifyPanel } from "./features/integrations/SpotifyPanel";
+import { useReleaseManager } from "./features/releases/useReleaseManager";
+import { useAiStudio } from "./features/ai-studio/useAiStudio";
+import { usePublishing } from "./features/publishing/usePublishing";
+import { useIntegrations } from "./features/integrations/useIntegrations";
 
 type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "analytics" | "contacts" | "integrations" | "settings";
 
@@ -27,30 +31,15 @@ const navigation: Array<{ id: AppView | "placeholder"; label: string; icon: stri
 
 
 export function App() {
+  const { releases, setReleases, activeReleaseId, setActiveReleaseId, assets, setAssets, assetMessage, setAssetMessage, audioAnalyses, setAudioAnalyses, playbackUrls, setPlaybackUrls, analyzingAssetId, setAnalyzingAssetId, releaseReadiness, setReleaseReadiness, saveMessage, setSaveMessage, title, setTitle, story, setStory, releaseDate, setReleaseDate, primaryGenre, setPrimaryGenre, releaseStatus, setReleaseStatus } = useReleaseManager();
+  const { drafts, setDrafts, aiSettings, setAiSettings, generatedDraft, setGeneratedDraft, generationState, setGenerationState, generationMessage, setGenerationMessage, campaignPackItems, setCampaignPackItems, campaignPackBusy, setCampaignPackBusy, campaignPackMessage, setCampaignPackMessage, mediaGenerations, setMediaGenerations, mediaUrls, setMediaUrls, mediaBusy, setMediaBusy, mediaMessage, setMediaMessage } = useAiStudio();
+  const { publishingQueue, setPublishingQueue, publishingPlatform, setPublishingPlatform, publishingCaptionId, setPublishingCaptionId, publishingMediaId, setPublishingMediaId, publishingDate, setPublishingDate, publishingMessage, setPublishingMessage, metaDestinationByItem, setMetaDestinationByItem, metaQueueItemId, setMetaQueueItemId } = usePublishing();
+  const { soundCloud, setSoundCloud, soundCloudTracks, setSoundCloudTracks, soundCloudClientId, setSoundCloudClientId, soundCloudClientSecret, setSoundCloudClientSecret, soundCloudMessage, setSoundCloudMessage, soundCloudBusy, setSoundCloudBusy, catalogQuery, setCatalogQuery, catalogStatusFilter, setCatalogStatusFilter, catalogArtistFilter, setCatalogArtistFilter, catalogSort, setCatalogSort, selectedPerformanceTrackId, setSelectedPerformanceTrackId, trackPerformance, setTrackPerformance, spotify, setSpotify, spotifyClientId, setSpotifyClientId, spotifyArtistIds, setSpotifyArtistIds, spotifyReleases, setSpotifyReleases, spotifyMessage, setSpotifyMessage, spotifyBusy, setSpotifyBusy, catalogMatches, setCatalogMatches, mediaSettings, setMediaSettings, openAiKey, setOpenAiKey, klingKey, setKlingKey, comfyUiUrl, setComfyUiUrl, comfyUiCheckpoint, setComfyUiCheckpoint, localServices, setLocalServices, localServiceBusy, setLocalServiceBusy, meta, setMeta, metaAppId, setMetaAppId, metaAppSecret, setMetaAppSecret, metaConfigurationId, setMetaConfigurationId, metaBusy, setMetaBusy, metaMessage, setMetaMessage, mediaBridge, setMediaBridge, r2AccountId, setR2AccountId, r2Bucket, setR2Bucket, r2AccessKeyId, setR2AccessKeyId, r2SecretAccessKey, setR2SecretAccessKey, bridgeBusy, setBridgeBusy, bridgeMessage, setBridgeMessage } = useIntegrations();
   const [activeView, setActiveView] = useState<AppView>("overview");
   const [selectedArtist, setSelectedArtist] = useState<ArtistAlias>("the-arkadiusz");
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [database, setDatabase] = useState<DatabaseHealth | null>(null);
-  const [releases, setReleases] = useState<ReleaseSummary[]>([]);
-  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
-  const [activeReleaseId, setActiveReleaseId] = useState<string | null>(null);
-  const [assets, setAssets] = useState<AssetSummary[]>([]);
-  const [assetMessage, setAssetMessage] = useState("");
-  const [audioAnalyses, setAudioAnalyses] = useState<Record<string, AudioAnalysisSummary>>({});
-  const [playbackUrls, setPlaybackUrls] = useState<Record<string, string>>({});
-  const [analyzingAssetId, setAnalyzingAssetId] = useState<string | null>(null);
-  const [releaseReadiness, setReleaseReadiness] = useState<ReleaseReadiness | null>(null);
-  const [saveMessage, setSaveMessage] = useState("");
   const [bridgeError, setBridgeError] = useState("");
-  const [aiSettings, setAiSettings] = useState<AiSettings>({ model: null, language: "en", channel: "Instagram" });
-  const [generatedDraft, setGeneratedDraft] = useState<GeneratedCampaignDraft | null>(null);
-  const [generationState, setGenerationState] = useState<"idle" | "generating" | "error">("idle");
-  const [generationMessage, setGenerationMessage] = useState("");
-  const [title, setTitle] = useState("Different Perspective");
-  const [story, setStory] = useState("Seeing beyond ego reveals another perspective.");
-  const [releaseDate, setReleaseDate] = useState("");
-  const [primaryGenre, setPrimaryGenre] = useState("Full-On Psytrance");
-  const [releaseStatus, setReleaseStatus] = useState<ReleaseStatus>("draft");
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDueAt, setTaskDueAt] = useState("");
@@ -58,38 +47,7 @@ export function App() {
   const [taskAssignee, setTaskAssignee] = useState<TaskAssignee>("human");
   const [taskMessage, setTaskMessage] = useState("");
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
-  const [soundCloud, setSoundCloud] = useState<SoundCloudConnection | null>(null);
-  const [soundCloudTracks, setSoundCloudTracks] = useState<SoundCloudTrackSummary[]>([]);
-  const [soundCloudClientId, setSoundCloudClientId] = useState("");
-  const [soundCloudClientSecret, setSoundCloudClientSecret] = useState("");
-  const [soundCloudMessage, setSoundCloudMessage] = useState("");
-  const [soundCloudBusy, setSoundCloudBusy] = useState(false);
-  const [catalogQuery, setCatalogQuery] = useState("");
-  const [catalogStatusFilter, setCatalogStatusFilter] = useState<SoundCloudCatalogStatus | "all">("all");
-  const [catalogArtistFilter, setCatalogArtistFilter] = useState<ArtistAlias | "all" | "unassigned">("all");
-  const [catalogSort, setCatalogSort] = useState<"newest" | "plays" | "likes" | "engagement">("engagement");
-  const [selectedPerformanceTrackId, setSelectedPerformanceTrackId] = useState<number | null>(null);
-  const [trackPerformance, setTrackPerformance] = useState<SoundCloudTrackPerformance | null>(null);
-  const [spotify, setSpotify] = useState<SpotifyConnection | null>(null);
-  const [spotifyClientId, setSpotifyClientId] = useState("");
-  const [spotifyArtistIds, setSpotifyArtistIds] = useState<Record<ArtistAlias, string>>({ "the-arkadiusz": "", arkadelic: "", "ar-tek": "", "echoes-of-arcadia": "" });
-  const [spotifyReleases, setSpotifyReleases] = useState<SpotifyReleaseSummary[]>([]);
-  const [spotifyMessage, setSpotifyMessage] = useState("");
-  const [spotifyBusy, setSpotifyBusy] = useState(false);
-  const [catalogMatches, setCatalogMatches] = useState<CatalogMatchSuggestion[]>([]);
-  const [campaignPackItems, setCampaignPackItems] = useState<CampaignPackItem[]>([]);
-  const [campaignPackBusy, setCampaignPackBusy] = useState(false);
-  const [campaignPackMessage, setCampaignPackMessage] = useState("");
-  const [mediaSettings,setMediaSettings]=useState<MediaGenerationSettings>({openAiConfigured:false,klingConfigured:false,comfyUiUrl:"http://127.0.0.1:8188",comfyUiAvailable:false,comfyUiCheckpoints:[],comfyUiCheckpoint:null,comfyUiError:null});
-  const [openAiKey,setOpenAiKey]=useState(""); const [klingKey,setKlingKey]=useState("");
-  const [comfyUiUrl,setComfyUiUrl]=useState("http://127.0.0.1:8188"); const [comfyUiCheckpoint,setComfyUiCheckpoint]=useState("");
-  const [mediaGenerations,setMediaGenerations]=useState<MediaGenerationSummary[]>([]); const [mediaUrls,setMediaUrls]=useState<Record<string,string>>({});
-  const [mediaBusy,setMediaBusy]=useState<string|null>(null); const [mediaMessage,setMediaMessage]=useState("");
-  const [localServices,setLocalServices]=useState<LocalServiceStatus|null>(null); const [localServiceBusy,setLocalServiceBusy]=useState(false);
-  const [publishingQueue,setPublishingQueue]=useState<PublishingQueueItem[]>([]);const [publishingPlatform,setPublishingPlatform]=useState<CampaignChannel>("Instagram");const [publishingCaptionId,setPublishingCaptionId]=useState("");const [publishingMediaId,setPublishingMediaId]=useState("");const [publishingDate,setPublishingDate]=useState("");const [publishingMessage,setPublishingMessage]=useState("");
   const [brandProfiles,setBrandProfiles]=useState<BrandProfile[]>([]);const [brandDraft,setBrandDraft]=useState<BrandProfile|null>(null);const [brandMessage,setBrandMessage]=useState("");const [imageAspect,setImageAspect]=useState<"default"|MediaAspectRatio>("default");
-  const [meta,setMeta]=useState<MetaConnection|null>(null);const [metaAppId,setMetaAppId]=useState("");const [metaAppSecret,setMetaAppSecret]=useState("");const [metaConfigurationId,setMetaConfigurationId]=useState("");const [metaBusy,setMetaBusy]=useState(false);const [metaMessage,setMetaMessage]=useState("");const [metaDestinationByItem,setMetaDestinationByItem]=useState<Record<string,string>>({});const [metaQueueItemId,setMetaQueueItemId]=useState("");
-  const [mediaBridge,setMediaBridge]=useState<MediaBridgeStatus|null>(null);const [r2AccountId,setR2AccountId]=useState("");const [r2Bucket,setR2Bucket]=useState("");const [r2AccessKeyId,setR2AccessKeyId]=useState("");const [r2SecretAccessKey,setR2SecretAccessKey]=useState("");const [bridgeBusy,setBridgeBusy]=useState(false);const [bridgeMessage,setBridgeMessage]=useState("");
   const artist = useMemo(() => artists.find((item) => item.id === selectedArtist) ?? artists[0], [selectedArtist]);
 
   useEffect(() => {
