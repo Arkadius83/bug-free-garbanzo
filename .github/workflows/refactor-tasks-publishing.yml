@@ -32,6 +32,8 @@ jobs:
           PY
       - name: Extract Tasks and Publishing
         run: node scripts/refactor-tasks-publishing.cjs
+      - name: Show generated App slice
+        run: nl -ba src/App.tsx | sed -n '588,602p'
       - name: Verify generated tree
         run: |
           npm ci
