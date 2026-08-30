@@ -23,6 +23,15 @@ test("vertical release workflow survives restart and preserves publishing state"
       releaseDate: "2026-09-18"
     });
     releaseId = release.id;
+    database.updateRelease({
+      id: release.id,
+      artistId: release.artistId,
+      title: release.title,
+      primaryGenre: release.primaryGenre,
+      story: release.story,
+      releaseDate: release.releaseDate,
+      status: "planned"
+    });
 
     const audio = database.attachAsset({
       releaseId,
