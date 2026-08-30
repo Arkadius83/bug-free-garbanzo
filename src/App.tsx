@@ -6,6 +6,8 @@ import { ContactsPage } from "./features/contacts/ContactsPage";
 import { AnalyticsPage } from "./features/analytics/AnalyticsPage";
 import { TasksPage } from "./features/tasks/TasksPage";
 import { CampaignPackPanel } from "./features/ai-studio/CampaignPackPanel";
+import { ReleaseSourcePanel } from "./features/releases/ReleaseSourcePanel";
+import { CampaignDraftPanel } from "./features/releases/CampaignDraftPanel";
 import { MetaPanel } from "./features/integrations/MetaPanel";
 import { MediaBridgePanel } from "./features/integrations/MediaBridgePanel";
 import { MediaProvidersPanel } from "./features/integrations/MediaProvidersPanel";
@@ -621,60 +623,9 @@ export function App() {
         </section>
 
         <div className={`workspace ${activeView === "ai-studio" ? "ai-focus" : ""}`}>
-          <section className="panel form-panel">
-            <div className="panel-heading"><span className="eyebrow">01 / Source</span><h2>Release foundation</h2></div>
-            <label>Track title<input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
-            <label>Artist<input value={artist.name} readOnly /></label>
-            <label>Primary genre<input value={primaryGenre} onChange={(event) => setPrimaryGenre(event.target.value)} /></label>
-            <label>Release date<input type="date" value={releaseDate} onChange={(event) => setReleaseDate(event.target.value)} /></label>
-            <label>Release status<select value={releaseStatus} onChange={(event) => setReleaseStatus(event.target.value as ReleaseStatus)}>{(["draft","planned","scheduled","published","archived"] as ReleaseStatus[]).map((statusOption) => <option disabled={activeReleaseId ? !allowedReleaseStatuses[persistedStatus].includes(statusOption) : statusOption !== "draft"} value={statusOption} key={statusOption}>{statusOption[0].toUpperCase() + statusOption.slice(1)}</option>)}</select></label>
-            <label>Track story<textarea rows={6} value={story} onChange={(event) => setStory(event.target.value)} /></label>
-            {saveMessage && <p className="save-message">{saveMessage}</p>}
-            <div className="dropzone"><strong>Release media library</strong><span>Files remain in their original folders; the application stores secure references.</span><div className="asset-buttons"><button onClick={() => void attachAsset("audio")}>Choose audio</button><button onClick={() => void attachAsset("cover")}>Choose cover</button></div>{assetMessage && <p>{assetMessage}</p>}</div>
-            {assets.length > 0 && <div className="asset-list-local">{assets.map((asset) => {
-              const analysis = audioAnalyses[asset.id];
-              return <article key={asset.id}><b>{asset.kind}</b><div><div className="asset-title"><strong>{asset.fileName}</strong><button onClick={() => void detachAsset(asset.id)}>Detach</button></div><span>{formatBytes(asset.sizeBytes)} · {asset.mimeType ?? "unknown type"}{asset.width && asset.height ? ` · ${asset.width} × ${asset.height}px` : ""}</span><small title={asset.filePath}>{asset.filePath}</small>
-                {asset.kind === "cover" && asset.width && asset.height && (asset.width !== asset.height || asset.width < 3000) && <small className="asset-warning">Cover recommendation: square artwork, at least 3000 × 3000 px.</small>}
-                {asset.kind === "audio" && playbackUrls[asset.id] && <AudioPlayer source={playbackUrls[asset.id]} title={asset.fileName} />}
-                {asset.kind === "audio" && <div className="analysis-row">{analysis ? <><span><b>{formatDuration(analysis.durationSeconds)}</b> duration</span><span><b>{(analysis.sampleRate / 1000).toFixed(1)} kHz</b> sample rate</span><span><b>{analysis.bitDepth ?? "—"} bit</b> depth</span><span><b>{analysis.integratedLufs ?? "—"} LUFS</b> loudness</span><span><b>{analysis.truePeakDbtp ?? "—"} dBTP</b> peak</span>{analysis.loudnessRangeLu !== null && <span><b>{analysis.loudnessRangeLu} LU</b> range</span>}<span className="musical-result"><b>{analysis.bpm ?? "—"} BPM</b>{analysis.bpmConfidence !== null ? `${analysis.bpmConfidence}% confidence` : "tempo unavailable"}{analysis.alternateBpm !== null && <small>alt. {analysis.alternateBpm}</small>}</span><span className="musical-result"><b>{analysis.musicalKey ?? "—"}</b>{analysis.keyConfidence !== null ? `${analysis.keyConfidence}% confidence` : "key unavailable"}{analysis.alternateKey && <small>alt. {analysis.alternateKey}</small>}</span></> : <span>No analysis saved</span>}<button disabled={analyzingAssetId === asset.id} onClick={() => void analyzeAsset(asset.id)}>{analyzingAssetId === asset.id ? "Analyzing..." : analysis ? "Analyze again" : "Analyze audio"}</button></div>}
-                {analysis?.note && <small className="analysis-note">{analysis.note}</small>}
-              </div></article>;
-            })}</div>}
-          </section>
+          <ReleaseSourcePanel title={title} setTitle={setTitle} artist={artist} primaryGenre={primaryGenre} setPrimaryGenre={setPrimaryGenre} releaseDate={releaseDate} setReleaseDate={setReleaseDate} releaseStatus={releaseStatus} setReleaseStatus={setReleaseStatus} activeReleaseId={activeReleaseId} allowedReleaseStatuses={allowedReleaseStatuses} persistedStatus={persistedStatus} story={story} setStory={setStory} saveMessage={saveMessage} attachAsset={attachAsset} assetMessage={assetMessage} assets={assets} audioAnalyses={audioAnalyses} detachAsset={detachAsset} playbackUrls={playbackUrls} analyzingAssetId={analyzingAssetId} analyzeAsset={analyzeAsset} formatBytes={formatBytes} formatDuration={formatDuration} />
 
-          <section className="panel output-panel">
-            <div className="panel-heading"><span className="eyebrow">02 / Draft</span><h2>Campaign preview</h2></div>
-            <div className="ai-controls">
-              <label>Local model<select value={aiSettings.model ?? ""} onChange={(event) => void updateAiSettings({ ...aiSettings, model: event.target.value || null })}>
-                {status?.ollama.models.length ? status.ollama.models.map((model) => <option key={model.name} value={model.name}>{model.name}</option>) : <option value="">No models available</option>}
-              </select></label>
-              <label>Language<select value={aiSettings.language} onChange={(event) => void updateAiSettings({ ...aiSettings, language: event.target.value as AiSettings["language"] })}>
-                <option value="en">English</option><option value="de">Deutsch</option><option value="pl">Polski</option>
-              </select></label>
-              <label>Channel<select value={aiSettings.channel} onChange={(event) => void updateAiSettings({ ...aiSettings, channel: event.target.value as AiSettings["channel"] })}>
-                <option>Instagram</option><option>Facebook</option><option>TikTok</option><option>SoundCloud</option><option>YouTube</option>
-              </select></label>
-              <button className="generate-button" disabled={generationState === "generating" || !aiSettings.model} onClick={() => void generateWithOllama()}>{generationState === "generating" ? "Generating..." : "Generate with Ollama"}</button>
-            </div>
-            {generationMessage && <p className={`generation-message ${generationState === "error" ? "error" : ""}`}>{generationMessage}</p>}
-            {generationState === "generating" && <p className="generation-hint">DeepSeek R1 14B may need extra time on its first run while the model loads into VRAM.</p>}
-            <div className="draft"><span>{aiSettings.channel} · {aiSettings.language.toUpperCase()} {generatedDraft ? "· AI generated" : "· template preview"}</span><pre>{draft}</pre></div>
-            <div className="release-list">
-              <strong>Saved releases</strong>
-              {releases.length === 0 ? <p>No releases saved yet.</p> : releases.slice(0, 6).map((release) => (
-                <article className={activeReleaseId === release.id ? "active-release" : ""} key={release.id} onClick={() => void selectRelease(release)}><div><strong>{release.title}</strong><span>{release.artistName} · {release.primaryGenre}</span></div><div className="release-item-actions"><b>{activeReleaseId === release.id ? "ACTIVE" : release.status}</b><button title="Delete release" onClick={(event) => { event.stopPropagation(); void deleteRelease(release); }}>Delete</button></div></article>
-              ))}
-            </div>
-            <div className="draft-workflow">
-              <strong>Campaign drafts</strong>
-              {drafts.length === 0 ? <p>No AI drafts saved yet.</p> : drafts.slice(0, 8).map((item) => (
-                <article key={item.id}>
-                  <div className="draft-summary"><strong>{item.channel} · {item.language.toUpperCase()}</strong><span>{item.releaseTitle} · {item.model}</span><p>{item.content}</p></div>
-                  <div className="draft-actions"><b className={`status-${item.status}`}>{item.status}</b>{nextDraftActions(item.status).map((next) => <button key={next} onClick={() => void changeDraftStatus(item.id, next)}>{next}</button>)}</div>
-                </article>
-              ))}
-            </div>
-          </section>
+          <CampaignDraftPanel aiSettings={aiSettings} updateAiSettings={updateAiSettings} status={status} generationState={generationState} generateWithOllama={generateWithOllama} generationMessage={generationMessage} generatedDraft={generatedDraft} draft={draft} releases={releases} activeReleaseId={activeReleaseId} selectRelease={selectRelease} deleteRelease={deleteRelease} drafts={drafts} nextDraftActions={nextDraftActions} changeDraftStatus={changeDraftStatus} />
         </div>
         {activeView === "ai-studio" && <CampaignPackPanel campaignPackBusy={campaignPackBusy} activeReleaseId={activeReleaseId} aiSettings={aiSettings} generateCampaignPack={generateCampaignPack} campaignPackMessage={campaignPackMessage} mediaMessage={mediaMessage} campaignPackItems={campaignPackItems} nextDraftActions={nextDraftActions} changeCampaignPackStatus={changeCampaignPackStatus} mediaBusy={mediaBusy} mediaSettings={mediaSettings} generateMedia={generateMedia} mediaGenerations={mediaGenerations} mediaUrls={mediaUrls} refreshMedia={refreshMedia} reviewMedia={reviewMedia} />}
         </div>}
