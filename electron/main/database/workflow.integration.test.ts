@@ -36,8 +36,12 @@ test("vertical release workflow survives restart and preserves publishing state"
       { kind: "caption", channel: "Instagram", content: "Approved campaign caption" },
       { kind: "image-prompt", channel: null, content: "Approved artwork prompt" }
     ]);
-    const caption = database.updateCampaignPackItemStatus(pack[0]!.id, "approved");
-    const imagePrompt = database.updateCampaignPackItemStatus(pack[1]!.id, "approved");
+    const captionItem = pack.find((item) => item.kind === "caption");
+    const imagePromptItem = pack.find((item) => item.kind === "image-prompt");
+    assert.ok(captionItem);
+    assert.ok(imagePromptItem);
+    const caption = database.updateCampaignPackItemStatus(captionItem.id, "approved");
+    const imagePrompt = database.updateCampaignPackItemStatus(imagePromptItem.id, "approved");
 
     const media = database.createMediaGeneration(imagePrompt, "comfyui", "image");
     const readyMedia = database.updateMediaGeneration(media.id, { status: "ready", localPath: path.join(directory, "generated-cover.png"), mimeType: "image/png" });
