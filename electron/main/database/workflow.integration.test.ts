@@ -41,8 +41,9 @@ test("vertical release workflow survives restart and preserves publishing state"
 
     const media = database.createMediaGeneration(imagePrompt, "comfyui", "image");
     const readyMedia = database.updateMediaGeneration(media.id, { status: "ready", localPath: path.join(directory, "generated-cover.png"), mimeType: "image/png" });
+    const approvedMedia = database.updateMediaGeneration(readyMedia.id, { status: "approved", localPath: path.join(directory, "generated-cover.png"), mimeType: "image/png" });
 
-    const queueItem = database.createPublishingQueueItem({ releaseId, campaignPackItemId: caption.id, mediaGenerationId: readyMedia.id, platform: "Instagram", scheduledAt: "2026-09-17T18:00:00.000Z" });
+    const queueItem = database.createPublishingQueueItem({ releaseId, campaignPackItemId: caption.id, mediaGenerationId: approvedMedia.id, platform: "Instagram", scheduledAt: "2026-09-17T18:00:00.000Z" });
     queueId = queueItem.id;
     assert.equal(database.updatePublishingQueueStatus(queueId, "approved").status, "approved");
     assert.equal(database.updatePublishingQueueStatus(queueId, "scheduled").status, "scheduled");
