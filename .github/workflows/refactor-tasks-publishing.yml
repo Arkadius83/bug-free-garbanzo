@@ -19,6 +19,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Normalize generated App call
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('scripts/refactor-tasks-publishing.cjs')
+          s=p.read_text()
+          a=s.index('const replacement=')
+          b=s.index(';\ns=s.slice',a)
+          replacement='const replacement=`        {activeView === "calendar" && TasksPage({tasks,taskTitle,setTaskTitle,taskPriority,setTaskPriority,taskAssignee,setTaskAssignee,taskDueAt,setTaskDueAt,activeReleaseId,createTask,taskMessage,runningTaskId,changeTaskStatus,runTaskAgent,meta,publishingQueue,metaQueueItemId,setMetaQueueItemId,metaDestinationByItem,setMetaDestinationByItem,publishMetaItem,releases,selectRelease,publishingPlatform,setPublishingPlatform,publishingCaptionId,setPublishingCaptionId,campaignPackItems,publishingMediaId,setPublishingMediaId,mediaGenerations,publishingDate,setPublishingDate,publishingMessage,addPublishingItem,changePublishingStatus,exportPublishingPack})}`'
+          p.write_text(s[:a]+replacement+s[b:])
+          PY
       - name: Extract Tasks and Publishing
         run: node scripts/refactor-tasks-publishing.cjs
       - name: Verify generated tree
