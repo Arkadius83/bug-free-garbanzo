@@ -39,7 +39,7 @@ test("vertical release workflow survives restart and preserves publishing state"
       id: "phase-2c-analysis",
       assetId: audio.id,
       status: "complete",
-      analyzer: "integration-test",
+      analyzer: "ffmpeg-ebur128-v2",
       format: "pcm_s24le",
       durationSeconds: 300,
       sampleRate: 48000,
