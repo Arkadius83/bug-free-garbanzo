@@ -1,63 +1,4 @@
-const fs = require('node:fs');
-
-const appPath = 'src/App.tsx';
-let app = fs.readFileSync(appPath, 'utf8');
-
-function replaceOnce(label, search, replacement) {
-  const before = app;
-  if (search instanceof RegExp) app = app.replace(search, replacement);
-  else app = app.replace(search, replacement);
-  if (app === before) throw new Error(`Refactor marker not found: ${label}`);
-}
-
-replaceOnce(
-  'contact types in App import',
-  'CatalogMatchSuggestion, ContactChannel, ContactRelationshipStatus, ContactSummary, ContactType, DatabaseHealth',
-  'CatalogMatchSuggestion, DatabaseHealth'
-);
-replaceOnce(
-  'UpsertContactInput in App import',
-  ', TaskStatus, TaskSummary, UpsertContactInput }',
-  ', TaskStatus, TaskSummary }'
-);
-replaceOnce(
-  'ContactsPage import',
-  'import { AudioPlayer } from "./AudioPlayer";\n',
-  'import { AudioPlayer } from "./AudioPlayer";\nimport { ContactsPage } from "./features/contacts/ContactsPage";\n'
-);
-replaceOnce(
-  'emptyContact constant',
-  /\nconst emptyContact:UpsertContactInput=\{[^\n]+\};\n/,
-  '\n'
-);
-replaceOnce(
-  'contact state bundle',
-  /\n  const \[contacts,setContacts\]=useState<ContactSummary\[\]>\(\[\]\);const \[contactDraft,setContactDraft\]=useState<UpsertContactInput>\(emptyContact\);const \[contactQuery,setContactQuery\]=useState\(""\);const \[contactStatusFilter,setContactStatusFilter\]=useState<ContactRelationshipStatus\|"all">\("all"\);const \[contactMessage,setContactMessage\]=useState\(""\);const \[interactionSummary,setInteractionSummary\]=useState\(""\);const \[interactionChannel,setInteractionChannel\]=useState<ContactChannel\|"meeting">\("email"\);const \[interactionDirection,setInteractionDirection\]=useState<"outbound"\|"inbound"\|"note">\("note"\);/,
-  ''
-);
-replaceOnce(
-  'contacts loading effect',
-  /\n  useEffect\(\(\)=>\{if\(activeView!=="contacts"\|\|!window\.studio\)return;void window\.studio\.listContacts\(\)\.then\(setContacts\)\.catch\(\(error\)=>setContactMessage\(error instanceof Error\?error\.message:"Could not load contacts"\)\);\},\[activeView\]\);/,
-  ''
-);
-replaceOnce(
-  'contact command functions',
-  /\n  async function saveContact\(\)\{[\s\S]*?setContactMessage\("Interaction added to history\."\);\}\n/,
-  '\n'
-);
-replaceOnce(
-  'contact derived state',
-  /\n  const visibleContacts=contacts\.filter\([^\n]+\);\n  const selectedContact=contacts\.find\([^\n]+\);/,
-  ''
-);
-replaceOnce(
-  'contacts view',
-  /\n        \{activeView==="contacts"&&<div className="page-content crm-page">[\s\S]*?<\/div><\/div>\}\n\n        \{activeView === "calendar"/,
-  '\n        {activeView==="contacts"&&<ContactsPage releases={releases} onTasksChanged={setTasks} />}\n\n        {activeView === "calendar"'
-);
-
-fs.mkdirSync('src/features/contacts', { recursive: true });
-fs.writeFileSync('src/features/contacts/ContactsPage.tsx', `import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ArtistAlias, ContactChannel, ContactRelationshipStatus, ContactSummary, ContactType, ReleaseSummary, TaskSummary, UpsertContactInput } from "../../../electron/shared/contracts";
 import { artists } from "../../data/artists";
 
@@ -101,7 +42,7 @@ export function ContactsPage({ releases, onTasksChanged }: ContactsPageProps) {
 
   const visibleContacts = useMemo(() => contacts.filter((contact) =>
     (contactStatusFilter === "all" || contact.relationshipStatus === contactStatusFilter) &&
-    (!contactQuery.trim() || \`${'${contact.name} ${contact.organization ?? ""} ${contact.email ?? ""} ${contact.socialHandle ?? ""}'}\`.toLowerCase().includes(contactQuery.trim().toLowerCase()))
+    (!contactQuery.trim() || `${contact.name} ${contact.organization ?? ""} ${contact.email ?? ""} ${contact.socialHandle ?? ""}`.toLowerCase().includes(contactQuery.trim().toLowerCase()))
   ), [contacts, contactQuery, contactStatusFilter]);
   const selectedContact = contacts.find((contact) => contact.id === contactDraft.id);
 
@@ -130,7 +71,7 @@ export function ContactsPage({ releases, onTasksChanged }: ContactsPageProps) {
         nextFollowUpAt: saved.nextFollowUpAt,
         createFollowUpTask: false
       });
-      setContactMessage(\`Saved ${'${saved.name}'}.\`);
+      setContactMessage(`Saved ${saved.name}.`);
       onTasksChanged?.(await window.studio.listTasks());
     } catch (error) {
       setContactMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not save contact");
@@ -215,9 +156,3 @@ export function ContactsPage({ releases, onTasksChanged }: ContactsPageProps) {
     </div>
   </div>;
 }
-`, 'utf8');
-
-fs.rmSync('scripts/refactor-contacts.cjs');
-fs.rmSync('.github/workflows/refactor-contacts.yml');
-fs.writeFileSync(appPath, app, 'utf8');
-console.log('Contacts feature extracted successfully.');
