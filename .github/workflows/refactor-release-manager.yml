@@ -21,6 +21,21 @@ jobs:
           node-version: 22
       - name: Extract Release Manager modules
         run: node scripts/refactor-release-manager.cjs
+      - name: Tighten callback types
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/features/releases/CampaignDraftPanel.tsx')
+          s=p.read_text()
+          s=s.replace('.map((model) =>', '.map((model: any) =>')
+          s=s.replace('.map((release) =>', '.map((release: any) =>')
+          s=s.replace('.map((item) =>', '.map((item: any) =>')
+          s=s.replace('.map((next) =>', '.map((next: any) =>')
+          p.write_text(s)
+          p=Path('src/features/releases/ReleaseSourcePanel.tsx')
+          s=p.read_text().replace('.map((asset) =>', '.map((asset: any) =>')
+          p.write_text(s)
+          PY
       - name: Verify generated tree
         run: |
           npm ci
