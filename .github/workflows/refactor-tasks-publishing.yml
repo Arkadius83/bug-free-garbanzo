@@ -19,7 +19,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Normalize generated App call
+      - name: Normalize extraction script
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -28,12 +28,14 @@ jobs:
           a=s.index('const replacement=')
           b=s.index(';\ns=s.slice',a)
           replacement='const replacement=`        {activeView === "calendar" && TasksPage({tasks,taskTitle,setTaskTitle,taskPriority,setTaskPriority,taskAssignee,setTaskAssignee,taskDueAt,setTaskDueAt,activeReleaseId,createTask,taskMessage,runningTaskId,changeTaskStatus,runTaskAgent,meta,publishingQueue,metaQueueItemId,setMetaQueueItemId,metaDestinationByItem,setMetaDestinationByItem,publishMetaItem,releases,selectRelease,publishingPlatform,setPublishingPlatform,publishingCaptionId,setPublishingCaptionId,campaignPackItems,publishingMediaId,setPublishingMediaId,mediaGenerations,publishingDate,setPublishingDate,publishingMessage,addPublishingItem,changePublishingStatus,exportPublishingPack})}`'
-          p.write_text(s[:a]+replacement+s[b:])
+          s=s[:a]+replacement+s[b:]
+          old='s=s.slice(0,start)+replacement+s.slice(end);'
+          new='const shift=\'\\nimport { TasksPage } from "./features/tasks/TasksPage";\'.length;s=s.slice(0,start+shift)+replacement+s.slice(end+shift);'
+          if old not in s: raise SystemExit('slice anchor missing')
+          p.write_text(s.replace(old,new))
           PY
       - name: Extract Tasks and Publishing
         run: node scripts/refactor-tasks-publishing.cjs
-      - name: Show generated App slice
-        run: nl -ba src/App.tsx | sed -n '588,602p'
       - name: Verify generated tree
         run: |
           npm ci
