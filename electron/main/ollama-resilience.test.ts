@@ -39,6 +39,7 @@ test("Ollama generation does not auto-retry a POST on 429", async () => {
   try {
     await assert.rejects(generateCampaignDraft({
       model: "qwen3:8b",
+      artistId: "the-arkadiusz",
       artistName: "Test Artist",
       artistVoice: "concise",
       title: "Test Track",
