@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeStorage, shell } from "electron";
 import type { SoundCloudConnection } from "../shared/contracts.js";
+import { integrationHttpError, resilientFetch } from "./integration-resilience.js";
 
 const callbackUrl = "ai-studio-manager://soundcloud/callback";
 
@@ -65,23 +66,23 @@ export class SoundCloudClient {
 
   async handleCallback(rawUrl: string): Promise<void> {
     try {
-    const callback = new URL(rawUrl);
-    const code = callback.searchParams.get("code");
-    const state = callback.searchParams.get("state");
-    const error = callback.searchParams.get("error");
-    if (error) throw new Error("SoundCloud authorization failed: " + error);
-    if (!code || !state || !this.pending || state !== this.pending.state) throw new Error("Invalid or expired SoundCloud authorization callback");
-    const stored = await this.requireConfigured();
-    const tokens = await this.exchangeToken({
-      grant_type: "authorization_code", client_id: stored.clientId, client_secret: this.decrypt(stored.clientSecretEncrypted),
-      redirect_uri: callbackUrl, code_verifier: this.pending.verifier, code
-    });
-    this.pending = null;
-    const profile = await this.fetchJson("https://api.soundcloud.com/me", tokens.access_token) as { id: number; username: string; permalink_url: string };
-    await this.writeStored({
-      ...stored, accessTokenEncrypted: this.encrypt(tokens.access_token), refreshTokenEncrypted: this.encrypt(tokens.refresh_token),
-      expiresAt: new Date(Date.now() + tokens.expires_in * 1000).toISOString(), userId: profile.id, username: profile.username, permalinkUrl: profile.permalink_url
-    });
+      const callback = new URL(rawUrl);
+      const code = callback.searchParams.get("code");
+      const state = callback.searchParams.get("state");
+      const error = callback.searchParams.get("error");
+      if (error) throw new Error("SoundCloud authorization failed: " + error);
+      if (!code || !state || !this.pending || state !== this.pending.state) throw new Error("Invalid or expired SoundCloud authorization callback");
+      const stored = await this.requireConfigured();
+      const tokens = await this.exchangeToken({
+        grant_type: "authorization_code", client_id: stored.clientId, client_secret: this.decrypt(stored.clientSecretEncrypted),
+        redirect_uri: callbackUrl, code_verifier: this.pending.verifier, code
+      });
+      this.pending = null;
+      const profile = await this.fetchJson("https://api.soundcloud.com/me", tokens.access_token) as { id: number; username: string; permalink_url: string };
+      await this.writeStored({
+        ...stored, accessTokenEncrypted: this.encrypt(tokens.access_token), refreshTokenEncrypted: this.encrypt(tokens.refresh_token),
+        expiresAt: new Date(Date.now() + tokens.expires_in * 1000).toISOString(), userId: profile.id, username: profile.username, permalinkUrl: profile.permalink_url
+      });
     } catch (error) {
       this.lastError = error instanceof Error ? error.message : "SoundCloud authorization failed";
       throw error;
@@ -122,17 +123,17 @@ export class SoundCloudClient {
   }
 
   private async exchangeToken(parameters: Record<string, string>): Promise<{ access_token: string; refresh_token: string; expires_in: number }> {
-    const response = await fetch("https://secure.soundcloud.com/oauth/token", {
+    const response = await resilientFetch("https://secure.soundcloud.com/oauth/token", {
       method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded", accept: "application/json" },
-      body: new URLSearchParams(parameters), signal: AbortSignal.timeout(30_000)
-    });
-    if (!response.ok) throw new Error("SoundCloud token exchange failed with HTTP " + response.status);
+      body: new URLSearchParams(parameters)
+    }, { service: "SoundCloud", timeoutMs: 30_000, retries: 0 });
+    if (!response.ok) throw integrationHttpError("SoundCloud", response.status, (await response.text()).slice(0, 300));
     return await response.json() as { access_token: string; refresh_token: string; expires_in: number };
   }
 
   private async fetchJson(url: string, token: string): Promise<unknown> {
-    const response = await fetch(url, { headers: { Authorization: "OAuth " + token, accept: "application/json; charset=utf-8" }, signal: AbortSignal.timeout(30_000) });
-    if (!response.ok) throw new Error("SoundCloud API returned HTTP " + response.status);
+    const response = await resilientFetch(url, { headers: { Authorization: "OAuth " + token, accept: "application/json; charset=utf-8" } }, { service: "SoundCloud", timeoutMs: 30_000, retries: 1 });
+    if (!response.ok) throw integrationHttpError("SoundCloud", response.status, (await response.text()).slice(0, 300));
     return response.json();
   }
 

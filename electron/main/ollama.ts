@@ -1,5 +1,6 @@
 import type { OllamaModel } from "../shared/contracts.js";
 import type { CampaignChannel, CampaignPackKind, GenerateCampaignDraftInput, GenerateCampaignPackInput, GeneratedCampaignDraft } from "../shared/contracts.js";
+import { integrationHttpError, resilientFetch } from "./integration-resilience.js";
 
 interface OllamaTagsResponse {
   models?: Array<{
@@ -10,13 +11,9 @@ interface OllamaTagsResponse {
 }
 
 export async function discoverOllamaModels(): Promise<OllamaModel[]> {
-  const response = await fetch("http://127.0.0.1:11434/api/tags", {
-    signal: AbortSignal.timeout(2_000)
-  });
+  const response = await resilientFetch("http://127.0.0.1:11434/api/tags", {}, { service: "Ollama", timeoutMs: 2_000, retries: 1, retryDelayMs: 100 });
 
-  if (!response.ok) {
-    throw new Error(`Ollama returned HTTP ${response.status}`);
-  }
+  if (!response.ok) throw integrationHttpError("Ollama", response.status);
 
   const data = (await response.json()) as OllamaTagsResponse;
   return (data.models ?? []).flatMap((model) => {
@@ -35,10 +32,9 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
   const required = [input.model, input.artistName, input.title, input.primaryGenre];
   if (required.some((value) => !value.trim())) throw new Error("Model, artist, title and genre are required");
 
-  const response = await fetch("http://127.0.0.1:11434/api/chat", {
+  const response = await resilientFetch("http://127.0.0.1:11434/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(300_000),
     body: JSON.stringify({
       model: input.model,
       stream: false,
@@ -70,9 +66,9 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
         }
       ]
     })
-  });
+  }, { service: "Ollama", timeoutMs: 300_000, retries: 0 });
 
-  if (!response.ok) throw new Error(`Ollama generation failed with HTTP ${response.status}`);
+  if (!response.ok) throw integrationHttpError("Ollama", response.status, (await response.text()).slice(0, 300));
   const data = await response.json() as {
     message?: { content?: string; thinking?: string };
     error?: string;
@@ -94,10 +90,9 @@ function stripThinking(value: string): string {
 
 export async function runPlanningAgent(model: string, task: string, releaseTitle: string | null): Promise<string> {
   if (!model.trim() || !task.trim()) throw new Error("Model and task are required");
-  const response = await fetch("http://127.0.0.1:11434/api/chat", {
+  const response = await resilientFetch("http://127.0.0.1:11434/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    signal: AbortSignal.timeout(300_000),
     body: JSON.stringify({
       model, stream: false, think: false, keep_alive: "15m",
       options: { temperature: .35, top_p: .85, num_ctx: 3072, num_predict: model.toLowerCase().startsWith("deepseek-r1") ? 900 : 500 },
@@ -106,8 +101,8 @@ export async function runPlanningAgent(model: string, task: string, releaseTitle
         { role: "user", content: ["Release: " + (releaseTitle || "Unspecified"), "Task: " + task, "Produce the requested draft, checklist or recommendation. Clearly label anything that still needs human approval."].join("\n") }
       ]
     })
-  });
-  if (!response.ok) throw new Error("Ollama agent failed with HTTP " + response.status);
+  }, { service: "Ollama", timeoutMs: 300_000, retries: 0 });
+  if (!response.ok) throw integrationHttpError("Ollama", response.status, (await response.text()).slice(0, 300));
   const data = await response.json() as { message?: { content?: string; thinking?: string }; error?: string };
   const content = stripThinking(data.message?.content ?? "");
   if (!content) throw new Error(data.error || "Ollama agent returned an empty response");
@@ -116,8 +111,8 @@ export async function runPlanningAgent(model: string, task: string, releaseTitle
 
 export interface GeneratedPackItem { kind: CampaignPackKind; channel: CampaignChannel | null; content: string; }
 export async function generateCampaignPackContent(input: GenerateCampaignPackInput): Promise<GeneratedPackItem[]> {
-  const response = await fetch("http://127.0.0.1:11434/api/chat", { method:"POST", headers:{"Content-Type":"application/json"}, signal:AbortSignal.timeout(300_000), body:JSON.stringify({ model:input.model, stream:false, think:false, format:"json", keep_alive:"15m", options:{temperature:.5,top_p:.9,num_ctx:6144,num_predict:2600}, messages:[{role:"system",content:`You create factual music promotion packs in ${languageNames[input.language]}. Return only valid JSON. Never invent links, achievements, quotes, collaborators or events. Image and visualizer prompts must describe original artwork and must not imitate a living artist.`},{role:"user",content:[`Artist: ${input.artistName}`,`Voice: ${input.artistVoice}`,`Track: ${input.title}`,`Genre: ${input.primaryGenre}`,`Story: ${input.story||"No story supplied"}`,`Release date: ${input.releaseDate||"not announced"}`,`Return this exact JSON object with string values:`,JSON.stringify({instagram:"Instagram caption with 4-7 hashtags",facebook:"Facebook post",tiktok:"TikTok caption with hook and hashtags",soundcloud:"SoundCloud description",youtube:"YouTube description",videoHook:"Spoken/on-screen hook under 12 words",videoScript:"15-30 second vertical video script with shots and text",imagePrompt:"Detailed square campaign artwork generation prompt; no embedded text",visualizerPrompt:"Detailed looping music visualizer prompt; no embedded text"})].join("\n")}]} ) });
-  if (!response.ok) throw new Error(`Ollama campaign pack failed with HTTP ${response.status}`);
+  const response = await resilientFetch("http://127.0.0.1:11434/api/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:input.model, stream:false, think:false, format:"json", keep_alive:"15m", options:{temperature:.5,top_p:.9,num_ctx:6144,num_predict:2600}, messages:[{role:"system",content:`You create factual music promotion packs in ${languageNames[input.language]}. Return only valid JSON. Never invent links, achievements, quotes, collaborators or events. Image and visualizer prompts must describe original artwork and must not imitate a living artist.`},{role:"user",content:[`Artist: ${input.artistName}`,`Voice: ${input.artistVoice}`,`Track: ${input.title}`,`Genre: ${input.primaryGenre}`,`Story: ${input.story||"No story supplied"}`,`Release date: ${input.releaseDate||"not announced"}`,`Return this exact JSON object with string values:`,JSON.stringify({instagram:"Instagram caption with 4-7 hashtags",facebook:"Facebook post",tiktok:"TikTok caption with hook and hashtags",soundcloud:"SoundCloud description",youtube:"YouTube description",videoHook:"Spoken/on-screen hook under 12 words",videoScript:"15-30 second vertical video script with shots and text",imagePrompt:"Detailed square campaign artwork generation prompt; no embedded text",visualizerPrompt:"Detailed looping music visualizer prompt; no embedded text"})].join("\n")}]} ) }, {service:"Ollama",timeoutMs:300_000,retries:0});
+  if (!response.ok) throw integrationHttpError("Ollama", response.status, (await response.text()).slice(0, 300));
   const data=await response.json() as {message?:{content?:string};error?:string}; const raw=stripThinking(data.message?.content??"").replace(/^```json\s*|\s*```$/g,""); if(!raw) throw new Error(data.error||"Ollama returned an empty campaign pack");
   let value:Record<string,unknown>; try{value=JSON.parse(raw) as Record<string,unknown>;}catch{throw new Error("The local model returned invalid campaign pack JSON. Retry with a warmed model.");}
   const specs:Array<[string,CampaignPackKind,CampaignChannel|null]>=[["instagram","caption","Instagram"],["facebook","caption","Facebook"],["tiktok","caption","TikTok"],["soundcloud","caption","SoundCloud"],["youtube","caption","YouTube"],["videoHook","video-hook","TikTok"],["videoScript","video-script","TikTok"],["imagePrompt","image-prompt",null],["visualizerPrompt","visualizer-prompt","YouTube"]];
