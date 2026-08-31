@@ -4,6 +4,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeStorage, shell } from "electron";
 import type { SpotifyConnection } from "../shared/contracts.js";
+import { integrationHttpError, resilientFetch } from "./integration-resilience.js";
 
 const callbackUrl = "http://127.0.0.1:43821/callback";
 interface StoredSpotify { clientId: string; accessTokenEncrypted?: string; refreshTokenEncrypted?: string; expiresAt?: string; accountId?: string; displayName?: string; }
@@ -27,8 +28,16 @@ export class SpotifyClient {
   async token(): Promise<string> { const stored = await this.requireConfigured(); if (!stored.accessTokenEncrypted || !stored.refreshTokenEncrypted) throw new Error("Connect Spotify first"); if (stored.expiresAt && Date.parse(stored.expiresAt) > Date.now() + 60_000) return this.decrypt(stored.accessTokenEncrypted); const tokens = await this.exchange(new URLSearchParams({ client_id: stored.clientId, grant_type: "refresh_token", refresh_token: this.decrypt(stored.refreshTokenEncrypted) })); await this.write({ ...stored, accessTokenEncrypted: this.encrypt(tokens.access_token), refreshTokenEncrypted: this.encrypt(tokens.refresh_token ?? this.decrypt(stored.refreshTokenEncrypted)), expiresAt: new Date(Date.now() + tokens.expires_in * 1000).toISOString() }); return tokens.access_token; }
   async fetchArtistReleases(artistId: string): Promise<unknown[]> { const token = await this.token(); let next: string | null = `https://api.spotify.com/v1/artists/${encodeURIComponent(artistId)}/albums?include_groups=album,single,appears_on,compilation&limit=10`; const result: unknown[] = []; while (next) { const page = await this.fetchJson(next, token) as { items?: unknown[]; next?: string | null }; result.push(...(page.items ?? [])); next = page.next ?? null; } return result; }
   async disconnect(): Promise<SpotifyConnection> { const stored = await this.read(); if (stored) await this.write({ clientId: stored.clientId }); return this.status(); }
-  private async exchange(body: URLSearchParams): Promise<{ access_token: string; refresh_token?: string; expires_in: number }> { const response = await fetch("https://accounts.spotify.com/api/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body, signal: AbortSignal.timeout(30_000) }); if (!response.ok) throw new Error(`Spotify token exchange failed with HTTP ${response.status}`); return response.json() as Promise<{ access_token: string; refresh_token?: string; expires_in: number }>; }
-  private async fetchJson(url: string, token: string): Promise<unknown> { const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(30_000) }); if (!response.ok) { const body = (await response.text()).slice(0, 500); throw new Error(`Spotify API returned HTTP ${response.status}${body ? `: ${body}` : ""}`); } return response.json(); }
+  private async exchange(body: URLSearchParams): Promise<{ access_token: string; refresh_token?: string; expires_in: number }> {
+    const response = await resilientFetch("https://accounts.spotify.com/api/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }, { service: "Spotify", timeoutMs: 30_000, retries: 0 });
+    if (!response.ok) throw integrationHttpError("Spotify", response.status, (await response.text()).slice(0, 300));
+    return response.json() as Promise<{ access_token: string; refresh_token?: string; expires_in: number }>;
+  }
+  private async fetchJson(url: string, token: string): Promise<unknown> {
+    const response = await resilientFetch(url, { headers: { Authorization: `Bearer ${token}` } }, { service: "Spotify", timeoutMs: 30_000, retries: 1 });
+    if (!response.ok) throw integrationHttpError("Spotify", response.status, (await response.text()).slice(0, 300));
+    return response.json();
+  }
   private async requireConfigured(): Promise<StoredSpotify> { const value = await this.read(); if (!value?.clientId) throw new Error("Save Spotify Client ID first"); return value; }
   private encrypt(value: string): string { if (!safeStorage.isEncryptionAvailable()) throw new Error("Operating-system encryption is unavailable"); return safeStorage.encryptString(value).toString("base64"); }
   private decrypt(value: string): string { return safeStorage.decryptString(Buffer.from(value, "base64")); }
