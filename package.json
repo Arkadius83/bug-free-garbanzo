@@ -9,8 +9,8 @@
     "dev": "tsc -p electron/tsconfig.json && concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
     "typecheck": "tsc -b --pretty false && tsc -p electron/tsconfig.json --pretty false",
-    "test": "tsc -p electron/tsconfig.json && node --test dist-electron/main/database/database.test.js dist-electron/main/database/workflow.integration.test.js dist-electron/main/database/workflow.negative.integration.test.js dist-electron/main/audio-analysis.test.js dist-electron/main/integration-resilience.test.js",
-    "test:e2e": "tsc -p electron/tsconfig.json && node --test dist-electron/main/database/workflow.integration.test.js dist-electron/main/database/workflow.negative.integration.test.js dist-electron/main/integration-resilience.test.js",
+    "test": "tsc -p electron/tsconfig.json && node --test dist-electron/main/database/database.test.js dist-electron/main/database/workflow.integration.test.js dist-electron/main/database/workflow.negative.integration.test.js dist-electron/main/audio-analysis.test.js dist-electron/main/integration-resilience.test.js dist-electron/main/ollama-resilience.test.js dist-electron/main/local-services.resilience.test.js",
+    "test:e2e": "tsc -p electron/tsconfig.json && node --test dist-electron/main/database/workflow.integration.test.js dist-electron/main/database/workflow.negative.integration.test.js dist-electron/main/integration-resilience.test.js dist-electron/main/ollama-resilience.test.js dist-electron/main/local-services.resilience.test.js",
     "preview": "vite preview",
     "start": "electron ."
   },
