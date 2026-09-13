@@ -1,6 +1,15 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { AiHarnessResponse, ArtistAlias, ReleaseSummary } from "../electron/shared/contracts";
-import { buildHarnessPlanRequest, summarizeHarnessPlan } from "./harness-plan-preview-model";
+import {
+  appendHarnessPlanHistory,
+  createExecutionApprovalDraft,
+  createExecutionReadinessReport,
+  createHarnessPlanHistoryItem,
+  deserializeHarnessPlanHistory,
+  serializeHarnessPlanHistory,
+  type HarnessPlanHistoryItem
+} from "../electron/shared/execution-readiness";
+import { buildHarnessPlanRequest } from "./harness-plan-preview-model";
 
 type HarnessPlanPreviewProps = {
   release?: ReleaseSummary | null;
@@ -9,20 +18,30 @@ type HarnessPlanPreviewProps = {
   defaultInstruction: string;
 };
 
+const HISTORY_KEY = "ai-studio-manager:harness-plan-history";
+
 function statusLabel(status: string): string {
   return status.replaceAll("_", " ");
-}
-
-function taskName(id: string, description?: string): string {
-  return description?.trim() || id;
 }
 
 export function HarnessPlanPreview({ release, artistId, artistName, defaultInstruction }: HarnessPlanPreviewProps) {
   const [instruction, setInstruction] = useState(defaultInstruction);
   const [response, setResponse] = useState<AiHarnessResponse | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
+  const [history, setHistory] = useState<HarnessPlanHistoryItem[]>([]);
   const [state, setState] = useState<"empty" | "loading" | "ready" | "error">("empty");
   const [message, setMessage] = useState("");
-  const metrics = useMemo(() => summarizeHarnessPlan(response), [response]);
+  const readiness = useMemo(() => createExecutionReadinessReport(response), [response]);
+  const approvalDraft = useMemo(() => createExecutionApprovalDraft(readiness, selectedTaskIds, "preview-only"), [readiness, selectedTaskIds]);
+
+  useEffect(() => {
+    setHistory(deserializeHarnessPlanHistory(window.localStorage.getItem(HISTORY_KEY)));
+  }, []);
+
+  function persistHistory(next: HarnessPlanHistoryItem[]) {
+    setHistory(next);
+    window.localStorage.setItem(HISTORY_KEY, serializeHarnessPlanHistory(next));
+  }
 
   async function previewPlan() {
     if (!window.studio) {
@@ -35,12 +54,14 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
       setMessage("Enter a goal before previewing the plan.");
       return;
     }
+    const now = Date.now();
     setState("loading");
     setMessage("");
+    setSelectedTaskIds([]);
     try {
       const request = buildHarnessPlanRequest({
-        requestId: `harness-preview-${Date.now()}`,
-        goalId: `goal-${Date.now()}`,
+        requestId: `harness-preview-${now}`,
+        goalId: `goal-${now}`,
         instruction,
         release,
         artistId,
@@ -48,11 +69,18 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
       });
       const next = await window.studio.runAiHarnessPlan(request);
       setResponse(next);
+      persistHistory(appendHarnessPlanHistory(history, createHarnessPlanHistoryItem(next, instruction)));
       setState("ready");
     } catch (error) {
       setState("error");
       setMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not preview the harness plan.");
     }
+  }
+
+  function toggleApproval(taskId: string) {
+    const task = readiness.tasks.find((item) => item.taskId === taskId);
+    if (!task?.approvable) return;
+    setSelectedTaskIds((current) => current.includes(taskId) ? current.filter((item) => item !== taskId) : [...current, taskId]);
   }
 
   return (
@@ -65,6 +93,8 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
         </div>
         <span className={`harness-overall ${response?.status.toLowerCase().replaceAll("_", "-") ?? "idle"}`}>{response?.status ? statusLabel(response.status) : "PLAN ONLY"}</span>
       </header>
+
+      <div className="harness-disabled-banner"><strong>PLAN ONLY - EXECUTION DISABLED</strong><span>Approval selections are local preview data only. No execution IPC, provider call or repository mutation exists in this view.</span></div>
 
       <div className="harness-layout">
         <section className="panel harness-request-panel">
@@ -86,29 +116,47 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
           {state === "loading" && <div className="harness-empty"><strong>Building plan...</strong><p>AI Manager is calling the Harness facade in plan-only mode.</p></div>}
           {state === "ready" && response && <>
             <div className="harness-metrics">
-              <span><small>TASKS</small><b>{metrics.totalTasks}</b></span>
-              <span><small>NO EXECUTOR</small><b>{metrics.noExecutorTasks}</b></span>
-              <span><small>BLOCKED</small><b>{metrics.blockedTasks}</b></span>
-              <span><small>FAILED</small><b>{metrics.failedTasks}</b></span>
+              <span><small>TOTAL</small><b>{readiness.metrics.total}</b></span>
+              <span><small>READY</small><b>{readiness.metrics.ready}</b></span>
+              <span><small>NO EXECUTOR</small><b>{readiness.metrics.noExecutor}</b></span>
+              <span><small>BLOCKED</small><b>{readiness.metrics.blocked}</b></span>
+              <span><small>ERROR/UNSUPPORTED</small><b>{readiness.metrics.errorOrUnsupported}</b></span>
+              <span><small>APPROVABLE</small><b>{readiness.metrics.approvable}</b></span>
             </div>
             <div className="harness-order"><small>RESOLVED ORDER</small><code>{response.plan.resolvedTaskOrder.join(" -> ") || "No ordered tasks"}</code></div>
             <div className="harness-task-list">
-              {response.plan.tasks.map((task, index) => {
-                const result = response.results.find((item) => item.taskId === task.id);
-                return <article key={task.id} className={`harness-task status-${result?.status.toLowerCase().replaceAll("_", "-") ?? "unknown"}`}>
-                  <b>{index + 1}</b>
-                  <div className="harness-task-main">
-                    <div className="harness-task-title"><strong>{task.id}</strong><span>{taskName(task.id, task.description)}</span></div>
-                    <div className="harness-task-meta"><code>{task.capability ?? "unspecified"}</code><small>depends on {task.dependsOn.length ? task.dependsOn.join(", ") : "none"}</small></div>
-                    {result?.blockedBy.length ? <em>Blocked by {result.blockedBy.join(", ")}</em> : null}
-                    {result?.errors.length ? <p>{result.errors.map((error) => error.message).join(" · ")}</p> : null}
-                  </div>
-                  <span>{result ? statusLabel(result.status) : "NO RESULT"}</span>
-                </article>;
-              })}
+              {readiness.tasks.map((task, index) => <article key={task.taskId} className={`harness-task status-${task.readinessStatus.toLowerCase().replaceAll("_", "-")}`}>
+                <input type="checkbox" aria-label={`Select ${task.taskId}`} checked={selectedTaskIds.includes(task.taskId)} disabled={!task.approvable} onChange={() => toggleApproval(task.taskId)} />
+                <b>{index + 1}</b>
+                <div className="harness-task-main">
+                  <div className="harness-task-title"><strong>{task.taskId}</strong><span>{task.title}</span></div>
+                  <div className="harness-task-meta"><code>{task.capability}</code><small>depends on {task.dependencies.length ? task.dependencies.join(", ") : "none"}</small><small>executor {task.executorAvailable ? "YES" : "NO"}</small></div>
+                  <em>{task.readinessReason}</em>
+                </div>
+                <span>{statusLabel(task.readinessStatus)}</span>
+              </article>)}
             </div>
-            {response.errors.length > 0 && <div className="harness-errors"><strong>Planning errors</strong>{response.errors.map((error, index) => <p key={`${error.code}-${index}`}>{error.code}: {error.message}</p>)}</div>}
+            {readiness.planningErrors.length > 0 && <div className="harness-errors"><strong>Planning errors</strong>{readiness.planningErrors.map((error, index) => <p key={`${error}-${index}`}>{error}</p>)}</div>}
           </>}
+        </section>
+      </div>
+
+      <div className="harness-bottom-grid">
+        <section className="panel harness-approval-panel">
+          <div className="panel-heading"><span className="eyebrow">Execution Approval</span><h2>Approval preview only</h2></div>
+          <div className="harness-approval-summary"><span><small>SELECTED READY TASKS</small><b>{approvalDraft.selectedTaskIds.length}</b></span><span><small>DRAFT SOURCE</small><b>{approvalDraft.source}</b></span></div>
+          <code>{approvalDraft.selectedTaskIds.length ? approvalDraft.selectedTaskIds.join(", ") : "No READY task selected"}</code>
+          <p>Only READY tasks can be selected. Tasks with NO_EXECUTOR, BLOCKED_BY_DEPENDENCY, PLANNING_ERROR, UNSUPPORTED or NOT_APPROVABLE remain disabled.</p>
+        </section>
+
+        <section className="panel harness-capability-panel">
+          <div className="panel-heading"><span className="eyebrow">Capabilities</span><h2>Executor summary</h2></div>
+          {readiness.capabilities.length === 0 ? <div className="harness-empty compact"><strong>No capability data</strong></div> : <div className="harness-capability-list">{readiness.capabilities.map((item) => <article key={item.capability}><strong>{item.capability}</strong><span>{item.taskCount} task{item.taskCount === 1 ? "" : "s"}</span><b>executor {item.executorAvailable ? "YES" : "NO"}</b><small>{item.readyCount} ready · {item.blockedCount} blocked</small></article>)}</div>}
+        </section>
+
+        <section className="panel harness-history-panel">
+          <div className="panel-heading"><span className="eyebrow">Recent Harness Plans</span><h2>Product-owned history</h2></div>
+          {history.length === 0 ? <div className="harness-empty compact"><strong>No saved plan summaries</strong></div> : <div className="harness-history-list">{history.slice(0, 8).map((item) => <article key={item.planId}><div><strong>{item.goalSummary}</strong><small>{new Date(item.timestamp).toLocaleString()} · {item.overallStatus}</small></div><span>{item.total} total · {item.ready} ready · {item.noExecutor} no executor · {item.blocked} blocked</span></article>)}</div>}
         </section>
       </div>
     </div>
