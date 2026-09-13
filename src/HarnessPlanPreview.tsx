@@ -31,7 +31,56 @@ type HarnessPlanPreviewProps = {
 
 const PLAN_HISTORY_KEY = "ai-studio-manager:harness-plan-history";
 const EXECUTION_HISTORY_KEY = "ai-studio-manager:harness-execution-history";
+const SMOKE_TASK_ID = "SMOKE_FILE_TRANSFORM";
+const SMOKE_PLAN_TEXT = [
+  "AI Studio Manager Harness smoke test.",
+  "Updated safely by local.text-file-transform.v1.",
+  "This file lives only in .runtime/harness-smoke-test."
+].join("\n") + "\n";
 
+function createSmokeHarnessResponse(now = Date.now()): AiHarnessResponse {
+  const requestId = `harness-smoke-${now}`;
+  return {
+    requestId,
+    status: "PLANNING_ONLY",
+    planOnly: true,
+    plan: {
+      valid: true,
+      originalTaskOrder: [SMOKE_TASK_ID],
+      resolvedTaskOrder: [SMOKE_TASK_ID],
+      tasks: [{
+        id: SMOKE_TASK_ID,
+        description: "Update the dedicated Harness smoke-test text file.",
+        capability: "file.transform",
+        dependsOn: [],
+        expectedOutputs: { fileTransform: { path: "harness-smoke-test.txt", text: SMOKE_PLAN_TEXT } }
+      }]
+    },
+    results: [{
+      taskId: SMOKE_TASK_ID,
+      capability: "file.transform",
+      executorId: "local.text-file-transform.v1",
+      status: "READY",
+      planningOnly: true,
+      blockedBy: [],
+      dependencyResults: [],
+      errors: []
+    }],
+    errors: []
+  };
+}
+
+type HarnessFlowStatus = "PLAN ONLY" | "PLAN READY" | "READY TO APPROVE" | "APPROVED" | "EXECUTING" | "SUCCESS" | "FAILED" | "REJECTED" | "BLOCKED" | "ROLLED BACK";
+
+function resultStatusLabel(result: HarnessExecutionResponse | null): HarnessFlowStatus | null {
+  if (!result) return null;
+  if (result.results.some((task) => task.rollbackAttempted)) return "ROLLED BACK";
+  if (result.results.some((task) => task.status === "FAILED")) return "FAILED";
+  if (result.results.some((task) => task.status === "REJECTED")) return "REJECTED";
+  if (result.results.some((task) => task.status === "BLOCKED")) return "BLOCKED";
+  if (result.status === "SUCCESS") return "SUCCESS";
+  return "REJECTED";
+}
 function statusLabel(status: string): string {
   return status.replaceAll("_", " ");
 }
@@ -69,6 +118,10 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
   const selectedTasksHavePayload = selectedPlanTasks.length > 0 && selectedPlanTasks.every((task) => task.capability === "file.transform" && hasRunnablePayload(task.expectedOutputs));
   const approvedTaskPayload = selectedReadyTasks.map((task) => { const planTask = response?.plan.tasks.find((item) => item.id === task.taskId); return { taskId: task.taskId, title: task.title, capability: task.capability, readinessStatus: task.readinessStatus, dependencies: task.dependencies, expectedOutputs: planTask?.expectedOutputs }; });
   const canExecute = Boolean(response && executionContext && executionReview && selectedReadyTasks.length > 0 && selectedReadyTasks.every((task) => task.readinessStatus === "READY") && selectedTasksHaveExecutors && selectedTasksHavePayload && confirmationPhrase === requiredPhrase && executionState !== "running");
+  const flowStatus: HarnessFlowStatus = executionState === "running"
+    ? "EXECUTING"
+    : resultStatusLabel(executionResult)
+      ?? (executionReview && confirmationPhrase === requiredPhrase && requiredPhrase ? "APPROVED" : selectedReadyTasks.length > 0 && selectedTasksHaveExecutors && selectedTasksHavePayload ? "READY TO APPROVE" : response?.plan.valid ? "PLAN READY" : "PLAN ONLY");
 
   useEffect(() => {
     setPlanHistory(deserializeHarnessPlanHistory(window.localStorage.getItem(PLAN_HISTORY_KEY)));
@@ -84,6 +137,22 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
   function persistExecutionHistory(next: HarnessExecutionHistoryItem[]) {
     setExecutionHistory(next);
     window.localStorage.setItem(EXECUTION_HISTORY_KEY, serializeHarnessExecutionHistory(next));
+  }
+
+  function loadSmokeTestPlan() {
+    const next = createSmokeHarnessResponse();
+    const smokeInstruction = "Smoke test the Harness file.transform executor against the dedicated .runtime workspace.";
+    setInstruction(smokeInstruction);
+    setResponse(next);
+    setState("ready");
+    setMessage("");
+    setExecutionMessage("");
+    setExecutionResult(null);
+    setExecutionReview(null);
+    setConfirmationPhrase("");
+    setExecutionState("idle");
+    setSelectedTaskIds([SMOKE_TASK_ID]);
+    persistPlanHistory(appendHarnessPlanHistory(planHistory, createHarnessPlanHistoryItem(next, smokeInstruction)));
   }
 
   async function previewPlan() {
@@ -104,6 +173,7 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
     setExecutionResult(null);
     setExecutionReview(null);
     setConfirmationPhrase("");
+    setExecutionState("idle");
     setSelectedTaskIds([]);
     try {
       const request = buildHarnessPlanRequest({ requestId: `harness-preview-${now}`, goalId: `goal-${now}`, instruction, release, artistId, artistName });
@@ -149,6 +219,10 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
   function toggleApproval(taskId: string) {
     const task = readiness.tasks.find((item) => item.taskId === taskId);
     if (!task?.approvable) return;
+    setExecutionReview(null);
+    setConfirmationPhrase("");
+    setExecutionResult(null);
+    setExecutionState("idle");
     setSelectedTaskIds((current) => current.includes(taskId) ? current.filter((item) => item !== taskId) : [...current, taskId]);
   }
 
@@ -159,14 +233,15 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
         <span className={`harness-overall ${response?.status.toLowerCase().replaceAll("_", "-") ?? "idle"}`}>{response?.status ? statusLabel(response.status) : "PLAN ONLY"}</span>
       </header>
 
-      <div className="harness-disabled-banner"><strong>REAL EXECUTION FOUNDATION - GUARDED</strong><span>Only confirmed READY tasks with an available registered executor can run inside the controlled workspace.</span></div>
+            <div className="harness-disabled-banner"><strong>REAL EXECUTION FOUNDATION - GUARDED</strong><span>Only confirmed READY tasks with an available registered executor can run inside the controlled smoke workspace.</span></div>
+      <div className="harness-status-strip">{(["PLAN READY", "READY TO APPROVE", "APPROVED", "EXECUTING", "SUCCESS", "FAILED", "REJECTED", "BLOCKED", "ROLLED BACK"] as HarnessFlowStatus[]).map((label) => <span key={label} className={flowStatus === label ? "active" : ""}>{label}</span>)}</div>
 
       <div className="harness-layout">
         <section className="panel harness-request-panel">
           <div className="panel-heading"><span className="eyebrow">Request</span><h2>Goal sent to AI Harness</h2></div>
           <label>Goal / request<textarea rows={8} value={instruction} onChange={(event) => setInstruction(event.target.value)} /></label>
           <div className="harness-context"><span><small>PROJECT</small><b>AI Studio Manager</b></span><span><small>RELEASE</small><b>{release?.title ?? "No active release"}</b></span><span><small>ARTIST</small><b>{release?.artistName ?? artistName}</b></span><span><small>MODE</small><b>planOnly=true</b></span></div>
-          <button className="primary" disabled={state === "loading"} onClick={() => void previewPlan()}>{state === "loading" ? "Previewing..." : "Preview plan"}</button>
+                    <div className="harness-action-row"><button className="primary" disabled={state === "loading"} onClick={() => void previewPlan()}>{state === "loading" ? "Previewing..." : "Preview plan"}</button><button type="button" onClick={loadSmokeTestPlan}>Load smoke test plan</button></div>
           {message && <p className="harness-message error">{message}</p>}
         </section>
 
@@ -180,11 +255,11 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
 
       <div className="harness-bottom-grid">
         <section className="panel harness-approval-panel">
-          <div className="panel-heading"><span className="eyebrow">Execution Approval</span><h2>Explicit local execution</h2></div>
+          <div className="panel-heading"><span className="eyebrow">Execution Approval</span><h2>Review, approve, execute</h2></div><p className="harness-flow-copy">Select a READY file task, review the exact target and diff, type the confirmation phrase, then execute inside the smoke-test workspace.</p>
           <div className="harness-approval-summary"><span><small>SELECTED READY TASKS</small><b>{approvalDraft.selectedTaskIds.length}</b></span><span><small>EXECUTOR CHECK</small><b>{selectedTasksHaveExecutors ? "PASS" : "WAIT"}</b></span></div>
           <code>{approvalDraft.selectedTaskIds.length ? approvalDraft.selectedTaskIds.join(", ") : "No READY task selected"}</code>
           <div className="harness-workspace-box"><small>CONTROLLED WORKSPACE</small><b>{executionContext?.workspace.root ?? "Loading workspace..."}</b></div>
-          <div className="harness-safety-list"><span className={selectedReadyTasks.length ? "pass" : ""}>READY task selected</span><span className={selectedTasksHaveExecutors ? "pass" : ""}>executor exists</span><span className={executionContext?.workspace.root ? "pass" : ""}>workspace valid</span><span className={selectedTasksHavePayload ? "pass" : ""}>safe file payload</span><span className={executionReview ? "pass" : ""}>review created</span><span className={confirmationPhrase === requiredPhrase && requiredPhrase ? "pass" : ""}>user confirmed</span></div><button disabled={!response || !executionContext || !selectedTasksHaveExecutors || !selectedTasksHavePayload} onClick={() => void reviewSelectedTasks()}>Create execution review</button>{executionReview && <div className="harness-review"><strong>Execution Review</strong><small>Approval expires {new Date(executionReview.expiresAt).toLocaleString()}</small><code>{executionReview.planFingerprint}</code>{executionReview.tasks.map((task) => <article key={task.taskId}><div><b>{task.taskId}</b><span>{task.capability} · {task.executorId ?? "NO EXECUTOR"}</span></div><small>{task.workspaceRoot}</small><small>target {task.targetRelativePath ?? "none"} · exists {task.fileExists ? "YES" : "NO"}</small><small>before {task.beforeHash ?? "new file"}</small><small>after {task.expectedAfterHash ?? "unknown"}</small><small>dependencies {task.dependencies.length ? task.dependencies.join(", ") : "none"}</small><pre>{task.diffPreview}</pre></article>)}</div>}
+          <div className="harness-safety-list"><span className={selectedReadyTasks.length ? "pass" : ""}>READY task selected</span><span className={selectedTasksHaveExecutors ? "pass" : ""}>executor exists</span><span className={executionContext?.workspace.root ? "pass" : ""}>workspace valid</span><span className={selectedTasksHavePayload ? "pass" : ""}>safe file payload</span><span className={executionReview ? "pass" : ""}>review created</span><span className={confirmationPhrase === requiredPhrase && requiredPhrase ? "pass" : ""}>user confirmed</span></div><button disabled={!response || !executionContext || !selectedTasksHaveExecutors || !selectedTasksHavePayload} onClick={() => void reviewSelectedTasks()}>Create execution review</button>{executionReview && <div className="harness-review"><strong>Execution Review</strong><small>Plan {executionReview.planId}</small><small>Approval expires {new Date(executionReview.expiresAt).toLocaleString()}</small><code>{executionReview.planFingerprint}</code>{executionReview.tasks.map((task) => <article key={task.taskId}><div><b>{task.taskId}</b><span>{task.capability} · {task.executorId ?? "NO EXECUTOR"}</span></div><small>{task.workspaceRoot}</small><small>target {task.targetRelativePath ?? "none"} · exists {task.fileExists ? "YES" : "NO"}</small><small>before {task.beforeHash ?? "new file"}</small><small>after {task.expectedAfterHash ?? "unknown"}</small><small>dependencies {task.dependencies.length ? task.dependencies.join(", ") : "none"}</small><pre>{task.diffPreview}</pre></article>)}</div>}
           <label>Type confirmation phrase<input value={confirmationPhrase} onChange={(event) => setConfirmationPhrase(event.target.value)} placeholder={requiredPhrase || "Preview a plan first"} /></label>
           <button className="primary" disabled={!canExecute} onClick={() => void executeSelectedTasks()}>{executionState === "running" ? "Executing..." : "Execute approved tasks"}</button>
           {executionMessage && <p className="harness-message error">{executionMessage}</p>}
