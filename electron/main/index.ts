@@ -14,7 +14,7 @@ import { LocalServicesManager } from "./local-services.js";
 import { MetaClient } from "./meta.js";
 import { MediaBridgeClient } from "./media-bridge.js";
 import { runAiHarnessPlanOnly } from "./ai-harness.js";
-import { DEFAULT_APPROVAL_TTL_MS, createHarnessExecutionApproval, createHarnessExecutorRegistry, executeApprovedHarnessTasks } from "./harness-execution.js";
+import { DEFAULT_APPROVAL_TTL_MS, createHarnessExecutionReview, createHarnessExecutorRegistry, createPersistentHarnessExecutionApproval, executePersistentApprovedHarnessTasks, readHarnessAuditLog } from "./harness-execution.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -97,9 +97,15 @@ ipcMain.handle("studio:get-system-status", async (): Promise<SystemStatus> => {
 });
 
 ipcMain.handle("studio:run-ai-harness-plan", (_event, input: AiHarnessRequest) => runAiHarnessPlanOnly(input));
-ipcMain.handle("studio:get-harness-execution-context", () => ({ executors: createHarnessExecutorRegistry(), workspace: { root: path.join(app.getPath("userData"), "harness-execution-workspace") }, approvalTtlMs: DEFAULT_APPROVAL_TTL_MS }));
-ipcMain.handle("studio:create-harness-execution-approval", (_event, input: HarnessExecutionApprovalRequest) => createHarnessExecutionApproval(input, { allowedWorkspaceRoot: path.join(app.getPath("userData"), "harness-execution-workspace") }));
-ipcMain.handle("studio:execute-harness-tasks", (_event, input: HarnessExecutionRequest) => executeApprovedHarnessTasks(input, { allowedWorkspaceRoot: path.join(app.getPath("userData"), "harness-execution-workspace") }));
+const harnessGovernanceDirectory = () => path.join(app.getPath("userData"), "harness-governance");
+const harnessWorkspaceRoot = () => path.join(app.getPath("userData"), "harness-execution-workspace");
+const harnessApprovalStorePath = () => path.join(harnessGovernanceDirectory(), "approvals.json");
+const harnessAuditLogPath = () => path.join(harnessGovernanceDirectory(), "audit.jsonl");
+ipcMain.handle("studio:get-harness-execution-context", () => ({ executors: createHarnessExecutorRegistry(), workspace: { root: harnessWorkspaceRoot() }, approvalTtlMs: DEFAULT_APPROVAL_TTL_MS }));
+ipcMain.handle("studio:review-harness-execution", (_event, input: HarnessExecutionApprovalRequest) => createHarnessExecutionReview(input, { allowedWorkspaceRoot: harnessWorkspaceRoot() }));
+ipcMain.handle("studio:create-harness-execution-approval", (_event, input: HarnessExecutionApprovalRequest) => createPersistentHarnessExecutionApproval(input, { allowedWorkspaceRoot: harnessWorkspaceRoot(), approvalStorePath: harnessApprovalStorePath() }));
+ipcMain.handle("studio:execute-harness-tasks", (_event, input: HarnessExecutionRequest) => executePersistentApprovedHarnessTasks(input, { allowedWorkspaceRoot: harnessWorkspaceRoot(), approvalStorePath: harnessApprovalStorePath(), auditLogPath: harnessAuditLogPath() }));
+ipcMain.handle("studio:list-harness-execution-audit", () => readHarnessAuditLog(harnessAuditLogPath()));
 ipcMain.handle("studio:get-database-health", () => studioDatabase.health());
 ipcMain.handle("studio:list-releases", () => studioDatabase.listReleases());
 ipcMain.handle("studio:create-release-draft", (_event, input: CreateReleaseDraftInput) => studioDatabase.createReleaseDraft(input));

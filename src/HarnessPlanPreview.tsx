@@ -14,9 +14,11 @@ import {
   createHarnessExecutionHistoryItem,
   deserializeHarnessExecutionHistory,
   serializeHarnessExecutionHistory,
+  type HarnessAuditEntry,
   type HarnessExecutionContext,
   type HarnessExecutionHistoryItem,
-  type HarnessExecutionResponse
+  type HarnessExecutionResponse,
+  type HarnessExecutionReview
 } from "../electron/shared/harness-execution";
 import { buildHarnessPlanRequest } from "./harness-plan-preview-model";
 
@@ -50,6 +52,8 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
   const [executionHistory, setExecutionHistory] = useState<HarnessExecutionHistoryItem[]>([]);
   const [executionContext, setExecutionContext] = useState<HarnessExecutionContext | null>(null);
   const [executionResult, setExecutionResult] = useState<HarnessExecutionResponse | null>(null);
+  const [executionReview, setExecutionReview] = useState<HarnessExecutionReview | null>(null);
+  const [auditHistory, setAuditHistory] = useState<HarnessAuditEntry[]>([]);
   const [confirmationPhrase, setConfirmationPhrase] = useState("");
   const [executionState, setExecutionState] = useState<"idle" | "running" | "complete" | "error">("idle");
   const [state, setState] = useState<"empty" | "loading" | "ready" | "error">("empty");
@@ -64,12 +68,12 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
   const selectedTasksHaveExecutors = selectedReadyTasks.length > 0 && selectedReadyTasks.every((task) => executorByCapability.get(task.capability)?.available === true);
   const selectedTasksHavePayload = selectedPlanTasks.length > 0 && selectedPlanTasks.every((task) => task.capability === "file.transform" && hasRunnablePayload(task.expectedOutputs));
   const approvedTaskPayload = selectedReadyTasks.map((task) => { const planTask = response?.plan.tasks.find((item) => item.id === task.taskId); return { taskId: task.taskId, title: task.title, capability: task.capability, readinessStatus: task.readinessStatus, dependencies: task.dependencies, expectedOutputs: planTask?.expectedOutputs }; });
-  const canExecute = Boolean(response && executionContext && selectedReadyTasks.length > 0 && selectedReadyTasks.every((task) => task.readinessStatus === "READY") && selectedTasksHaveExecutors && selectedTasksHavePayload && confirmationPhrase === requiredPhrase && executionState !== "running");
+  const canExecute = Boolean(response && executionContext && executionReview && selectedReadyTasks.length > 0 && selectedReadyTasks.every((task) => task.readinessStatus === "READY") && selectedTasksHaveExecutors && selectedTasksHavePayload && confirmationPhrase === requiredPhrase && executionState !== "running");
 
   useEffect(() => {
     setPlanHistory(deserializeHarnessPlanHistory(window.localStorage.getItem(PLAN_HISTORY_KEY)));
     setExecutionHistory(deserializeHarnessExecutionHistory(window.localStorage.getItem(EXECUTION_HISTORY_KEY)));
-    if (window.studio) void window.studio.getHarnessExecutionContext().then(setExecutionContext).catch((error) => setExecutionMessage(error instanceof Error ? error.message : "Could not load execution context."));
+    if (window.studio) void Promise.all([window.studio.getHarnessExecutionContext(), window.studio.listHarnessExecutionAudit()]).then(([context, audit]) => { setExecutionContext(context); setAuditHistory(audit); }).catch((error) => setExecutionMessage(error instanceof Error ? error.message : "Could not load execution context."));
   }, []);
 
   function persistPlanHistory(next: HarnessPlanHistoryItem[]) {
@@ -98,6 +102,7 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
     setMessage("");
     setExecutionMessage("");
     setExecutionResult(null);
+    setExecutionReview(null);
     setConfirmationPhrase("");
     setSelectedTaskIds([]);
     try {
@@ -112,8 +117,19 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
     }
   }
 
+  async function reviewSelectedTasks() {
+    if (!window.studio || !response || !executionContext || !selectedTasksHaveExecutors || !selectedTasksHavePayload) return;
+    setExecutionMessage("");
+    try {
+      const review = await window.studio.reviewHarnessExecution({ planId: response.requestId, selectedTaskIds: approvalDraft.selectedTaskIds, source: "harness-plan-preview", workspace: executionContext.workspace, tasks: approvedTaskPayload });
+      setExecutionReview(review);
+    } catch (error) {
+      setExecutionMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Execution review failed.");
+    }
+  }
+
   async function executeSelectedTasks() {
-    if (!window.studio || !response || !executionContext || !canExecute) return;
+    if (!window.studio || !response || !executionContext || !executionReview || !canExecute) return;
     setExecutionState("running");
     setExecutionMessage("");
     try {
@@ -122,6 +138,7 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
       const result = await window.studio.executeHarnessTasks({ ...approvalRequest, approval });
       setExecutionResult(result);
       persistExecutionHistory(appendHarnessExecutionHistory(executionHistory, createHarnessExecutionHistoryItem(result)));
+      setAuditHistory(await window.studio.listHarnessExecutionAudit());
       setExecutionState("complete");
     } catch (error) {
       setExecutionState("error");
@@ -167,7 +184,7 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
           <div className="harness-approval-summary"><span><small>SELECTED READY TASKS</small><b>{approvalDraft.selectedTaskIds.length}</b></span><span><small>EXECUTOR CHECK</small><b>{selectedTasksHaveExecutors ? "PASS" : "WAIT"}</b></span></div>
           <code>{approvalDraft.selectedTaskIds.length ? approvalDraft.selectedTaskIds.join(", ") : "No READY task selected"}</code>
           <div className="harness-workspace-box"><small>CONTROLLED WORKSPACE</small><b>{executionContext?.workspace.root ?? "Loading workspace..."}</b></div>
-          <div className="harness-safety-list"><span className={selectedReadyTasks.length ? "pass" : ""}>READY task selected</span><span className={selectedTasksHaveExecutors ? "pass" : ""}>executor exists</span><span className={executionContext?.workspace.root ? "pass" : ""}>workspace valid</span><span className={selectedTasksHavePayload ? "pass" : ""}>safe file payload</span><span className={confirmationPhrase === requiredPhrase && requiredPhrase ? "pass" : ""}>user confirmed</span></div>
+          <div className="harness-safety-list"><span className={selectedReadyTasks.length ? "pass" : ""}>READY task selected</span><span className={selectedTasksHaveExecutors ? "pass" : ""}>executor exists</span><span className={executionContext?.workspace.root ? "pass" : ""}>workspace valid</span><span className={selectedTasksHavePayload ? "pass" : ""}>safe file payload</span><span className={executionReview ? "pass" : ""}>review created</span><span className={confirmationPhrase === requiredPhrase && requiredPhrase ? "pass" : ""}>user confirmed</span></div><button disabled={!response || !executionContext || !selectedTasksHaveExecutors || !selectedTasksHavePayload} onClick={() => void reviewSelectedTasks()}>Create execution review</button>{executionReview && <div className="harness-review"><strong>Execution Review</strong><small>Approval expires {new Date(executionReview.expiresAt).toLocaleString()}</small><code>{executionReview.planFingerprint}</code>{executionReview.tasks.map((task) => <article key={task.taskId}><div><b>{task.taskId}</b><span>{task.capability} · {task.executorId ?? "NO EXECUTOR"}</span></div><small>{task.workspaceRoot}</small><small>target {task.targetRelativePath ?? "none"} · exists {task.fileExists ? "YES" : "NO"}</small><small>before {task.beforeHash ?? "new file"}</small><small>after {task.expectedAfterHash ?? "unknown"}</small><small>dependencies {task.dependencies.length ? task.dependencies.join(", ") : "none"}</small><pre>{task.diffPreview}</pre></article>)}</div>}
           <label>Type confirmation phrase<input value={confirmationPhrase} onChange={(event) => setConfirmationPhrase(event.target.value)} placeholder={requiredPhrase || "Preview a plan first"} /></label>
           <button className="primary" disabled={!canExecute} onClick={() => void executeSelectedTasks()}>{executionState === "running" ? "Executing..." : "Execute approved tasks"}</button>
           {executionMessage && <p className="harness-message error">{executionMessage}</p>}
@@ -186,7 +203,7 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
 
         <section className="panel harness-history-panel">
           <div className="panel-heading"><span className="eyebrow">Recent Executions</span><h2>Local execution summaries</h2></div>
-          {executionHistory.length === 0 ? <div className="harness-empty compact"><strong>No execution summaries</strong></div> : <div className="harness-history-list">{executionHistory.slice(0, 8).map((item) => <article key={item.executionId}><div><strong>{item.executionId}</strong><small>{new Date(item.timestamp).toLocaleString()} · {item.status} · {item.planFingerprint?.slice(0, 10) ?? "no-fingerprint"}</small></div><span>{item.taskSummaries.map((task) => `${task.taskId}:${task.status}`).join(", ")}</span></article>)}</div>}
+          {executionHistory.length === 0 ? <div className="harness-empty compact"><strong>No execution summaries</strong></div> : <div className="harness-history-list">{executionHistory.slice(0, 8).map((item) => <article key={item.executionId}><div><strong>{item.executionId}</strong><small>{new Date(item.timestamp).toLocaleString()} · {item.status} · {item.planFingerprint?.slice(0, 10) ?? "no-fingerprint"}</small></div><span>{item.taskSummaries.map((task) => `${task.taskId}:${task.status}`).join(", ")}</span></article>)}</div>}<div className="harness-audit-list"><strong>Audit History</strong>{auditHistory.length === 0 ? <small>No durable audit entries</small> : auditHistory.slice(0, 10).map((entry) => <article key={`${entry.executionId}-${entry.taskId}-${entry.finishedAt}`}><div><b>{entry.taskId}</b><span>{entry.outcome} · {entry.verificationStatus}</span></div><small>{entry.capability} · {entry.executorId ?? "no executor"}</small><small>{entry.targetPath ?? "no target"} · rollback {entry.rollbackAttempted ? entry.rollbackSucceeded ? "SUCCESS" : "FAILED" : "NOT RUN"}</small><small>{entry.fingerprint?.slice(0, 16) ?? "no fingerprint"}</small></article>)}</div>
         </section>
       </div>
     </div>

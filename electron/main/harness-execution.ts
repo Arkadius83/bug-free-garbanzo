@@ -1,13 +1,15 @@
-import { lstat, mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
+import { appendFile, lstat, mkdir, open, readFile, rename, rm, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import type {
+  HarnessAuditEntry,
   HarnessChangedResource,
   HarnessExecutionApproval,
   HarnessExecutionApprovalRequest,
   HarnessExecutionApprovedTask,
   HarnessExecutionRequest,
   HarnessExecutionResponse,
+  HarnessExecutionReview,
   HarnessExecutionTaskStatus,
   HarnessExecutorDescriptor,
   HarnessTaskExecutionResult
@@ -227,3 +229,111 @@ function samePath(left: string, right: string): boolean { return path.resolve(le
 function isInside(root: string, target: string): boolean { const relative = path.relative(root, target); return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative)); }
 function cloneApproval(approval: HarnessExecutionApproval): HarnessExecutionApproval { return { ...approval, selectedTaskIds: [...approval.selectedTaskIds] }; }
 export function resetHarnessExecutionHardeningState(): void { usedApprovalIds.clear(); lockedPaths.clear(); defaultHarnessApprovalStore.approvals.clear(); }
+export async function loadHarnessApprovalStore(filePath: string, options: { now?: string; ttlMs?: number } = {}): Promise<HarnessApprovalStore> {
+  const store = createHarnessApprovalStore();
+  const nowMs = Date.parse(options.now ?? new Date().toISOString());
+  const ttlMs = options.ttlMs ?? DEFAULT_APPROVAL_TTL_MS;
+  try {
+    const parsed: unknown = JSON.parse(await readFile(filePath, "utf8"));
+    if (Array.isArray(parsed)) for (const item of parsed) {
+      const approval = sanitizeStoredApproval(item);
+      if (!approval) continue;
+      const approvedAt = Date.parse(approval.approvedAt), expiresAt = Date.parse(approval.expiresAt);
+      if (!Number.isFinite(approvedAt) || !Number.isFinite(expiresAt) || nowMs > expiresAt || nowMs - approvedAt > ttlMs || usedApprovalIds.has(approval.approvalId)) continue;
+      store.approvals.set(approval.approvalId, approval);
+    }
+  } catch { /* missing/corrupt store recovers as empty */ }
+  await saveHarnessApprovalStore(filePath, store);
+  return store;
+}
+
+export async function saveHarnessApprovalStore(filePath: string, store: HarnessApprovalStore): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, JSON.stringify([...store.approvals.values()].map(cloneApproval), null, 2), "utf8");
+}
+
+export async function createPersistentHarnessExecutionApproval(input: unknown, options: { allowedWorkspaceRoot: string; approvalStorePath: string; now?: () => string; ttlMs?: number }): Promise<HarnessExecutionApproval> {
+  const current = options.now?.() ?? new Date().toISOString();
+  const store = await loadHarnessApprovalStore(options.approvalStorePath, { now: current, ttlMs: options.ttlMs });
+  const approval = createHarnessExecutionApproval(input, { allowedWorkspaceRoot: options.allowedWorkspaceRoot, now: () => current, ttlMs: options.ttlMs, store });
+  await saveHarnessApprovalStore(options.approvalStorePath, store);
+  return approval;
+}
+
+export async function executePersistentApprovedHarnessTasks(input: unknown, options: { allowedWorkspaceRoot: string; approvalStorePath: string; auditLogPath: string; now?: () => string; ttlMs?: number }): Promise<HarnessExecutionResponse> {
+  const current = options.now?.() ?? new Date().toISOString();
+  const store = await loadHarnessApprovalStore(options.approvalStorePath, { now: current, ttlMs: options.ttlMs });
+  const result = await executeApprovedHarnessTasks(input, { allowedWorkspaceRoot: options.allowedWorkspaceRoot, now: () => current, ttlMs: options.ttlMs, store });
+  await saveHarnessApprovalStore(options.approvalStorePath, store);
+  await appendHarnessAuditEntries(result, input, { auditLogPath: options.auditLogPath });
+  return result;
+}
+
+export async function createHarnessExecutionReview(input: unknown, options: { allowedWorkspaceRoot: string; now?: () => string; ttlMs?: number }): Promise<HarnessExecutionReview> {
+  const validation = validateApprovalRequest(input, options.allowedWorkspaceRoot);
+  if (!validation.valid) throw new Error(validation.message);
+  const request = validation.request;
+  const expiresAt = new Date(Date.parse((options.now ?? (() => new Date().toISOString()))()) + (options.ttlMs ?? DEFAULT_APPROVAL_TTL_MS)).toISOString();
+  const planFingerprint = createPlanFingerprint(request);
+  const taskById = new Map(request.tasks.map((task) => [task.taskId, task]));
+  const selected = [...new Set(request.selectedTaskIds)].sort();
+  const tasks = await Promise.all(selected.map(async (taskId) => {
+    const task = taskById.get(taskId)!;
+    const executor = getHarnessExecutor(task.capability);
+    let targetRelativePath: string | null = null, fileExists = false, beforeHash: string | null = null, expectedAfterHash: string | null = null, diffPreview = "No file.transform payload available.";
+    if (task.capability === "file.transform") {
+      const payload = parseTextFileTransformPayload(task.expectedOutputs);
+      const targetPath = resolveWorkspacePath(request.workspace.root, payload.path);
+      targetRelativePath = path.relative(request.workspace.root, targetPath).replaceAll("\\", "/");
+      const before = await metadata(targetPath);
+      fileExists = before.exists;
+      const beforeText = before.exists ? await readFile(targetPath, "utf8").catch(() => "") : "";
+      beforeHash = before.exists ? hashText(beforeText) : null;
+      expectedAfterHash = hashText(payload.text);
+      diffPreview = createUnifiedDiffPreview(beforeText, payload.text, targetRelativePath);
+    }
+    return { taskId, capability: task.capability, executorId: executor?.available ? executor.executorId : null, workspaceRoot: request.workspace.root, targetRelativePath, fileExists, beforeHash, expectedAfterHash, diffPreview, dependencies: [...task.dependencies] };
+  }));
+  return { planId: request.planId, planFingerprint, selectedTaskIds: selected, workspace: request.workspace, expiresAt, tasks };
+}
+
+export async function appendHarnessAuditEntries(response: HarnessExecutionResponse, input: unknown, options: { auditLogPath: string; limit?: number }): Promise<void> {
+  const request = input && typeof input === "object" ? input as Partial<HarnessExecutionRequest> : null;
+  const taskById = new Map((request?.tasks ?? []).map((task) => [task.taskId, task]));
+  const entries: HarnessAuditEntry[] = response.results.map((result) => {
+    const task = taskById.get(result.taskId);
+    return { executionId: response.executionId, approvalId: request?.approval?.approvalId ?? null, planId: response.planId, fingerprint: response.planFingerprint, taskId: result.taskId, capability: result.capability, executorId: result.executorId, workspaceIdentifier: request?.workspace?.root ? hashText(path.resolve(request.workspace.root).toLowerCase()).slice(0, 16) : "unknown", targetPath: getTargetRelativePath(task?.expectedOutputs), startedAt: result.startedAt, finishedAt: result.finishedAt, outcome: result.status, verificationStatus: result.verificationStatus, rollbackAttempted: result.rollbackAttempted, rollbackSucceeded: result.rollbackSucceeded, beforeHash: result.beforeHash, afterHash: result.afterHash, reason: result.errorSummary };
+  });
+  await appendHarnessAuditLog(options.auditLogPath, entries, options.limit);
+}
+
+export async function appendHarnessAuditLog(filePath: string, entries: HarnessAuditEntry[], limit = 200): Promise<void> {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await appendFile(filePath, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n", "utf8");
+  const retained = await readHarnessAuditLog(filePath, limit);
+  await writeFile(filePath, retained.slice().reverse().map((entry) => JSON.stringify(entry)).join("\n") + (retained.length ? "\n" : ""), "utf8");
+}
+
+export async function readHarnessAuditLog(filePath: string, limit = 200): Promise<HarnessAuditEntry[]> {
+  try {
+    const lines = (await readFile(filePath, "utf8")).split(/\r?\n/).filter(Boolean);
+    const entries = lines.map((line) => { try { return sanitizeAuditEntry(JSON.parse(line)); } catch { return null; } }).filter((entry): entry is HarnessAuditEntry => entry !== null);
+    return entries.slice(-Math.max(1, limit)).reverse();
+  } catch { return []; }
+}
+
+function createUnifiedDiffPreview(before: string, after: string, label: string): string {
+  const beforeLines = before.split(/\r?\n/), afterLines = after.split(/\r?\n/), max = Math.max(beforeLines.length, afterLines.length);
+  const lines = [`--- ${label}`, `+++ ${label}`];
+  for (let index = 0; index < max && lines.length < 80; index++) {
+    if ((beforeLines[index] ?? "") === (afterLines[index] ?? "")) lines.push(` ${beforeLines[index] ?? ""}`);
+    else { if (index < beforeLines.length) lines.push(`-${beforeLines[index]}`); if (index < afterLines.length) lines.push(`+${afterLines[index]}`); }
+  }
+  return lines.join("\n");
+}
+
+function getTargetRelativePath(expectedOutputs: unknown): string | null { try { return parseTextFileTransformPayload(expectedOutputs).path.replaceAll("\\", "/"); } catch { return null; } }
+function sanitizeStoredApproval(value: unknown): HarnessExecutionApproval | null { if (!value || typeof value !== "object") return null; const item = value as Partial<HarnessExecutionApproval>; if (!isText(item.approvalId) || !isText(item.token) || !isText(item.planFingerprint) || !isText(item.approvedAt) || !isText(item.expiresAt) || !Array.isArray(item.selectedTaskIds) || !isText(item.workspaceRoot)) return null; return { approvalId: item.approvalId, approved: true, confirmed: true, approvedAt: item.approvedAt, expiresAt: item.expiresAt, token: item.token, planFingerprint: item.planFingerprint, selectedTaskIds: item.selectedTaskIds.filter(isText), workspaceRoot: item.workspaceRoot }; }
+function sanitizeAuditEntry(value: unknown): HarnessAuditEntry | null { if (!value || typeof value !== "object") return null; const item = value as Partial<HarnessAuditEntry>; if (!isText(item.executionId) || !isText(item.planId) || !isText(item.taskId) || !isText(item.capability) || !isExecutionStatus(item.outcome) || !isVerificationStatus(item.verificationStatus)) return null; const outcome = item.outcome; const verificationStatus = item.verificationStatus; return { executionId: item.executionId, approvalId: typeof item.approvalId === "string" ? item.approvalId : null, planId: item.planId, fingerprint: typeof item.fingerprint === "string" ? item.fingerprint : null, taskId: item.taskId, capability: item.capability, executorId: typeof item.executorId === "string" ? item.executorId : null, workspaceIdentifier: typeof item.workspaceIdentifier === "string" ? item.workspaceIdentifier : "unknown", targetPath: typeof item.targetPath === "string" ? item.targetPath : null, startedAt: typeof item.startedAt === "string" ? item.startedAt : "", finishedAt: typeof item.finishedAt === "string" ? item.finishedAt : "", outcome, verificationStatus, rollbackAttempted: Boolean(item.rollbackAttempted), rollbackSucceeded: typeof item.rollbackSucceeded === "boolean" ? item.rollbackSucceeded : null, beforeHash: typeof item.beforeHash === "string" ? item.beforeHash : null, afterHash: typeof item.afterHash === "string" ? item.afterHash : null, reason: typeof item.reason === "string" ? item.reason : null }; }
+function isExecutionStatus(value: unknown): value is HarnessExecutionTaskStatus { return value === "SUCCESS" || value === "FAILED" || value === "REJECTED" || value === "BLOCKED" || value === "NO_EXECUTOR"; }
+function isVerificationStatus(value: unknown): value is "PASSED" | "FAILED" | "NOT_RUN" { return value === "PASSED" || value === "FAILED" || value === "NOT_RUN"; }
