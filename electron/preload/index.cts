@@ -3,6 +3,7 @@ import type { StudioApi } from "../shared/contracts.js";
 const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
 const api: StudioApi = {
+  runAiHarnessPlan: (input) => ipcRenderer.invoke("studio:run-ai-harness-plan", input),
   getSystemStatus: () => ipcRenderer.invoke("studio:get-system-status"),
   getDatabaseHealth: () => ipcRenderer.invoke("studio:get-database-health"),
   listReleases: () => ipcRenderer.invoke("studio:list-releases"),
@@ -83,3 +84,4 @@ const api: StudioApi = {
 };
 
 contextBridge.exposeInMainWorld("studio", api);
+
