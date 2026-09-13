@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
 import type { AddContactInteractionInput, AiSettings, AssetKind, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, AiHarnessRequest, PublishingStatus, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../shared/contracts.js";
+import type { HarnessExecutionRequest } from "../shared/harness-execution.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
@@ -13,6 +14,7 @@ import { LocalServicesManager } from "./local-services.js";
 import { MetaClient } from "./meta.js";
 import { MediaBridgeClient } from "./media-bridge.js";
 import { runAiHarnessPlanOnly } from "./ai-harness.js";
+import { createHarnessExecutorRegistry, executeApprovedHarnessTasks } from "./harness-execution.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -95,6 +97,8 @@ ipcMain.handle("studio:get-system-status", async (): Promise<SystemStatus> => {
 });
 
 ipcMain.handle("studio:run-ai-harness-plan", (_event, input: AiHarnessRequest) => runAiHarnessPlanOnly(input));
+ipcMain.handle("studio:get-harness-execution-context", () => ({ executors: createHarnessExecutorRegistry(), workspace: { root: path.join(app.getPath("userData"), "harness-execution-workspace") } }));
+ipcMain.handle("studio:execute-harness-tasks", (_event, input: HarnessExecutionRequest) => executeApprovedHarnessTasks(input, { allowedWorkspaceRoot: path.join(app.getPath("userData"), "harness-execution-workspace") }));
 ipcMain.handle("studio:get-database-health", () => studioDatabase.health());
 ipcMain.handle("studio:list-releases", () => studioDatabase.listReleases());
 ipcMain.handle("studio:create-release-draft", (_event, input: CreateReleaseDraftInput) => studioDatabase.createReleaseDraft(input));
