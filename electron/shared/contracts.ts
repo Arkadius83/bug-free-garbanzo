@@ -1,4 +1,4 @@
-import type { HarnessExecutionContext, HarnessExecutionRequest, HarnessExecutionResponse } from "./harness-execution.js";
+import type { HarnessExecutionApproval, HarnessExecutionApprovalRequest, HarnessExecutionContext, HarnessExecutionRequest, HarnessExecutionResponse } from "./harness-execution.js";
 export type ArtistAlias = "the-arkadiusz" | "arkadelic" | "ar-tek" | "echoes-of-arcadia";
 
 export interface ArtistProfile {
@@ -355,6 +355,7 @@ export interface UpdateReleaseInput extends CreateReleaseDraftInput {
 export interface StudioApi {
   runAiHarnessPlan(input: AiHarnessRequest): Promise<AiHarnessResponse>;
   getHarnessExecutionContext(): Promise<HarnessExecutionContext>;
+  createHarnessExecutionApproval(input: HarnessExecutionApprovalRequest): Promise<HarnessExecutionApproval>;
   executeHarnessTasks(input: HarnessExecutionRequest): Promise<HarnessExecutionResponse>;
   getSystemStatus(): Promise<SystemStatus>;
   getDatabaseHealth(): Promise<DatabaseHealth>;

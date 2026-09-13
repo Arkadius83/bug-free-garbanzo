@@ -5,6 +5,7 @@ const { contextBridge, ipcRenderer } = require("electron") as typeof import("ele
 const api: StudioApi = {
   runAiHarnessPlan: (input) => ipcRenderer.invoke("studio:run-ai-harness-plan", input),
   getHarnessExecutionContext: () => ipcRenderer.invoke("studio:get-harness-execution-context"),
+  createHarnessExecutionApproval: (input) => ipcRenderer.invoke("studio:create-harness-execution-approval", input),
   executeHarnessTasks: (input) => ipcRenderer.invoke("studio:execute-harness-tasks", input),
   getSystemStatus: () => ipcRenderer.invoke("studio:get-system-status"),
   getDatabaseHealth: () => ipcRenderer.invoke("studio:get-database-health"),
