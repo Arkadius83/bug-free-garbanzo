@@ -270,6 +270,74 @@ export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archiv
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
 export interface UpdateSoundCloudTrackInput { id: number; artistId: ArtistAlias | null; catalogStatus: SoundCloudCatalogStatus; contentType: SoundCloudContentType; }
 
+
+export type AiHarnessPreferredExecutionMode = "AUTO" | "LOCAL_ONLY" | "CLOUD_ONLY";
+export type AiHarnessOverallStatus = "COMPLETED" | "PARTIAL" | "PLANNING_ONLY" | "FAILED";
+export type AiHarnessTaskStatus = "EXECUTABLE" | "READY" | "PLANNING_ONLY" | "UNSUPPORTED_CAPABILITY" | "NO_EXECUTOR" | "BLOCKED_BY_DEPENDENCY" | "EXECUTION_FAILED" | "EXECUTED";
+
+export interface AiHarnessRequest {
+  requestId: string;
+  goal: {
+    id: string;
+    instruction: string;
+    constraints?: Record<string, unknown>;
+    preferredExecutionMode?: AiHarnessPreferredExecutionMode;
+  };
+  project?: {
+    id?: string;
+    name?: string;
+    workspaceRoot?: string;
+    stateFile?: string;
+  };
+  execution?: {
+    planOnly?: boolean;
+  };
+  capabilities?: {
+    availableExecutors?: string[];
+  };
+}
+
+export interface AiHarnessError {
+  code: string;
+  message: string;
+  taskId?: string;
+  executorId?: string;
+  cause?: string;
+}
+
+export interface AiHarnessTaskSummary {
+  id: string;
+  description?: string;
+  capability?: string;
+  dependsOn: string[];
+  expectedOutputs?: unknown;
+}
+
+export interface AiHarnessTaskResult {
+  taskId: string;
+  capability?: string;
+  executorId: string | null;
+  status: AiHarnessTaskStatus;
+  planningOnly: boolean;
+  blockedBy: string[];
+  dependencyResults: string[];
+  output?: unknown;
+  errors: AiHarnessError[];
+}
+
+export interface AiHarnessResponse {
+  requestId: string;
+  status: AiHarnessOverallStatus;
+  planOnly: boolean;
+  plan: {
+    valid: boolean;
+    originalTaskOrder: string[];
+    resolvedTaskOrder: string[];
+    tasks: AiHarnessTaskSummary[];
+  };
+  results: AiHarnessTaskResult[];
+  errors: AiHarnessError[];
+}
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
   title: string;
@@ -284,6 +352,7 @@ export interface UpdateReleaseInput extends CreateReleaseDraftInput {
 }
 
 export interface StudioApi {
+  runAiHarnessPlan(input: AiHarnessRequest): Promise<AiHarnessResponse>;
   getSystemStatus(): Promise<SystemStatus>;
   getDatabaseHealth(): Promise<DatabaseHealth>;
   listReleases(): Promise<ReleaseSummary[]>;
@@ -362,3 +431,4 @@ export interface StudioApi {
   getMediaBridgeStatus():Promise<MediaBridgeStatus>;
   saveMediaBridgeSettings(accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string):Promise<MediaBridgeStatus>;
 }
+
