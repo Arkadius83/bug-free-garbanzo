@@ -76,6 +76,49 @@ export interface HarnessExecutionResponse {
   results: HarnessTaskExecutionResult[];
 }
 
+
+export interface HarnessExecutionReviewTask {
+  taskId: string;
+  capability: string;
+  executorId: string | null;
+  workspaceRoot: string;
+  targetRelativePath: string | null;
+  fileExists: boolean;
+  beforeHash: string | null;
+  expectedAfterHash: string | null;
+  diffPreview: string;
+  dependencies: string[];
+}
+
+export interface HarnessExecutionReview {
+  planId: string;
+  planFingerprint: string;
+  selectedTaskIds: string[];
+  workspace: HarnessExecutionWorkspace;
+  expiresAt: string;
+  tasks: HarnessExecutionReviewTask[];
+}
+
+export interface HarnessAuditEntry {
+  executionId: string;
+  approvalId: string | null;
+  planId: string;
+  fingerprint: string | null;
+  taskId: string;
+  capability: string;
+  executorId: string | null;
+  workspaceIdentifier: string;
+  targetPath: string | null;
+  startedAt: string;
+  finishedAt: string;
+  outcome: HarnessExecutionTaskStatus;
+  verificationStatus: HarnessVerificationStatus;
+  rollbackAttempted: boolean;
+  rollbackSucceeded: boolean | null;
+  beforeHash: string | null;
+  afterHash: string | null;
+  reason: string | null;
+}
 export interface HarnessExecutorDescriptor {
   capability: string;
   executorId: string;

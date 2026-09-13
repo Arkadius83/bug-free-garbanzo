@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import type { HarnessExecutionApprovedTask, HarnessExecutionApprovalRequest, HarnessExecutionRequest, HarnessExecutionResponse } from "../shared/harness-execution.js";
 import { appendHarnessExecutionHistory, createHarnessExecutionHistoryItem, deserializeHarnessExecutionHistory, serializeHarnessExecutionHistory } from "../shared/harness-execution.js";
-import { createHarnessApprovalStore, createHarnessExecutionApproval, createHarnessExecutorRegistry, createPlanFingerprint, executeApprovedHarnessTasks, getHarnessExecutor, resetHarnessExecutionHardeningState } from "./harness-execution.js";
+import { appendHarnessAuditLog, createHarnessApprovalStore, createHarnessExecutionApproval, createHarnessExecutionReview, createHarnessExecutorRegistry, createPersistentHarnessExecutionApproval, createPlanFingerprint, executePersistentApprovedHarnessTasks, executeApprovedHarnessTasks, getHarnessExecutor, loadHarnessApprovalStore, readHarnessAuditLog, resetHarnessExecutionHardeningState } from "./harness-execution.js";
 
 async function withWorkspace<T>(fn: (root: string) => Promise<T>): Promise<T> { const root = await mkdtemp(path.join(os.tmpdir(), "ai-studio-harness-exec-")); try { return await fn(root); } finally { await rm(root, { recursive: true, force: true }); } }
 function fileTask(overrides: Partial<HarnessExecutionApprovedTask> = {}): HarnessExecutionApprovedTask { return { taskId: "T1", title: "Write local text file", capability: "file.transform", readinessStatus: "READY", dependencies: [], expectedOutputs: { fileTransform: { path: "notes/output.txt", text: "hello harness" } }, ...overrides }; }
@@ -162,4 +162,82 @@ test("symlink workspace paths are rejected when available", async (context) => w
   const result = await executeApprovedHarnessTasks(request, { allowedWorkspaceRoot: root, store });
   assert.equal(result.status, "REJECTED");
   assert.match(result.results[0].message, /symlink/);
+}));
+test("persistent approval is saved as validation metadata", async () => withWorkspace(async (root) => {
+  const approvalPath = path.join(root, "governance", "approvals.json");
+  const approval = await createPersistentHarnessExecutionApproval(approvalRequest(root), { allowedWorkspaceRoot: root, approvalStorePath: approvalPath, now: () => "2026-01-01T00:00:00.000Z" });
+  const raw = await readFile(approvalPath, "utf8");
+  assert.match(raw, new RegExp(approval.approvalId));
+  assert.equal(raw.includes("hello harness"), false);
+}));
+
+test("persistent approval reloads and can execute once", async () => withWorkspace(async (root) => {
+  const approvalPath = path.join(root, "governance", "approvals.json");
+  const auditPath = path.join(root, "governance", "audit.jsonl");
+  const base = approvalRequest(root);
+  const approval = await createPersistentHarnessExecutionApproval(base, { allowedWorkspaceRoot: root, approvalStorePath: approvalPath });
+  const reloaded = await loadHarnessApprovalStore(approvalPath);
+  assert.equal(reloaded.approvals.has(approval.approvalId), true);
+  const result = await executePersistentApprovedHarnessTasks({ ...base, approval }, { allowedWorkspaceRoot: root, approvalStorePath: approvalPath, auditLogPath: auditPath });
+  assert.equal(result.status, "SUCCESS");
+  assert.equal((await loadHarnessApprovalStore(approvalPath)).approvals.size, 0);
+}));
+
+test("expired approval cleanup removes stale entries", async () => withWorkspace(async (root) => {
+  const approvalPath = path.join(root, "approvals.json");
+  await createPersistentHarnessExecutionApproval(approvalRequest(root), { allowedWorkspaceRoot: root, approvalStorePath: approvalPath, now: () => "2026-01-01T00:00:00.000Z", ttlMs: 1000 });
+  const store = await loadHarnessApprovalStore(approvalPath, { now: "2026-01-01T00:00:02.000Z", ttlMs: 1000 });
+  assert.equal(store.approvals.size, 0);
+}));
+
+test("corrupt approval store recovers as empty", async () => withWorkspace(async (root) => {
+  const approvalPath = path.join(root, "approvals.json");
+  await writeFile(approvalPath, "{bad", "utf8");
+  const store = await loadHarnessApprovalStore(approvalPath);
+  assert.equal(store.approvals.size, 0);
+}));
+
+test("execution review exposes exact metadata and diff preview", async () => withWorkspace(async (root) => {
+  await mkdir(path.join(root, "notes")); await writeFile(path.join(root, "notes", "output.txt"), "old\nline", "utf8");
+  const review = await createHarnessExecutionReview(approvalRequest(root, { tasks: [fileTask({ expectedOutputs: { fileTransform: { path: "notes/output.txt", text: "new\nline" } } })] }), { allowedWorkspaceRoot: root, now: () => "2026-01-01T00:00:00.000Z" });
+  assert.equal(review.tasks[0].targetRelativePath, "notes/output.txt");
+  assert.equal(review.tasks[0].fileExists, true);
+  assert.match(review.tasks[0].beforeHash ?? "", /^[a-f0-9]{64}$/);
+  assert.match(review.tasks[0].expectedAfterHash ?? "", /^[a-f0-9]{64}$/);
+  assert.match(review.tasks[0].diffPreview, /-old/);
+  assert.match(review.tasks[0].diffPreview, /\+new/);
+}));
+
+test("audit append persists summary only", async () => withWorkspace(async (root) => {
+  const approvalPath = path.join(root, "approvals.json"); const auditPath = path.join(root, "audit.jsonl"); const base = approvalRequest(root);
+  const approval = await createPersistentHarnessExecutionApproval(base, { allowedWorkspaceRoot: root, approvalStorePath: approvalPath });
+  const result = await executePersistentApprovedHarnessTasks({ ...base, approval }, { allowedWorkspaceRoot: root, approvalStorePath: approvalPath, auditLogPath: auditPath });
+  const entries = await readHarnessAuditLog(auditPath);
+  assert.equal(entries[0].executionId, result.executionId);
+  assert.equal(entries[0].targetPath, "notes/output.txt");
+  assert.equal((await readFile(auditPath, "utf8")).includes("hello harness"), false);
+}));
+
+test("audit corruption recovery skips invalid lines", async () => withWorkspace(async (root) => {
+  const auditPath = path.join(root, "audit.jsonl");
+  await writeFile(auditPath, "{bad\n{\"executionId\":\"e\",\"planId\":\"p\",\"taskId\":\"t\",\"capability\":\"file.transform\",\"outcome\":\"SUCCESS\",\"verificationStatus\":\"PASSED\"}\n", "utf8");
+  const entries = await readHarnessAuditLog(auditPath);
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].executionId, "e");
+}));
+
+test("audit retention is bounded and rotated", async () => withWorkspace(async (root) => {
+  const auditPath = path.join(root, "audit.jsonl");
+  const entries = Array.from({ length: 5 }, (_, index) => ({ executionId: `e${index}`, approvalId: null, planId: "p", fingerprint: null, taskId: `t${index}`, capability: "file.transform", executorId: "local.text-file-transform.v1", workspaceIdentifier: "w", targetPath: `f${index}.txt`, startedAt: "s", finishedAt: "f", outcome: "SUCCESS" as const, verificationStatus: "PASSED" as const, rollbackAttempted: false, rollbackSucceeded: null, beforeHash: null, afterHash: null, reason: null }));
+  await appendHarnessAuditLog(auditPath, entries, 3);
+  assert.deepEqual((await readHarnessAuditLog(auditPath, 10)).map((entry) => entry.executionId), ["e4", "e3", "e2"]);
+}));
+
+test("renderer cannot forge audit records through execution request", async () => withWorkspace(async (root) => {
+  const approvalPath = path.join(root, "approvals.json"); const auditPath = path.join(root, "audit.jsonl"); const base = approvalRequest(root);
+  const approval = await createPersistentHarnessExecutionApproval(base, { allowedWorkspaceRoot: root, approvalStorePath: approvalPath });
+  await executePersistentApprovedHarnessTasks({ ...base, approval, fakeAudit: { outcome: "SUCCESS", taskId: "forged" } }, { allowedWorkspaceRoot: root, approvalStorePath: approvalPath, auditLogPath: auditPath });
+  const entries = await readHarnessAuditLog(auditPath);
+  assert.equal(entries.some((entry) => entry.taskId === "forged"), false);
+  assert.equal(entries[0].taskId, "T1");
 }));
