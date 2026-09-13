@@ -97,8 +97,9 @@ ipcMain.handle("studio:get-system-status", async (): Promise<SystemStatus> => {
 });
 
 ipcMain.handle("studio:run-ai-harness-plan", (_event, input: AiHarnessRequest) => runAiHarnessPlanOnly(input));
+const projectRoot = () => app.isPackaged ? app.getPath("userData") : path.resolve(currentDirectory, "../..");
 const harnessGovernanceDirectory = () => path.join(app.getPath("userData"), "harness-governance");
-const harnessWorkspaceRoot = () => path.join(app.getPath("userData"), "harness-execution-workspace");
+const harnessWorkspaceRoot = () => path.join(projectRoot(), ".runtime", "harness-smoke-test");
 const harnessApprovalStorePath = () => path.join(harnessGovernanceDirectory(), "approvals.json");
 const harnessAuditLogPath = () => path.join(harnessGovernanceDirectory(), "audit.jsonl");
 ipcMain.handle("studio:get-harness-execution-context", () => ({ executors: createHarnessExecutorRegistry(), workspace: { root: harnessWorkspaceRoot() }, approvalTtlMs: DEFAULT_APPROVAL_TTL_MS }));
