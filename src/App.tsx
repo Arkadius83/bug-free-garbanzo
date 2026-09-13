@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, BrandProfile, CampaignChannel, CampaignPackItem, CatalogMatchSuggestion, ContactChannel, ContactRelationshipStatus, ContactSummary, ContactType, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, LocalServiceStatus, MediaAspectRatio, MediaBridgeStatus, MediaGenerationSettings, MediaGenerationSummary, MediaProvider, MetaConnection, PublishingQueueItem, PublishingStatus, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudContentType, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyConnection, SpotifyReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary, UpsertContactInput } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 import { AudioPlayer } from "./AudioPlayer";
+import { HarnessPlanPreview } from "./HarnessPlanPreview";
 
-type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "analytics" | "contacts" | "integrations" | "settings";
+type AppView = "overview" | "releases" | "ai-studio" | "harness" | "calendar" | "analytics" | "contacts" | "integrations" | "settings";
 
 const navigation: Array<{ id: AppView | "placeholder"; label: string; icon: string }> = [
   { id: "overview", label: "Overview", icon: "⌂" },
   { id: "releases", label: "Releases", icon: "♫" },
   { id: "ai-studio", label: "AI Studio", icon: "✦" },
+  { id: "harness", label: "Harness Plan", icon: "◇" },
   { id: "calendar", label: "Tasks & Calendar", icon: "□" },
   { id: "analytics", label: "Analytics", icon: "⌁" },
   { id: "contacts", label: "Contacts", icon: "◎" }
@@ -601,6 +603,8 @@ export function App() {
             <section className="dashboard-card intelligence-card"><div className="card-header"><div><span>RELEASE INTELLIGENCE</span><h3>Worth your attention</h3></div><b className="live">● LIVE</b></div><article><i>◷</i><div><small>NEXT ACTION</small><strong>{releaseReadiness?.missing[0] ?? "Release foundation complete"}</strong><p>{releaseReadiness?.missing.length ? `${releaseReadiness.missing.length} readiness items remain.` : "All required release elements are ready."}</p><button onClick={() => openReleaseWorkspace()}>Open release →</button></div></article><article><i>↗</i><div><small>AUDIO</small><strong>{readinessCheck("analysis")?.complete ? "Master analyzed" : "Analysis required"}</strong><p>{readinessCheck("analysis")?.detail ?? "Select a release to calculate readiness."}</p></div></article></section>
           </div>
         </div>}
+
+        {activeView === "harness" && <HarnessPlanPreview release={currentRelease} artistId={selectedArtist} artistName={artist.name} defaultInstruction={`Create a plan-only promotional workflow for ${currentRelease?.title ?? (title || "the active release")}: generate cover concepts, analyze artwork readiness, upscale final assets, transform files for social channels and draft campaign copy.`} />}
 
         {activeView==="analytics"&&<div className="page-content analytics-page">
           <header><div><span className="eyebrow">Analytics Dashboard V1</span><h1>Catalog intelligence.</h1><p>Real SoundCloud snapshots, Spotify catalog data and local campaign progress. No estimated stream counts.</p></div><div className="analytics-filters"><label>Artist alias<select value={analyticsArtist} onChange={(event)=>setAnalyticsArtist(event.target.value as ArtistAlias|"all")}><option value="all">All aliases</option>{artists.map((profile)=><option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></label><label>Trend window<select value={analyticsPeriod} onChange={(event)=>setAnalyticsPeriod(Number(event.target.value) as 7|30|90)}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label></div></header>
