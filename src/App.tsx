@@ -17,13 +17,15 @@ import { useReleaseManager } from "./features/releases/useReleaseManager";
 import { useAiStudio } from "./features/ai-studio/useAiStudio";
 import { usePublishing } from "./features/publishing/usePublishing";
 import { useIntegrations } from "./features/integrations/useIntegrations";
+import { HarnessPlanPreview } from "./HarnessPlanPreview";
 
-type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "analytics" | "contacts" | "integrations" | "settings";
+type AppView = "overview" | "releases" | "ai-studio" | "harness" | "calendar" | "analytics" | "contacts" | "integrations" | "settings";
 
 const navigation: Array<{ id: AppView | "placeholder"; label: string; icon: string }> = [
   { id: "overview", label: "Overview", icon: "⌂" },
   { id: "releases", label: "Releases", icon: "♫" },
   { id: "ai-studio", label: "AI Studio", icon: "✦" },
+  { id: "harness", label: "Harness Plan", icon: "◇" },
   { id: "calendar", label: "Tasks & Calendar", icon: "□" },
   { id: "analytics", label: "Analytics", icon: "⌁" },
   { id: "contacts", label: "Contacts", icon: "◎" }
@@ -552,6 +554,7 @@ export function App() {
         </div>}
 
         {activeView==="analytics"&&<AnalyticsPage releases={releases} onOpenRelease={openReleaseWorkspace} />}
+        {activeView === "harness" && <HarnessPlanPreview release={currentRelease} artistId={selectedArtist} artistName={artist.name} defaultInstruction={`Create a plan-only promotional workflow for ${currentRelease?.title ?? (title || "the active release")}: generate cover concepts, analyze artwork readiness, upscale final assets, transform files for social channels and draft campaign copy.`} />}
 
         {activeView==="contacts"&&<ContactsPage releases={releases} onTasksChanged={setTasks} />}
 
