@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
-import type { AddContactInteractionInput, AiSettings, AssetKind, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, AiHarnessRequest, PublishingStatus, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../shared/contracts.js";
+import type { AddContactInteractionInput, AiSettings, AssetKind, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, AiHarnessRequest, ConversationRequest, PublishingStatus, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../shared/contracts.js";
 import type { HarnessExecutionApprovalRequest, HarnessExecutionRequest } from "../shared/harness-execution.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
@@ -14,7 +14,9 @@ import { LocalServicesManager } from "./local-services.js";
 import { MetaClient } from "./meta.js";
 import { MediaBridgeClient } from "./media-bridge.js";
 import { runAiHarnessPlanOnly } from "./ai-harness.js";
+import { createAiHarnessProviderRouter } from "./harness-provider-router.js";
 import { DEFAULT_APPROVAL_TTL_MS, createHarnessExecutionReview, createHarnessExecutorRegistry, createPersistentHarnessExecutionApproval, executePersistentApprovedHarnessTasks, readHarnessAuditLog } from "./harness-execution.js";
+import { ConversationRuntimeError, humanizeConversationError, runConversation } from "./conversation-runtime.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -25,6 +27,8 @@ let mediaGenerationClient: MediaGenerationClient;
 let localServicesManager: LocalServicesManager;
 let metaClient: MetaClient;
 let mediaBridgeClient: MediaBridgeClient;
+const conversationAbortControllers = new Map<string, AbortController>();
+const conversationProviderRouter = createAiHarnessProviderRouter();
 if (!app.requestSingleInstanceLock()) app.quit();
 
 function soundCloudCallbackFromArgs(args: string[]): string | null {
@@ -96,6 +100,27 @@ ipcMain.handle("studio:get-system-status", async (): Promise<SystemStatus> => {
   }
 });
 
+ipcMain.handle("studio:send-conversation-message", async (event, input: ConversationRequest) => {
+  const controller = new AbortController();
+  conversationAbortControllers.set(input.requestId, controller);
+  try {
+    return await runConversation(input, {
+      signal: controller.signal,
+      onChunk: (chunk) => event.sender.send("studio:conversation-chunk", chunk),
+      providerRouter: conversationProviderRouter
+    });
+  } catch (error) {
+    if (error instanceof ConversationRuntimeError) throw new Error(error.message);
+    throw new Error(humanizeConversationError(error));
+  } finally {
+    conversationAbortControllers.delete(input.requestId);
+  }
+});
+ipcMain.handle("studio:cancel-conversation", (_event, requestId: string) => {
+  const controller = conversationAbortControllers.get(requestId);
+  if (controller) controller.abort();
+  conversationAbortControllers.delete(requestId);
+});
 ipcMain.handle("studio:run-ai-harness-plan", (_event, input: AiHarnessRequest) => runAiHarnessPlanOnly(input));
 const projectRoot = () => app.isPackaged ? app.getPath("userData") : path.resolve(currentDirectory, "../..");
 const harnessGovernanceDirectory = () => path.join(app.getPath("userData"), "harness-governance");
@@ -279,4 +304,6 @@ app.on("before-quit", () => { localServicesManager?.stopManaged(); studioDatabas
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
+
+
 

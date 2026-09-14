@@ -9,7 +9,7 @@
     "dev": "tsc -p electron/tsconfig.json && concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
     "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
     "typecheck": "tsc -b --pretty false && tsc -p electron/tsconfig.json --pretty false",
-    "test": "tsc -p electron/tsconfig.json && node --test dist-electron/main/database/database.test.js dist-electron/main/audio-analysis.test.js dist-electron/main/ai-harness.test.js dist-electron/main/execution-readiness.test.js dist-electron/main/harness-execution.test.js",
+    "test": "tsc -p electron/tsconfig.json && node --test dist-electron/main/database/database.test.js dist-electron/main/audio-analysis.test.js dist-electron/main/ai-harness.test.js dist-electron/main/conversation-runtime.test.js dist-electron/main/harness-provider-router.test.js dist-electron/main/execution-readiness.test.js dist-electron/main/harness-execution.test.js",
     "preview": "vite preview",
     "start": "electron ."
   },
@@ -30,4 +30,5 @@
     "wait-on": "latest"
   }
 }
+
 

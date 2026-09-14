@@ -1,23 +1,17 @@
-import { useMemo, useState } from "react";
-import type { ArtistAlias, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
-
-type ConversationRole = "user" | "assistant";
-
-type ConversationMessage = {
-  id: string;
-  role: ConversationRole;
-  content: string;
-  createdAt: string;
-};
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ArtistAlias, ConversationMessage, ConversationRuntimeState, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 
 type ConversationWorkspaceProps = {
   artistId: ArtistAlias;
   artistName: string;
   release?: ReleaseSummary | null;
   status?: SystemStatus | null;
+  activeModel?: string | null;
+  onModelChange: (model: string | null) => void;
   onOpenRelease: () => void;
 };
 
+const MAX_SESSION_MESSAGES = 16;
 const starterMessages: ConversationMessage[] = [
   {
     id: "welcome",
@@ -27,27 +21,119 @@ const starterMessages: ConversationMessage[] = [
   }
 ];
 
-export function ConversationWorkspace({ artistId, artistName, release, status, onOpenRelease }: ConversationWorkspaceProps) {
+function boundedHistory(messages: ConversationMessage[]): ConversationMessage[] {
+  return messages.filter((message) => message.id !== "welcome").slice(-MAX_SESSION_MESSAGES);
+}
+
+function cleanError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : "AI Studio could not generate a response.";
+  return raw.replace(/^Error invoking remote method '[^']+': Error: /, "");
+}
+
+export function ConversationWorkspace({ artistId, artistName, release, status, activeModel, onModelChange, onOpenRelease }: ConversationWorkspaceProps) {
   const [messages, setMessages] = useState<ConversationMessage[]>(starterMessages);
   const [input, setInput] = useState("");
+  const [runtimeState, setRuntimeState] = useState<ConversationRuntimeState>("Ready");
   const [workStatus, setWorkStatus] = useState("Waiting for your next request.");
+  const activeRequestId = useRef<string | null>(null);
+  const cancelledRequestIds = useRef(new Set<string>());
+  const historyRef = useRef<HTMLDivElement | null>(null);
+  const shouldStickToBottom = useRef(true);
+  const availableModels = status?.ollama.models ?? [];
+  const isAuto = activeModel === null;
+  const selectedModelName = isAuto ? null : (activeModel ?? null);
+  const modelIsAvailable = selectedModelName !== null && availableModels.some((model) => model.name === selectedModelName);
   const activeWorkspace = useMemo(() => release ? `${release.title} by ${release.artistName}` : `${artistName} workspace`, [artistName, release]);
-  const modelLabel = status?.ollama.available ? `${status.ollama.models.length} local model${status.ollama.models.length === 1 ? "" : "s"} available` : "Local AI is starting";
+  const providerLabel = isAuto ? "Auto · Harness provider routing" : selectedModelName && modelIsAvailable ? `Local AI · ${selectedModelName}` : selectedModelName ? `${selectedModelName} not found` : "Select a model or use Auto";
+  const busy = runtimeState === "Thinking" || runtimeState === "Responding";
+  const canSend = Boolean(input.trim() && !busy);
 
-  function sendMessage() {
+  useEffect(() => {
+    const element = historyRef.current;
+    if (!element || !shouldStickToBottom.current) return;
+    element.scrollTop = element.scrollHeight;
+  }, [messages, runtimeState]);
+
+  function handleHistoryScroll() {
+    const element = historyRef.current;
+    if (!element) return;
+    shouldStickToBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 72;
+  }
+
+  async function sendMessage() {
     const content = input.trim();
-    if (!content) return;
+    if (!content || !window.studio) return;
+    if (!isAuto && !modelIsAvailable) {
+      setRuntimeState("Error");
+      setWorkStatus("Choose Auto or an available local AI model before sending.");
+      return;
+    }
+    const requestId = `conversation-${Date.now()}`;
+    activeRequestId.current = requestId;
+    cancelledRequestIds.current.delete(requestId);
+    shouldStickToBottom.current = true;
     const now = new Date().toISOString();
-    const userMessage: ConversationMessage = { id: `user-${Date.now()}`, role: "user", content, createdAt: now };
-    const assistantMessage: ConversationMessage = {
-      id: `assistant-${Date.now()}`,
-      role: "assistant",
-      content: "I have your request. The next step is to connect this workspace to the planning and execution services, but for now this conversation view is the clean front door for AI Studio work.",
-      createdAt: new Date(Date.now() + 1).toISOString()
-    };
+    const userMessage: ConversationMessage = { id: `user-${requestId}`, role: "user", content, createdAt: now };
+    const assistantId = `assistant-${requestId}`;
+    const assistantMessage: ConversationMessage = { id: assistantId, role: "assistant", content: "", createdAt: now };
     setMessages((current) => [...current, userMessage, assistantMessage]);
     setInput("");
-    setWorkStatus("Request captured. Ready for the next integration step.");
+    setRuntimeState("Thinking");
+    setWorkStatus(isAuto ? "Routing with Auto..." : `Thinking with ${selectedModelName}...`);
+    try {
+      const response = await window.studio.sendConversationMessage({
+        requestId,
+        model: isAuto ? null : selectedModelName,
+        message: content,
+        history: boundedHistory(messages),
+        stream: !isAuto,
+        workspace: {
+          projectName: "AI Studio Manager",
+          artistId,
+          artistName,
+          releaseId: release?.id ?? null,
+          releaseTitle: release?.title ?? null,
+          primaryGenre: release?.primaryGenre ?? null,
+          releaseStatus: release?.status ?? null
+        }
+      }, (chunk) => {
+        if (activeRequestId.current !== requestId || cancelledRequestIds.current.has(requestId)) return;
+        if (chunk.content) {
+          setRuntimeState("Responding");
+          setWorkStatus("Responding...");
+          setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content + chunk.content } : message));
+        }
+      });
+      if (!cancelledRequestIds.current.has(requestId)) {
+        const providerModel = response.provider && response.model ? `${response.provider}/${response.model}` : response.provider ?? "unknown";
+        setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content || response.content } : message).slice(-MAX_SESSION_MESSAGES - 1));
+        setRuntimeState("Ready");
+        setWorkStatus(response.streamed ? `Response from ${providerModel}.` : `Response from ${providerModel}. Streaming was not available, so the answer arrived at once.`);
+      }
+    } catch (error) {
+      if (cancelledRequestIds.current.has(requestId)) {
+        setMessages((current) => current.map((item) => item.id === assistantId && !item.content ? { ...item, content: "Response stopped." } : item));
+        setRuntimeState("Ready");
+        setWorkStatus("Response stopped.");
+      } else {
+        const message = cleanError(error);
+        setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: message } : item));
+        setRuntimeState("Error");
+        setWorkStatus(message);
+      }
+    } finally {
+      if (activeRequestId.current === requestId) activeRequestId.current = null;
+    }
+  }
+
+  async function stopResponse() {
+    if (!window.studio || !activeRequestId.current) return;
+    const requestId = activeRequestId.current;
+    cancelledRequestIds.current.add(requestId);
+    await window.studio.cancelConversation(requestId);
+    setRuntimeState("Ready");
+    setWorkStatus("Response stopped.");
+    activeRequestId.current = null;
   }
 
   return (
@@ -64,18 +150,19 @@ export function ConversationWorkspace({ artistId, artistName, release, status, o
       <section className="conversation-shell">
         <aside className="conversation-context panel">
           <div className="panel-heading"><span className="eyebrow">Workspace</span><h2>Active context</h2></div>
-          <div className="context-stack"><span><small>PROJECT</small><b>{activeWorkspace}</b></span><span><small>ARTIST</small><b>{artistName}</b></span><span><small>ALIAS</small><b>{artistId}</b></span><span><small>AI STATUS</small><b>{modelLabel}</b></span></div>
-          <div className="current-work"><small>CURRENT WORK</small><strong>{workStatus}</strong><p>No autonomous action runs from this conversation area yet.</p></div>
+          <div className="context-stack"><span><small>PROJECT</small><b>{activeWorkspace}</b></span><span><small>ARTIST</small><b>{artistName}</b></span><span><small>AI</small><b>{providerLabel}</b></span><span><small>STATE</small><b>{runtimeState}</b></span></div>
+          <label className="conversation-model-select">Model<select value={isAuto ? "" : (selectedModelName ?? "")} onChange={(event) => onModelChange(event.target.value || null)}><option value="">Auto · Harness provider routing</option>{availableModels.map((model) => <option value={model.name} key={model.name}>{model.name}</option>)}</select><small>{availableModels.length ? "Auto uses free providers first, then local fallback." : "Start Ollama to discover local models, or use Auto."}</small></label>
+          <div className="current-work"><small>CURRENT WORK</small><strong>{workStatus}</strong><p>No autonomous action runs from this conversation area.</p></div>
           <div className="voice-placeholder"><small>VOICE</small><strong>Input and playback placeholder</strong><p>Future voice capture and spoken responses will attach here.</p></div>
         </aside>
 
         <section className="conversation-main panel">
-          <div className="conversation-history" aria-label="Conversation history">
-            {messages.map((message) => <article className={`conversation-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "AI Studio" : "You"} · {message.createdAt === new Date(0).toISOString() ? "ready" : new Date(message.createdAt).toLocaleTimeString()}</small><p>{message.content}</p></article>)}
+          <div className="conversation-history" ref={historyRef} onScroll={handleHistoryScroll} aria-label="Conversation history">
+            {messages.map((message) => <article className={`conversation-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "AI Studio" : "You"} · {message.createdAt === new Date(0).toISOString() ? "ready" : new Date(message.createdAt).toLocaleTimeString()}</small><p>{message.content || (runtimeState === "Thinking" ? "Thinking..." : "")}</p></article>)}
           </div>
           <div className="conversation-composer">
-            <textarea rows={3} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) sendMessage(); }} placeholder="Ask AI Studio to plan a release task, draft a post, organize campaign work, or think through the next step..." />
-            <button className="primary" disabled={!input.trim()} onClick={sendMessage}>Send</button>
+            <textarea rows={3} value={input} disabled={busy} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendMessage(); }} placeholder="Ask AI Studio to plan a release task, draft a post, organize campaign work, or think through the next step..." />
+            {busy ? <button className="danger-button" onClick={() => void stopResponse()}>Stop</button> : <button className="primary" disabled={!canSend} onClick={() => void sendMessage()}>Send</button>}
           </div>
         </section>
       </section>

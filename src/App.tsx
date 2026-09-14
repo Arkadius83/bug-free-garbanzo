@@ -124,7 +124,7 @@ export function App() {
           const analyses = await Promise.all(initialAssets.filter((asset) => asset.kind === "audio").map(async (asset) => [asset.id, await window.studio!.getAudioAnalysis(asset.id)] as const));
           setAudioAnalyses(Object.fromEntries(analyses.filter((entry): entry is readonly [string, AudioAnalysisSummary] => entry[1] !== null)));
         }
-        const savedModelStillExists = system.ollama.models.some((model) => model.name === savedAiSettings.model);
+        const savedModelStillExists = savedAiSettings.model === null || system.ollama.models.some((model) => model.name === savedAiSettings.model);
         const preferredModel = system.ollama.models.find((model) => /^deepseek-r1(?::|$)/i.test(model.name)) ?? system.ollama.models[0];
         const resolvedSettings = savedModelStillExists || system.ollama.models.length === 0
           ? savedAiSettings
@@ -605,7 +605,7 @@ export function App() {
           </div>
         </div>}
 
-        {activeView === "ai-studio" && <ConversationWorkspace release={currentRelease} artistId={selectedArtist} artistName={artist.name} status={status} onOpenRelease={() => openReleaseWorkspace(currentRelease)} />}
+        {activeView === "ai-studio" && <ConversationWorkspace release={currentRelease} artistId={selectedArtist} artistName={artist.name} status={status} activeModel={aiSettings.model} onModelChange={(model) => void updateAiSettings({ ...aiSettings, model })} onOpenRelease={() => openReleaseWorkspace(currentRelease)} />}
 
         {activeView==="analytics"&&<div className="page-content analytics-page">
           <header><div><span className="eyebrow">Analytics Dashboard V1</span><h1>Catalog intelligence.</h1><p>Real SoundCloud snapshots, Spotify catalog data and local campaign progress. No estimated stream counts.</p></div><div className="analytics-filters"><label>Artist alias<select value={analyticsArtist} onChange={(event)=>setAnalyticsArtist(event.target.value as ArtistAlias|"all")}><option value="all">All aliases</option>{artists.map((profile)=><option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></label><label>Trend window<select value={analyticsPeriod} onChange={(event)=>setAnalyticsPeriod(Number(event.target.value) as 7|30|90)}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label></div></header>
@@ -751,3 +751,4 @@ export function App() {
     </div>
   );
 }
+
