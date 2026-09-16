@@ -59,6 +59,32 @@ export interface ConversationChunk {
   done: boolean;
 }
 
+export type ProviderExecutionFinalStatus = "success" | "cancelled" | "timeout" | "crash" | "invalid_result";
+
+export interface ProviderExecutionDiagnostic {
+  providerId: string;
+  providerName: string;
+  startTimestamp: string;
+  endTimestamp: string;
+  durationMs: number;
+  finalStatus: ProviderExecutionFinalStatus;
+  exitCode: number | null;
+  exitSignal: string | null;
+  validResultReceived: boolean;
+  fallbackUsed: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface ProviderExecutionTrace {
+  startTimestamp: string;
+  endTimestamp: string;
+  durationMs: number;
+  finalStatus: ProviderExecutionFinalStatus;
+  fallbackUsed: boolean;
+  diagnostics: ProviderExecutionDiagnostic[];
+}
+
 export interface ConversationResponse {
   requestId: string;
   provider: string;
@@ -66,6 +92,7 @@ export interface ConversationResponse {
   content: string;
   streamed: boolean;
   interrupted: boolean;
+  trace?: ProviderExecutionTrace;
   error?: string;
 }
 export interface GenerateCampaignDraftInput {
@@ -305,12 +332,162 @@ export interface ContactSummary { id:string; name:string; contactType:ContactTyp
 export interface UpsertContactInput { id?:string; name:string; contactType:ContactType; relationshipStatus:ContactRelationshipStatus; artistId:ArtistAlias|null; releaseId:string|null; organization:string; email:string; phone:string; website:string; socialHandle:string; preferredChannel:ContactChannel; consent:boolean; notes:string; nextFollowUpAt:string|null; createFollowUpTask?:boolean; }
 export interface AddContactInteractionInput { contactId:string; channel:ContactChannel|"meeting"; direction:"outbound"|"inbound"|"note"; summary:string; occurredAt:string; }
 export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; aspectRatio?:MediaAspectRatio; }
-export type PublishingStatus="draft"|"approved"|"scheduled"|"published"|"failed";
-export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; remotePostId:string|null; publishedAt:string|null; destinationId:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; createdAt:string; updatedAt:string; }
-export interface CreatePublishingQueueInput { releaseId:string; campaignPackItemId:string; mediaGenerationId:string|null; platform:CampaignChannel; scheduledAt:string|null; }
+export type PublishingStatus="draft"|"approved"|"scheduled"|"publishing"|"published"|"failed";
+export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; remotePostId:string|null; publishedAt:string|null; destinationId:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; sourceScheduleEventId:string|null; sourceCampaignItemTitle:string|null; reviewedBy:string|null; reviewedAt:string|null; reviewReason:string|null; createdAt:string; updatedAt:string; }
+export interface ReviewPublishingQueueItemInput { id:string; action:"APPROVE"|"REJECT"|"RETURN_TO_DRAFT"|"SCHEDULE"; actor?:string; reason?:string; }
+export interface UpdatePublishingQueueContentInput { id:string; caption:string; scheduledAt:string|null; }
 export interface MetaDestination { id:string; platform:"Facebook"|"Instagram";pageId:string;name:string;username:string|null; }
 export interface MetaConnection { configured:boolean;connected:boolean;callbackUrl:string;graphVersion:string;configurationId:string|null;destinations:MetaDestination[];error:string|null; }
 export interface MediaBridgeStatus { configured:boolean;provider:"cloudflare-r2";accountId:string|null;bucket:string|null;error:string|null; }
+
+export interface PostPublishSnapshot {
+  id: string;
+  publishingQueueItemId: string;
+  releaseId: string;
+  externalPostId: string;
+  platform: CampaignChannel;
+  verified: boolean;
+  verifiedAt: string | null;
+  verificationError: string | null;
+  views: number | null;
+  reach: number | null;
+  impressions: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  clicks: number | null;
+  capturedAt: string;
+  createdAt: string;
+}
+
+export interface AnalyticsPlatformSummary {
+  platform: CampaignChannel;
+  postCount: number;
+  avgReach: number | null;
+  avgImpressions: number | null;
+  avgLikes: number | null;
+  avgComments: number | null;
+  avgShares: number | null;
+  totalReach: number;
+  totalImpressions: number;
+  totalLikes: number;
+  totalComments: number;
+  totalShares: number;
+}
+
+export interface ReleaseAnalyticsSummary {
+  releaseId: string;
+  totalSnapshots: number;
+  platforms: AnalyticsPlatformSummary[];
+  recentSnapshotAt: string | null;
+}
+
+export type PromoGenerationStatus = "SUCCESS" | "FAILED" | "SKIPPED";
+
+export type PromoReviewStatus = "GENERATED" | "REVIEW_REQUIRED" | "EDITED" | "APPROVED" | "REJECTED";
+
+export interface PromoGeneration {
+  id: string;
+  releaseId: string;
+  releasePlanId: string;
+  campaignItemId: string;
+  contentType: CampaignItemContentType;
+  generatedContent: string;
+  campaignPackItemId: string | null;
+  status: PromoGenerationStatus;
+  error: string | null;
+  model: string;
+  reviewStatus: PromoReviewStatus;
+  originalContent: string | null;
+  editedContent: string | null;
+  reviewActor: string | null;
+  reviewReason: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface GeneratePromoContentInput {
+  releasePlanId: string;
+  model: string;
+  language: ContentLanguage;
+}
+
+export interface PromoGenerationResult {
+  runId: string;
+  totalItems: number;
+  generated: number;
+  failed: number;
+  skipped: number;
+  items: PromoGenerationItemResult[];
+}
+
+export interface PromoGenerationItemResult {
+  campaignItemId: string;
+  title: string;
+  contentType: CampaignItemContentType;
+  status: PromoGenerationStatus;
+  error: string | null;
+  promoGenerationId: string | null;
+}
+
+export interface UpdatePromoReviewInput {
+  promoGenerationId: string;
+  reviewStatus: "GENERATED" | "REVIEW_REQUIRED" | "EDITED" | "APPROVED" | "REJECTED";
+  reviewActor?: string;
+  reviewReason?: string;
+}
+
+export interface EditPromoContentInput {
+  promoGenerationId: string;
+  editedContent: string;
+}
+
+export interface RetryPromoGenerationInput {
+  promoGenerationId: string;
+  model: string;
+  language: ContentLanguage;
+}
+
+export type ScheduleEventStatus = "DRAFT" | "SCHEDULED" | "CANCELLED" | "READY";
+
+export interface ScheduleEvent {
+  id: string;
+  releaseId: string;
+  releaseTitle: string;
+  releasePlanId: string;
+  campaignItemId: string;
+  campaignItemTitle: string;
+  promoGenerationId: string;
+  platform: CampaignChannel;
+  scheduledAt: string;
+  timezone: string;
+  status: ScheduleEventStatus;
+  publishingQueueId: string | null;
+  queuedAt: string | null;
+  queuedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateScheduleEventInput {
+  promoGenerationId: string;
+  platform: CampaignChannel;
+  scheduledAt: string;
+  timezone: string;
+}
+
+export interface UpdateScheduleEventInput {
+  id: string;
+  platform?: CampaignChannel;
+  scheduledAt?: string;
+  timezone?: string;
+  status?: ScheduleEventStatus;
+}
+
+export interface QueueScheduleEventResult {
+  scheduleEvent: ScheduleEvent;
+  publishingQueueItem: PublishingQueueItem;
+}
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
@@ -384,6 +561,162 @@ export interface AiHarnessResponse {
   results: AiHarnessTaskResult[];
   errors: AiHarnessError[];
 }
+export type ReleasePlanStatus = "DRAFT" | "REVIEWED" | "APPROVED" | "EXECUTING" | "COMPLETED" | "CANCELLED" | "FAILED";
+export type CampaignItemStatus = "DRAFT" | "READY" | "APPROVED" | "CANCELLED";
+export type CampaignItemContentType = "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt" | "story" | "email" | "other";
+export type ApprovalAction = "SUBMITTED" | "APPROVED" | "REJECTED" | "REVISION_REQUESTED";
+export type ApprovalMode = "manual" | "auto";
+
+export interface ArtistPromotionProfile {
+  artistId: ArtistAlias;
+  artistName: string;
+  toneOfVoice: string;
+  languages: ContentLanguage[];
+  postingFrequency: string;
+  preferredContentTypes: CampaignItemContentType[];
+  avoidedContentTypes: CampaignItemContentType[];
+  hashtagRules: string;
+  emojiRules: string;
+  callToActionRules: string;
+  platformPreferences: Record<string, unknown>;
+  defaultApprovalMode: ApprovalMode;
+  updatedAt: string;
+}
+
+export interface UpdateArtistPromotionProfileInput {
+  artistId: ArtistAlias;
+  toneOfVoice?: string;
+  languages?: ContentLanguage[];
+  postingFrequency?: string;
+  preferredContentTypes?: CampaignItemContentType[];
+  avoidedContentTypes?: CampaignItemContentType[];
+  hashtagRules?: string;
+  emojiRules?: string;
+  callToActionRules?: string;
+  platformPreferences?: Record<string, unknown>;
+  defaultApprovalMode?: ApprovalMode;
+}
+export type ApprovalEntityType = "release_plan";
+
+export interface CampaignItem {
+  id: string;
+  releasePlanId: string;
+  title: string;
+  purpose: string;
+  contentType: CampaignItemContentType;
+  targetPlatforms: CampaignChannel[];
+  plannedDate: string | null;
+  plannedTime: string | null;
+  cta: string;
+  notes: string;
+  assetRequirements: string[];
+  copyRequirements: string[];
+  status: CampaignItemStatus;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReleasePlan {
+  id: string;
+  releaseId: string;
+  status: ReleasePlanStatus;
+  version: number;
+  revisionNumber: number;
+  previousPlanId: string | null;
+  title: string;
+  summary: string;
+  createdBy: string;
+  approvedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  campaignItems: CampaignItem[];
+}
+
+export interface CreateReleasePlanInput {
+  releaseId: string;
+  title: string;
+  summary?: string;
+  createdBy?: string;
+}
+
+export interface UpdateReleasePlanInput {
+  id: string;
+  title?: string;
+  summary?: string;
+}
+
+export interface ChangeReleasePlanStatusInput {
+  id: string;
+  status: ReleasePlanStatus;
+  actor?: string;
+  reason?: string;
+}
+
+export interface GenerateReleasePlanInput {
+  releaseId: string;
+  actor?: string;
+}
+
+export interface RegenerateReleasePlanInput {
+  releaseId: string;
+  actor?: string;
+  reason?: string;
+}
+
+export interface ApproveReleasePlanInput {
+  id: string;
+  actor?: string;
+  reason?: string;
+}
+
+export interface CreateCampaignItemInput {
+  releasePlanId: string;
+  title: string;
+  purpose: string;
+  contentType: CampaignItemContentType;
+  targetPlatforms: CampaignChannel[];
+  plannedDate?: string | null;
+  plannedTime?: string | null;
+  cta?: string;
+  notes?: string;
+  assetRequirements?: string[];
+  copyRequirements?: string[];
+  status?: CampaignItemStatus;
+  sortOrder?: number;
+}
+
+export interface UpdateCampaignItemInput extends Partial<Omit<CreateCampaignItemInput, "releasePlanId">> {
+  id: string;
+}
+
+export interface ReorderCampaignItemsInput {
+  releasePlanId: string;
+  itemIds: string[];
+}
+
+export interface ApprovalRecord {
+  id: string;
+  entityType: ApprovalEntityType;
+  entityId: string;
+  action: ApprovalAction;
+  actor: string;
+  reason: string;
+  previousStatus: string | null;
+  newStatus: string | null;
+  createdAt: string;
+}
+
+export interface RecordApprovalActionInput {
+  entityType: ApprovalEntityType;
+  entityId: string;
+  action: ApprovalAction;
+  actor?: string;
+  reason?: string;
+  previousStatus?: string | null;
+  newStatus?: string | null;
+}
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
   title: string;
@@ -412,6 +745,21 @@ export interface StudioApi {
   createReleaseDraft(input: CreateReleaseDraftInput): Promise<ReleaseSummary>;
   updateRelease(input: UpdateReleaseInput): Promise<ReleaseSummary>;
   deleteRelease(releaseId: string): Promise<void>;
+  generateReleasePlan(input: GenerateReleasePlanInput): Promise<ReleasePlan>;
+  regenerateReleasePlan(input: RegenerateReleasePlanInput): Promise<ReleasePlan>;
+  getCurrentReleasePlan(releaseId: string): Promise<ReleasePlan | null>;
+  approveReleasePlan(input: ApproveReleasePlanInput): Promise<ReleasePlan>;
+  createReleasePlan(input: CreateReleasePlanInput): Promise<ReleasePlan>;
+  getReleasePlan(id: string): Promise<ReleasePlan | null>;
+  listReleasePlans(releaseId: string): Promise<ReleasePlan[]>;
+  updateReleasePlan(input: UpdateReleasePlanInput): Promise<ReleasePlan>;
+  changeReleasePlanStatus(input: ChangeReleasePlanStatusInput): Promise<ReleasePlan>;
+  createCampaignItem(input: CreateCampaignItemInput): Promise<CampaignItem>;
+  updateCampaignItem(input: UpdateCampaignItemInput): Promise<CampaignItem>;
+  deleteCampaignItem(id: string): Promise<void>;
+  reorderCampaignItems(input: ReorderCampaignItemsInput): Promise<CampaignItem[]>;
+  recordApprovalAction(input: RecordApprovalActionInput): Promise<ApprovalRecord>;
+  listApprovalRecords(entityType: ApprovalEntityType, entityId: string): Promise<ApprovalRecord[]>;
   getAiSettings(): Promise<AiSettings>;
   saveAiSettings(settings: AiSettings): Promise<AiSettings>;
   generateCampaignDraft(input: GenerateCampaignDraftInput): Promise<GeneratedCampaignDraft>;
@@ -467,8 +815,9 @@ export interface StudioApi {
   updateMediaGenerationStatus(generationId: string, status: "approved" | "rejected"): Promise<MediaGenerationSummary>;
   getGeneratedMediaUrl(generationId: string): Promise<string>;
   listPublishingQueue():Promise<PublishingQueueItem[]>;
-  createPublishingQueueItem(input:CreatePublishingQueueInput):Promise<PublishingQueueItem>;
   updatePublishingQueueStatus(itemId:string,status:PublishingStatus):Promise<PublishingQueueItem>;
+  reviewPublishingQueueItem(input: ReviewPublishingQueueItemInput): Promise<PublishingQueueItem>;
+  updatePublishingQueueContent(input: UpdatePublishingQueueContentInput): Promise<PublishingQueueItem>;
   exportPublishingPack(itemId:string):Promise<string|null>;
   listBrandProfiles():Promise<BrandProfile[]>;
   updateBrandProfile(input:UpdateBrandProfileInput):Promise<BrandProfile>;
@@ -483,6 +832,22 @@ export interface StudioApi {
   publishMetaQueueItem(itemId:string,destinationId:string):Promise<PublishingQueueItem>;
   getMediaBridgeStatus():Promise<MediaBridgeStatus>;
   saveMediaBridgeSettings(accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string):Promise<MediaBridgeStatus>;
+  generatePromoContent(input: GeneratePromoContentInput): Promise<PromoGenerationResult>;
+  listPromoGenerations(releasePlanId: string): Promise<PromoGeneration[]>;
+  retryPromoGeneration(input: RetryPromoGenerationInput): Promise<PromoGeneration>;
+  updatePromoReview(input: UpdatePromoReviewInput): Promise<PromoGeneration>;
+  editPromoContent(input: EditPromoContentInput): Promise<PromoGeneration>;
+  createScheduleEvent(input: CreateScheduleEventInput): Promise<ScheduleEvent>;
+  updateScheduleEvent(input: UpdateScheduleEventInput): Promise<ScheduleEvent>;
+  cancelScheduleEvent(id: string): Promise<ScheduleEvent>;
+  listScheduleEvents(input?: { releaseId?: string | null; from?: string | null; to?: string | null }): Promise<ScheduleEvent[]>;
+  sendScheduleEventToPublishingQueue(id: string): Promise<QueueScheduleEventResult>;
+  listArtistPromotionProfiles(): Promise<ArtistPromotionProfile[]>;
+  getArtistPromotionProfile(artistId: ArtistAlias): Promise<ArtistPromotionProfile | null>;
+  updateArtistPromotionProfile(input: UpdateArtistPromotionProfileInput): Promise<ArtistPromotionProfile>;
+  beginPublishing(itemId: string): Promise<PublishingQueueItem>;
+  verifyPublishedPost(itemId: string): Promise<PostPublishSnapshot>;
+  fetchAndStorePostAnalytics(itemId: string): Promise<PostPublishSnapshot>;
+  getAnalyticsSnapshots(itemId: string): Promise<PostPublishSnapshot[]>;
+  getReleaseAnalyticsSummary(releaseId: string): Promise<ReleaseAnalyticsSummary>;
 }
-
-

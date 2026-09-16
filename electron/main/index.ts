@@ -1,9 +1,9 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol } from "electron";
+import { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol } from "electron";
 import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
-import type { AddContactInteractionInput, AiSettings, AssetKind, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, AiHarnessRequest, ConversationRequest, PublishingStatus, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../shared/contracts.js";
+import type { AddContactInteractionInput, AiSettings, ApproveReleasePlanInput, AssetKind, ArtistAlias, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, EditPromoContentInput, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, GeneratePromoContentInput, GenerateReleasePlanInput, AiHarnessRequest, ChangeReleasePlanStatusInput, ConversationRequest, CreateCampaignItemInput, CreateReleasePlanInput, CreateScheduleEventInput, PublishingStatus, ReviewPublishingQueueItemInput, UpdatePublishingQueueContentInput, RecordApprovalActionInput, RegenerateReleasePlanInput, ReorderCampaignItemsInput, RetryPromoGenerationInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdateCampaignItemInput, UpdatePromoReviewInput, UpdateReleaseInput, UpdateReleasePlanInput, UpdateScheduleEventInput, UpdateSoundCloudTrackInput, UpsertContactInput, UpdateArtistPromotionProfileInput } from "../shared/contracts.js";
 import type { HarnessExecutionApprovalRequest, HarnessExecutionRequest } from "../shared/harness-execution.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
@@ -17,6 +17,9 @@ import { runAiHarnessPlanOnly } from "./ai-harness.js";
 import { createAiHarnessProviderRouter } from "./harness-provider-router.js";
 import { DEFAULT_APPROVAL_TTL_MS, createHarnessExecutionReview, createHarnessExecutorRegistry, createPersistentHarnessExecutionApproval, executePersistentApprovedHarnessTasks, readHarnessAuditLog } from "./harness-execution.js";
 import { ConversationRuntimeError, humanizeConversationError, runConversation } from "./conversation-runtime.js";
+import { buildReleasePlanGenerationContext, generateAiReleasePlanDraft } from "./release-plan-ai-generation.js";
+import { generatePromoContent } from "./promo-generation.js";
+import { clampZoomFactor, parseStoredZoomFactor, stepZoomFactor, zoomCommandFromInput, zoomPercent } from "./app-zoom.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -30,6 +33,73 @@ let mediaBridgeClient: MediaBridgeClient;
 const conversationAbortControllers = new Map<string, AbortController>();
 const conversationProviderRouter = createAiHarnessProviderRouter();
 if (!app.requestSingleInstanceLock()) app.quit();
+
+let applicationZoomFactor = 1;
+const zoomSettingsPath = () => path.join(app.getPath("userData"), "app-zoom.json");
+
+async function loadApplicationZoom(): Promise<void> {
+  try {
+    applicationZoomFactor = parseStoredZoomFactor(JSON.parse(await readFile(zoomSettingsPath(), "utf8")));
+  } catch {
+    applicationZoomFactor = 1;
+  }
+}
+
+async function persistApplicationZoom(): Promise<void> {
+  await mkdir(app.getPath("userData"), { recursive: true });
+  await writeFile(zoomSettingsPath(), JSON.stringify({ zoomFactor: applicationZoomFactor }, null, 2), "utf8");
+}
+
+function applyZoom(window: BrowserWindow): void {
+  window.webContents.setZoomFactor(applicationZoomFactor);
+}
+
+function applyZoomToAllWindows(): void {
+  for (const window of BrowserWindow.getAllWindows()) applyZoom(window);
+}
+
+function setApplicationZoom(factor: number): void {
+  applicationZoomFactor = clampZoomFactor(factor);
+  applyZoomToAllWindows();
+  void persistApplicationZoom().catch((error) => console.warn("Could not persist application zoom", error));
+}
+
+function zoomApplication(direction: "in" | "out"): void {
+  setApplicationZoom(stepZoomFactor(applicationZoomFactor, direction));
+}
+
+function resetApplicationZoom(): void {
+  setApplicationZoom(1);
+}
+
+function registerZoomShortcuts(window: BrowserWindow): void {
+  window.webContents.on("before-input-event", (event, input) => {
+    const command = zoomCommandFromInput(input);
+    if (!command) return;
+    event.preventDefault();
+    if (command === "reset") resetApplicationZoom();
+    else zoomApplication(command);
+  });
+}
+
+function createApplicationMenu(): void {
+  Menu.setApplicationMenu(Menu.buildFromTemplate([
+    { role: "fileMenu" },
+    {
+      label: "View",
+      submenu: [
+        { label: "Zoom In", accelerator: "CommandOrControl+=", click: () => zoomApplication("in") },
+        { label: "Zoom Out", accelerator: "CommandOrControl+-", click: () => zoomApplication("out") },
+        { label: "Reset Zoom", accelerator: "CommandOrControl+0", click: () => resetApplicationZoom() },
+        { type: "separator" },
+        { role: "reload" },
+        { role: "toggleDevTools" }
+      ]
+    },
+    { role: "windowMenu" },
+    { role: "help", submenu: [{ label: `Zoom: ${zoomPercent(applicationZoomFactor)}%`, enabled: false }] }
+  ]));
+}
 
 function soundCloudCallbackFromArgs(args: string[]): string | null {
   return args.find((value) => value.startsWith("ai-studio-manager://soundcloud/callback")) ?? null;
@@ -69,6 +139,8 @@ function createWindow(): void {
     }
   });
 
+  applyZoom(window);
+  registerZoomShortcuts(window);
   window.once("ready-to-show", () => window.show());
 
   const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -137,6 +209,150 @@ ipcMain.handle("studio:list-releases", () => studioDatabase.listReleases());
 ipcMain.handle("studio:create-release-draft", (_event, input: CreateReleaseDraftInput) => studioDatabase.createReleaseDraft(input));
 ipcMain.handle("studio:update-release", (_event, input: UpdateReleaseInput) => studioDatabase.updateRelease(input));
 ipcMain.handle("studio:delete-release", (_event, releaseId: string) => studioDatabase.deleteRelease(releaseId));
+ipcMain.handle("studio:create-release-plan", (_event, input: CreateReleasePlanInput) => studioDatabase.createReleasePlan(input));
+ipcMain.handle("studio:get-release-plan", (_event, id: string) => studioDatabase.getReleasePlan(id));
+ipcMain.handle("studio:list-release-plans", (_event, releaseId: string) => studioDatabase.listReleasePlans(releaseId));
+ipcMain.handle("studio:update-release-plan", (_event, input: UpdateReleasePlanInput) => studioDatabase.updateReleasePlan(input));
+ipcMain.handle("studio:change-release-plan-status", (_event, input: ChangeReleasePlanStatusInput) => studioDatabase.changeReleasePlanStatus(input));
+ipcMain.handle("studio:generate-release-plan", async (_event, input: GenerateReleasePlanInput) => {
+  try {
+    const release = studioDatabase.listReleases().find((r) => r.id === input.releaseId);
+    if (release) {
+      const assets = studioDatabase.listAssets(input.releaseId);
+      const audioAsset = assets.find((a) => a.kind === "audio");
+      const audioAnalysis = audioAsset ? studioDatabase.getAudioAnalysis(audioAsset.id) : null;
+      const context = buildReleasePlanGenerationContext({
+        release,
+        assets,
+        brandProfile: studioDatabase.getBrandProfileForRelease(input.releaseId) ?? null,
+        audioAnalysis,
+        previousPlan: null,
+        analyticsSummary: studioDatabase.getReleaseAnalyticsSummary(input.releaseId)
+      });
+      const aiResult = await generateAiReleasePlanDraft(context, { providerRouter: conversationProviderRouter });
+      if (aiResult) {
+        return studioDatabase.generateReleasePlanFromDraft(input.releaseId, aiResult.draft, { actor: input.actor });
+      }
+    }
+  } catch (error) {
+    console.warn("[release-plan] AI generation failed, using deterministic fallback:", error);
+  }
+  return studioDatabase.generateReleasePlan(input);
+});
+ipcMain.handle("studio:regenerate-release-plan", async (_event, input: RegenerateReleasePlanInput) => {
+  try {
+    const release = studioDatabase.listReleases().find((r) => r.id === input.releaseId);
+    if (release) {
+      const assets = studioDatabase.listAssets(input.releaseId);
+      const audioAsset = assets.find((a) => a.kind === "audio");
+      const audioAnalysis = audioAsset ? studioDatabase.getAudioAnalysis(audioAsset.id) : null;
+      const currentPlan = studioDatabase.getCurrentReleasePlan(input.releaseId);
+      const context = buildReleasePlanGenerationContext({
+        release,
+        assets,
+        brandProfile: studioDatabase.getBrandProfileForRelease(input.releaseId) ?? null,
+        audioAnalysis,
+        previousPlan: currentPlan ? {
+          title: currentPlan.title,
+          summary: currentPlan.summary,
+          items: currentPlan.campaignItems.map((i) => ({ title: i.title, purpose: i.purpose, contentType: i.contentType, targetPlatforms: i.targetPlatforms }))
+        } : null,
+        analyticsSummary: studioDatabase.getReleaseAnalyticsSummary(input.releaseId)
+      });
+      const aiResult = await generateAiReleasePlanDraft(context, { providerRouter: conversationProviderRouter });
+      if (aiResult) {
+        return studioDatabase.regenerateReleasePlanFromDraft(input.releaseId, aiResult.draft, { actor: input.actor, reason: input.reason });
+      }
+    }
+  } catch (error) {
+    console.warn("[release-plan] AI regeneration failed, using deterministic fallback:", error);
+  }
+  return studioDatabase.regenerateReleasePlan(input);
+});
+ipcMain.handle("studio:get-current-release-plan", (_event, releaseId: string) => studioDatabase.getCurrentReleasePlan(releaseId));
+ipcMain.handle("studio:approve-release-plan", (_event, input: ApproveReleasePlanInput) => studioDatabase.approveReleasePlan(input));
+ipcMain.handle("studio:create-campaign-item", (_event, input: CreateCampaignItemInput) => studioDatabase.createCampaignItem(input));
+ipcMain.handle("studio:update-campaign-item", (_event, input: UpdateCampaignItemInput) => studioDatabase.updateCampaignItem(input));
+ipcMain.handle("studio:delete-campaign-item", (_event, id: string) => studioDatabase.deleteCampaignItem(id));
+ipcMain.handle("studio:reorder-campaign-items", (_event, input: ReorderCampaignItemsInput) => studioDatabase.reorderCampaignItems(input));
+ipcMain.handle("studio:record-approval-action", (_event, input: RecordApprovalActionInput) => studioDatabase.recordApprovalAction(input));
+ipcMain.handle("studio:list-approval-records", (_event, entityType: "release_plan", entityId: string) => studioDatabase.listApprovalRecords(entityType, entityId));
+ipcMain.handle("studio:generate-promo-content", async (_event, input: GeneratePromoContentInput) => {
+  const releases = studioDatabase.listReleases();
+  const releaseMap = new Map(releases.map((r) => [r.id, r]));
+  return generatePromoContent(input, {
+    database: studioDatabase,
+    getReleaseSummary: (releaseId) => releaseMap.get(releaseId)
+  });
+});
+ipcMain.handle("studio:list-promo-generations", (_event, releasePlanId: string) => studioDatabase.listPromoGenerations(releasePlanId));
+ipcMain.handle("studio:retry-promo-generation", async (_event, input: RetryPromoGenerationInput) => {
+  const existing = studioDatabase.getPromoGenerationById(input.promoGenerationId);
+  if (!existing) throw new Error("Promo generation not found");
+  const plan = studioDatabase.getReleasePlan(existing.releasePlanId);
+  if (!plan) throw new Error("Release plan not found");
+  const releases = studioDatabase.listReleases();
+  const release = releases.find((r) => r.id === plan.releaseId);
+  if (!release) throw new Error("Release not found");
+  const item = plan.campaignItems.find((ci) => ci.id === existing.campaignItemId);
+  if (!item) throw new Error("Campaign item not found");
+  const channel = item.targetPlatforms[0] ?? "Instagram";
+  const draftInput = { model: input.model, language: input.language, channel, artistId: release.artistId, artistName: release.artistName, primaryGenre: release.primaryGenre, story: release.story, releaseDate: release.releaseDate, title: release.title, artistVoice: "" };
+  const result = await generateCampaignDraft(draftInput);
+  const packItem = studioDatabase.saveCampaignPackItems(plan.releaseId, input.language, input.model, [{ kind: existing.contentType as "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt", channel, content: result.content }]);
+  return studioDatabase.retryPromoGeneration({ promoGenerationId: input.promoGenerationId, generatedContent: result.content, campaignPackItemId: packItem[0]?.id ?? null, model: input.model });
+});
+ipcMain.handle("studio:update-promo-review", (_event, input: UpdatePromoReviewInput) => studioDatabase.updatePromoGenerationReview(input));
+ipcMain.handle("studio:edit-promo-content", (_event, input: EditPromoContentInput) => studioDatabase.editPromoGenerationContent(input));
+ipcMain.handle("studio:create-schedule-event", (_event, input: CreateScheduleEventInput) => studioDatabase.createScheduleEvent(input));
+ipcMain.handle("studio:update-schedule-event", (_event, input: UpdateScheduleEventInput) => studioDatabase.updateScheduleEvent(input));
+ipcMain.handle("studio:cancel-schedule-event", (_event, id: string) => studioDatabase.cancelScheduleEvent(id));
+ipcMain.handle("studio:list-schedule-events", (_event, input?: { releaseId?: string | null; from?: string | null; to?: string | null }) => studioDatabase.listScheduleEvents(input));
+ipcMain.handle("studio:send-schedule-event-to-publishing-queue", (_event, id: string) => studioDatabase.sendScheduleEventToPublishingQueue(id));
+ipcMain.handle("studio:list-artist-promotion-profiles", () => studioDatabase.listArtistPromotionProfiles());
+ipcMain.handle("studio:get-artist-promotion-profile", (_event, artistId: string) => studioDatabase.getArtistPromotionProfile(artistId as ArtistAlias));
+ipcMain.handle("studio:update-artist-promotion-profile", (_event, input: UpdateArtistPromotionProfileInput) => studioDatabase.updateArtistPromotionProfile(input));
+ipcMain.handle("studio:begin-publishing", (_event, itemId: string) => studioDatabase.beginPublishing(itemId));
+ipcMain.handle("studio:verify-published-post", async(_event, itemId: string) => {
+  const item = studioDatabase.getPublishingQueueItem(itemId);
+  if (!item) throw new Error("Publishing queue item not found");
+  if (item.status !== "published") throw new Error("Only published items can be verified");
+  if (!item.remotePostId) throw new Error("No external post ID stored for this item");
+  if (!item.destinationId) throw new Error("No destination ID stored for this item");
+  const verification = await metaClient.verifyPost(item.destinationId, item.remotePostId);
+  return studioDatabase.storePostAnalytics({
+    publishingQueueItemId: item.id,
+    releaseId: item.releaseId,
+    externalPostId: item.remotePostId,
+    platform: item.platform,
+    verified: verification.verified,
+    verifiedAt: verification.verified ? new Date().toISOString() : null,
+    verificationError: verification.error ?? null,
+    views: null, reach: null, impressions: null, likes: null, comments: null, shares: null, clicks: null
+  });
+});
+ipcMain.handle("studio:fetch-post-analytics", async(_event, itemId: string) => {
+  const item = studioDatabase.getPublishingQueueItem(itemId);
+  if (!item) throw new Error("Publishing queue item not found");
+  if (item.status !== "published") throw new Error("Only published items can have analytics fetched");
+  if (!item.remotePostId) throw new Error("No external post ID stored for this item");
+  if (!item.destinationId) throw new Error("No destination ID stored for this item");
+  const verification = await metaClient.verifyPost(item.destinationId, item.remotePostId);
+  const insights = await metaClient.getPostInsights(item.destinationId, item.remotePostId, item.platform);
+  return studioDatabase.storePostAnalytics({
+    publishingQueueItemId: item.id,
+    releaseId: item.releaseId,
+    externalPostId: item.remotePostId,
+    platform: item.platform,
+    verified: verification.verified,
+    verifiedAt: verification.verified ? new Date().toISOString() : null,
+    verificationError: verification.error ?? null,
+    views: insights.views, reach: insights.reach, impressions: insights.impressions,
+    likes: insights.likes, comments: insights.comments, shares: insights.shares, clicks: insights.clicks
+  });
+});
+ipcMain.handle("studio:get-analytics-snapshots", (_event, itemId: string) => studioDatabase.getAnalyticsSnapshots(itemId));
+ipcMain.handle("studio:get-release-analytics-summary", (_event, releaseId: string) => studioDatabase.getReleaseAnalyticsSummary(releaseId));
 ipcMain.handle("studio:get-ai-settings", (): AiSettings => studioDatabase.getSetting("ai.settings", { model: null, language: "en", channel: "Instagram" }));
 ipcMain.handle("studio:save-ai-settings", (_event, settings: AiSettings): AiSettings => {
   const safe: AiSettings = {
@@ -202,8 +418,9 @@ ipcMain.handle("studio:list-media-generations",(_event,releaseId:string)=>studio
 ipcMain.handle("studio:get-generated-media-url",(_event,id:string)=>{if(!studioDatabase.getMediaGenerationFile(id))throw new Error("Generated media is not ready");return `studio-media://generation/${encodeURIComponent(id)}`;});
 ipcMain.handle("studio:update-media-generation-status",(_event,id:string,status:"approved"|"rejected")=>{const current=studioDatabase.getMediaGeneration(id);if(!current||!(["ready","approved","rejected"] as string[]).includes(current.status))throw new Error("Only completed media can be reviewed");return studioDatabase.updateMediaGeneration(id,{status});});
 ipcMain.handle("studio:list-publishing-queue",()=>studioDatabase.listPublishingQueue());
-ipcMain.handle("studio:create-publishing-queue-item",(_event,input:CreatePublishingQueueInput)=>studioDatabase.createPublishingQueueItem(input));
 ipcMain.handle("studio:update-publishing-queue-status",(_event,id:string,status:PublishingStatus)=>studioDatabase.updatePublishingQueueStatus(id,status));
+ipcMain.handle("studio:review-publishing-queue-item",(_event,input:ReviewPublishingQueueItemInput)=>studioDatabase.reviewPublishingQueueItem(input));
+ipcMain.handle("studio:update-publishing-queue-content",(_event,input:UpdatePublishingQueueContentInput)=>studioDatabase.updatePublishingQueueContent(input));
 ipcMain.handle("studio:export-publishing-pack",async(event,id:string)=>{const data=studioDatabase.getPublishingExportData(id);if(!["approved","scheduled","published"].includes(data.item.status))throw new Error("Approve the post before exporting its publishing pack");if(data.item.rightsBlocked&&["SoundCloud","YouTube"].includes(data.item.platform))throw new Error("Bootleg rights are not cleared: official publishing export is blocked");const owner=BrowserWindow.fromWebContents(event.sender)??undefined;const result=owner?await dialog.showOpenDialog(owner,{properties:["openDirectory","createDirectory"]}):await dialog.showOpenDialog({properties:["openDirectory","createDirectory"]});if(result.canceled||!result.filePaths[0])return null;const safeName=`${data.item.releaseTitle}-${data.item.platform}`.replace(/[^a-z0-9_-]+/gi,"-").replace(/^-|-$/g,"").slice(0,80)||"publishing-pack";const directory=path.join(result.filePaths[0],`${safeName}-${data.item.id.slice(0,8)}`);await mkdir(directory,{recursive:true});await writeFile(path.join(directory,"caption.txt"),data.item.caption,"utf8");await writeFile(path.join(directory,"publishing.json"),JSON.stringify({release:data.item.releaseTitle,platform:data.item.platform,scheduledAt:data.item.scheduledAt,status:data.item.status,rightsBlocked:data.item.rightsBlocked,exportedAt:new Date().toISOString()},null,2),"utf8");if(data.mediaPath){const extension=path.extname(data.mediaPath)|| (data.item.mediaType==="video"?".mp4":".png");await copyFile(data.mediaPath,path.join(directory,`media${extension}`));}studioDatabase.markPublishingPackExported(id);return directory;});
 ipcMain.handle("studio:list-brand-profiles",()=>studioDatabase.listBrandProfiles());
 ipcMain.handle("studio:update-brand-profile",(_event,input:UpdateBrandProfileInput)=>studioDatabase.updateBrandProfile(input));
@@ -217,7 +434,7 @@ ipcMain.handle("studio:begin-meta-connect",()=>metaClient.beginConnect());
 ipcMain.handle("studio:disconnect-meta",()=>metaClient.disconnect());
 ipcMain.handle("studio:get-media-bridge-status",()=>mediaBridgeClient.status());
 ipcMain.handle("studio:save-media-bridge-settings",(_event,accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string)=>mediaBridgeClient.saveSettings(accountId,bucket,accessKeyId,secretAccessKey));
-ipcMain.handle("studio:publish-meta-queue-item",async(_event,id:string,destinationId:string)=>{const data=studioDatabase.getPublishingExportData(id);if(!["approved","scheduled","failed"].includes(data.item.status))throw new Error("Approve or schedule the post before publishing");if(!["Facebook","Instagram"].includes(data.item.platform))throw new Error("This queue item is not a Meta post");const destination=(await metaClient.status()).destinations.find((item)=>item.id===destinationId);if(!destination||destination.platform!==data.item.platform)throw new Error(`Select a connected ${data.item.platform} destination`);try{if(data.item.platform==="Instagram"){if(!data.mediaPath||data.item.mediaType!=="image")throw new Error("Instagram Feed publishing requires an approved PNG or JPEG image");const staged=await mediaBridgeClient.stage(data.mediaPath,data.mimeType);try{const remoteId=await metaClient.publishInstagram(destinationId,data.item.caption,staged.url);return studioDatabase.markPublishingSucceeded(id,destinationId,remoteId);}finally{await mediaBridgeClient.remove(staged.key).catch((error)=>console.warn("Could not remove temporary R2 object",error));}}if(data.item.mediaType==="video")throw new Error("Facebook video upload is not included in Meta Publishing V1; export the pack manually");const remoteId=await metaClient.publishFacebook(destinationId,data.item.caption,data.mediaPath,data.mimeType);return studioDatabase.markPublishingSucceeded(id,destinationId,remoteId);}catch(error){const message=error instanceof Error?error.message:"Meta publishing failed";studioDatabase.markPublishingFailed(id,message);throw error;}});
+ipcMain.handle("studio:publish-meta-queue-item",async(_event,id:string,destinationId:string)=>{const publishing=studioDatabase.beginPublishing(id);const data=studioDatabase.getPublishingExportData(id);if(!["Facebook","Instagram"].includes(data.item.platform))throw new Error("This queue item is not a Meta post");const destination=(await metaClient.status()).destinations.find((item)=>item.id===destinationId);if(!destination||destination.platform!==data.item.platform)throw new Error(`Select a connected ${data.item.platform} destination`);try{if(data.item.platform==="Instagram"){if(!data.mediaPath||data.item.mediaType!=="image")throw new Error("Instagram Feed publishing requires an approved PNG or JPEG image");const staged=await mediaBridgeClient.stage(data.mediaPath,data.mimeType);try{const remoteId=await metaClient.publishInstagram(destinationId,data.item.caption,staged.url);return studioDatabase.markPublishingSucceeded(id,destinationId,remoteId);}finally{await mediaBridgeClient.remove(staged.key).catch((error)=>console.warn("Could not remove temporary R2 object",error));}}if(data.item.mediaType==="video")throw new Error("Facebook video upload is not included in Meta Publishing V1; export the pack manually");const remoteId=await metaClient.publishFacebook(destinationId,data.item.caption,data.mediaPath,data.mimeType);return studioDatabase.markPublishingSucceeded(id,destinationId,remoteId);}catch(error){const message=error instanceof Error?error.message:"Meta publishing failed";studioDatabase.markPublishingFailed(id,message);throw error;}});
 ipcMain.handle("studio:generate-media",async(_event,input:GenerateMediaInput)=>{const item=studioDatabase.getCampaignPackItemForGeneration(input.campaignPackItemId);if(!item)throw new Error("Campaign prompt not found");if(item.status!=="approved")throw new Error("Approve the prompt before starting generation");if(input.mediaType==="image"&&item.kind!=="image-prompt")throw new Error("Select an approved image prompt");if(input.mediaType==="video"&&item.kind!=="visualizer-prompt"&&item.kind!=="video-script")throw new Error("Select an approved visualizer or video script");const brand=studioDatabase.getBrandProfileForRelease(item.releaseId);if(!brand)throw new Error("Brand profile not found");const aspectRatio=input.aspectRatio??brand.defaultAspectRatio;const enhancedPrompt=`${item.content}\n\nBRAND DIRECTION: ${brand.visualDirection}. PALETTE: ${brand.palette}. COMPOSITION: ${brand.requiredElements}. LAYOUT/TYPOGRAPHY SPACE: ${brand.typography}. FORBIDDEN: ${brand.forbiddenElements}. Output aspect ratio ${aspectRatio}. No rendered text unless explicitly requested.`;let row=studioDatabase.createMediaGeneration(item,input.provider,input.mediaType);row=studioDatabase.updateMediaGeneration(row.id,{status:"generating",metadata:{aspectRatio,brandArtistId:brand.artistId,enhancedPrompt}});try{if(input.provider==="comfyui"){const service=await localServicesManager.start("comfyui");if(!service.comfyUi.running)throw new Error(service.comfyUi.error??"ComfyUI did not become ready within 60 seconds");}const result=await mediaGenerationClient.generate(input.provider,input.mediaType,enhancedPrompt,{aspectRatio,negativePrompt:brand.negativePrompt});if(result.bytes||result.remoteUrl){const saved=await mediaGenerationClient.saveRemoteResult(row.id,result,input.mediaType);return studioDatabase.updateMediaGeneration(row.id,{status:"ready",providerTaskId:result.providerTaskId,localPath:saved.localPath,mimeType:saved.mimeType,metadata:{...row.metadata,...saved.metadata}});}return studioDatabase.updateMediaGeneration(row.id,{status:"generating",providerTaskId:result.providerTaskId,metadata:{...row.metadata,...result.metadata}});}catch(error){studioDatabase.updateMediaGeneration(row.id,{status:"failed",error:error instanceof Error?error.message:"Generation failed",metadata:row.metadata});throw error;}});
 ipcMain.handle("studio:refresh-media-generation",async(_event,id:string)=>{const row=studioDatabase.getMediaGeneration(id);if(!row)throw new Error("Media generation not found");if(!row.providerTaskId||!["kling","comfyui"].includes(row.provider))return row;try{const result=row.provider==="comfyui"?await mediaGenerationClient.refreshComfyUi(row.providerTaskId):await mediaGenerationClient.refreshKling(row.providerTaskId,row.mediaType);if(!result)return row;const saved=await mediaGenerationClient.saveRemoteResult(row.id,result,row.mediaType);return studioDatabase.updateMediaGeneration(row.id,{status:"ready",localPath:saved.localPath,mimeType:saved.mimeType,metadata:{...row.metadata,...saved.metadata}});}catch(error){return studioDatabase.updateMediaGeneration(row.id,{status:"failed",error:error instanceof Error?error.message:`${row.provider} generation failed`,metadata:row.metadata});}});
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
@@ -271,6 +488,8 @@ void app.whenReady().then(async () => {
   localServicesManager = new LocalServicesManager(app.getPath("userData"));
   metaClient = new MetaClient(app.getPath("userData"));
   mediaBridgeClient = new MediaBridgeClient(app.getPath("userData"));
+  await loadApplicationZoom();
+  createApplicationMenu();
   await localServicesManager.startConfigured();
   protocol.handle("studio-media", (request) => { const url=new URL(request.url),id=decodeURIComponent(url.pathname.slice(1));if(url.hostname==="asset"){const asset=studioDatabase.getAssetForAnalysis(id);if(!asset||asset.kind!=="audio")return new Response("Not found",{status:404});return net.fetch(pathToFileURL(asset.filePath).toString(),{headers:request.headers});}if(url.hostname==="generation"){const media=studioDatabase.getMediaGenerationFile(id);if(!media)return new Response("Not found",{status:404});return net.fetch(pathToFileURL(media.filePath).toString(),{headers:request.headers});}return new Response("Not found",{status:404});});
   if (process.platform === "win32" && !app.isPackaged) app.setAsDefaultProtocolClient("ai-studio-manager", process.execPath, [path.resolve(process.argv[1])]);
@@ -304,6 +523,3 @@ app.on("before-quit", () => { localServicesManager?.stopManaged(); studioDatabas
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
 });
-
-
-

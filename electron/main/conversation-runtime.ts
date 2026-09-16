@@ -1,4 +1,4 @@
-import type { ConversationChunk, ConversationMessage, ConversationRequest, ConversationResponse } from "../shared/contracts.js";
+import type { ConversationChunk, ConversationMessage, ConversationRequest, ConversationResponse, ProviderExecutionTrace } from "../shared/contracts.js";
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 export type ConversationErrorCode = "PROVIDER_UNAVAILABLE" | "CONFIGURATION_ERROR" | "TIMEOUT" | "CANCELLED" | "STREAM_INTERRUPTED" | "INVALID_REQUEST";
@@ -13,6 +13,8 @@ export type ConversationProviderAttempt = {
   errorType?: string;
   errorMessage?: string;
 };
+
+
 export type ConversationProviderRouteResult = {
   ok: boolean;
   provider?: ConversationProviderName;
@@ -21,6 +23,7 @@ export type ConversationProviderRouteResult = {
   durationMs: number;
   attempts: ConversationProviderAttempt[];
   errorMessage?: string;
+  trace?: ProviderExecutionTrace;
 };
 export type ConversationProviderRouter = (prompt: string, options?: { signal?: AbortSignal }) => Promise<ConversationProviderRouteResult>;
 
@@ -53,7 +56,7 @@ export function buildConversationMessages(input: ConversationRequest): Array<{ r
     workspace.releaseStatus ? `Release status: ${workspace.releaseStatus}` : null
   ].filter(Boolean).join("\n").slice(0, MAX_CONTEXT_CHARS);
   return [
-    { role: "system", content: ["You are AI Studio Manager, a practical music-release and marketing assistant.", "Help with conversation, planning, writing, and decisions only.", "Do not claim to publish, upload, contact people, execute files, inspect the filesystem, or use hidden tools.", "Use the lightweight workspace context below; do not assume access to files or scan projects.", context].join("\n") },
+    { role: "system", content: ["You are AI Studio Manager, a practical music-release and marketing assistant.", "Help with conversation, planning, writing, and decisions only.", "Do not claim to publish, upload, contact people, execute files, inspect the filesystem, or use hidden tools.", "The workspace context below is passive background only. Use it only when the current user request is clearly about the project, artist, release, music promotion, or related work.", "For casual greetings, general questions, translations, or unrelated topics, answer normally without introducing the active project, release, artist, genre, or campaign context.", "Do not assume access to files or scan projects.", context].join("\n") },
     ...normalizeConversationHistory(input.history).map((message) => ({ role: message.role, content: message.content })),
     { role: "user", content: input.message.slice(0, MAX_MESSAGE_CHARS) }
   ];
@@ -99,7 +102,7 @@ async function runAutoRoutedConversation(input: ConversationRequest, options: { 
   if (!content) throw new ConversationRuntimeError("PROVIDER_UNAVAILABLE", "The selected provider returned an empty response.");
   options.onChunk?.({ requestId: input.requestId, content, done: false });
   options.onChunk?.({ requestId: input.requestId, content: "", done: true });
-  return { requestId: input.requestId, provider: result.provider ?? "auto", model: result.model ?? "auto", content, streamed: false, interrupted: false };
+  return { requestId: input.requestId, provider: result.provider ?? "auto", model: result.model ?? "auto", content, streamed: false, interrupted: false, trace: result.trace };
 }
 
 async function runLocalOllamaConversation(input: ConversationRequest, model: string, options: { fetchImpl?: FetchLike; signal?: AbortSignal; onChunk?: (chunk: ConversationChunk) => void; timeoutMs?: number }): Promise<ConversationResponse> {

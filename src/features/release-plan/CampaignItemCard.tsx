@@ -1,0 +1,13 @@
+import type { CampaignItem } from "../../../electron/shared/contracts";
+import { Button } from "../../ui/Button";
+import { MediaSurface } from "../../ui/MediaSurface";
+import { StatusBadge } from "../../ui/StatusBadge";
+import { SurfacePanel } from "../../ui/SurfacePanel";
+
+type CampaignItemCardProps = { item: CampaignItem; index: number; mutable: boolean; canMoveUp: boolean; canMoveDown: boolean; onEdit: () => void; onDelete: () => void; onMoveUp: () => void; onMoveDown: () => void; };
+function contentTypeLabel(type: CampaignItem["contentType"]): string { const labels: Record<string, string> = { caption: "Caption", "video-hook": "Video Hook", "video-script": "Video Script", "image-prompt": "Image Prompt", "visualizer-prompt": "Visualizer Prompt", story: "Story", email: "Email", other: "Other" }; return labels[type] ?? type; }
+
+export function CampaignItemCard({ item, index, mutable, canMoveUp, canMoveDown, onEdit, onDelete, onMoveUp, onMoveDown }: CampaignItemCardProps) {
+  const mediaRequired = item.assetRequirements.length > 0;
+  return <SurfacePanel as="article" variant="standard" state={mutable ? "default" : "disabled"} className={`rp-card rp-card-${item.status.toLowerCase()}`}><div className="rp-card-head"><span className="rp-card-index">{index + 1}</span>{mediaRequired ? <MediaSurface className="rp-card-media" emptyLabel={item.assetRequirements[0]} /> : null}<div className="rp-card-title-group"><strong>{item.title}</strong><span className="rp-card-type">{contentTypeLabel(item.contentType)}</span></div><div className="rp-card-platforms">{item.targetPlatforms.map((platform) => <StatusBadge key={platform} label={platform} />)}</div>{mutable ? <div className="rp-card-actions">{canMoveUp ? <Button variant="icon" aria-label="Move up" title="Move up" onClick={onMoveUp}>^</Button> : null}{canMoveDown ? <Button variant="icon" aria-label="Move down" title="Move down" onClick={onMoveDown}>v</Button> : null}<Button variant="icon" aria-label="Edit" title="Edit" onClick={onEdit}>E</Button><Button variant="icon" aria-label="Delete" title="Delete" onClick={onDelete}>x</Button></div> : null}</div><p className="rp-card-purpose">{item.purpose}</p><div className="rp-card-details">{item.plannedDate ? <span><b>Date:</b> {item.plannedDate}{item.plannedTime ? ` ${item.plannedTime}` : ""}</span> : null}{item.cta ? <span><b>CTA:</b> {item.cta}</span> : null}{item.notes ? <span><b>Notes:</b> {item.notes}</span> : null}{item.assetRequirements.length > 0 ? <span><b>Assets:</b> {item.assetRequirements.join(", ")}</span> : null}{item.copyRequirements.length > 0 ? <span><b>Copy:</b> {item.copyRequirements.join(", ")}</span> : null}</div></SurfacePanel>;
+}
