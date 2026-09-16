@@ -33,8 +33,8 @@ const defaultRunner: KlingCliRunner = async (args, timeoutMs = 30_000) => {
   };
   const result = process.platform === "win32"
     ? await execFileAsync(
-        process.env.ComSpec ?? "cmd.exe",
-        ["/d", "/s", "/c", "powershell.exe -NoProfile -NonInteractive -Command \"$a=ConvertFrom-Json $env:AI_STUDIO_KLING_ARGS; & kling @a\""],
+        "powershell.exe",
+        ["-NoProfile", "-NonInteractive", "-Command", "$a=ConvertFrom-Json $env:AI_STUDIO_KLING_ARGS; & kling @a"],
         { ...options, env: { ...options.env, AI_STUDIO_KLING_ARGS: JSON.stringify(args) } }
       )
     : await execFileAsync("kling", args, options);
