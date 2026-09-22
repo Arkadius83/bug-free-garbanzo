@@ -18,14 +18,14 @@ import { useAiStudio } from "./features/ai-studio/useAiStudio";
 import { usePublishing } from "./features/publishing/usePublishing";
 import { useIntegrations } from "./features/integrations/useIntegrations";
 import { HarnessPlanPreview } from "./HarnessPlanPreview";
+import { ConversationWorkspace } from "./ConversationWorkspace";
 
-type AppView = "overview" | "releases" | "ai-studio" | "harness" | "calendar" | "analytics" | "contacts" | "integrations" | "settings";
+type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "analytics" | "contacts" | "integrations" | "settings";
 
 const navigation: Array<{ id: AppView | "placeholder"; label: string; icon: string }> = [
   { id: "overview", label: "Overview", icon: "⌂" },
   { id: "releases", label: "Releases", icon: "♫" },
   { id: "ai-studio", label: "AI Studio", icon: "✦" },
-  { id: "harness", label: "Harness Plan", icon: "◇" },
   { id: "calendar", label: "Tasks & Calendar", icon: "□" },
   { id: "analytics", label: "Analytics", icon: "⌁" },
   { id: "contacts", label: "Contacts", icon: "◎" }
@@ -39,6 +39,7 @@ export function App() {
   const { soundCloud, setSoundCloud, soundCloudTracks, setSoundCloudTracks, soundCloudClientId, setSoundCloudClientId, soundCloudClientSecret, setSoundCloudClientSecret, soundCloudMessage, setSoundCloudMessage, soundCloudBusy, setSoundCloudBusy, catalogQuery, setCatalogQuery, catalogStatusFilter, setCatalogStatusFilter, catalogArtistFilter, setCatalogArtistFilter, catalogSort, setCatalogSort, selectedPerformanceTrackId, setSelectedPerformanceTrackId, trackPerformance, setTrackPerformance, spotify, setSpotify, spotifyClientId, setSpotifyClientId, spotifyArtistIds, setSpotifyArtistIds, spotifyReleases, setSpotifyReleases, spotifyMessage, setSpotifyMessage, spotifyBusy, setSpotifyBusy, catalogMatches, setCatalogMatches, mediaSettings, setMediaSettings, openAiKey, setOpenAiKey, klingKey, setKlingKey, comfyUiUrl, setComfyUiUrl, comfyUiCheckpoint, setComfyUiCheckpoint, localServices, setLocalServices, localServiceBusy, setLocalServiceBusy, meta, setMeta, metaAppId, setMetaAppId, metaAppSecret, setMetaAppSecret, metaConfigurationId, setMetaConfigurationId, metaBusy, setMetaBusy, metaMessage, setMetaMessage, mediaBridge, setMediaBridge, r2AccountId, setR2AccountId, r2Bucket, setR2Bucket, r2AccessKeyId, setR2AccessKeyId, r2SecretAccessKey, setR2SecretAccessKey, bridgeBusy, setBridgeBusy, bridgeMessage, setBridgeMessage } = useIntegrations();
   const [activeView, setActiveView] = useState<AppView>("overview");
   const [selectedArtist, setSelectedArtist] = useState<ArtistAlias>("the-arkadiusz");
+  const [developerModeEnabled, setDeveloperModeEnabled] = useState(true);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [database, setDatabase] = useState<DatabaseHealth | null>(null);
   const [bridgeError, setBridgeError] = useState("");
@@ -106,7 +107,7 @@ export function App() {
   }, [activeView,activeReleaseId]);
   useEffect(()=>{if(activeView!=="settings"||!window.studio)return;void window.studio.listBrandProfiles().then((profiles)=>{setBrandProfiles(profiles);setBrandDraft((current)=>profiles.find((profile)=>profile.artistId===current?.artistId)??profiles[0]??null);}).catch((error)=>setBrandMessage(error instanceof Error?error.message:"Could not load brand profiles"));},[activeView]);
 
-  useEffect(() => { if (activeView === "ai-studio" && activeReleaseId && window.studio) void Promise.all([window.studio.listCampaignPackItems(activeReleaseId),window.studio.listMediaGenerations(activeReleaseId)]).then(([items,media])=>{setCampaignPackItems(items);setMediaGenerations(media);}).catch((error) => setCampaignPackMessage(error instanceof Error ? error.message : "Could not load campaign pack")); }, [activeView, activeReleaseId]);
+  useEffect(() => { if (activeView === "releases" && activeReleaseId && window.studio) void Promise.all([window.studio.listCampaignPackItems(activeReleaseId),window.studio.listMediaGenerations(activeReleaseId)]).then(([items,media])=>{setCampaignPackItems(items);setMediaGenerations(media);}).catch((error) => setCampaignPackMessage(error instanceof Error ? error.message : "Could not load campaign pack")); }, [activeView, activeReleaseId]);
   useEffect(()=>{if(!window.studio)return;void Promise.all(mediaGenerations.filter((item)=>["ready","approved","rejected"].includes(item.status)).map(async(item)=>[item.id,await window.studio!.getGeneratedMediaUrl(item.id)] as const)).then((entries)=>setMediaUrls(Object.fromEntries(entries))).catch(()=>undefined);},[mediaGenerations]);
   useEffect(()=>{if(!window.studio)return;const audioAssets=assets.filter((asset)=>asset.kind==="audio");void Promise.all(audioAssets.map(async(asset)=>[asset.id,await window.studio!.getAssetPlaybackUrl(asset.id)] as const)).then((entries)=>setPlaybackUrls(Object.fromEntries(entries))).catch((error)=>setAssetMessage(error instanceof Error?error.message:"Could not prepare audio preview"));},[assets]);
   const pendingMediaKey=mediaGenerations.filter((item)=>item.status==="generating"&&["comfyui","kling"].includes(item.provider)).map((item)=>item.id).sort().join("|");
@@ -554,7 +555,7 @@ export function App() {
         </div>}
 
         {activeView==="analytics"&&<AnalyticsPage releases={releases} onOpenRelease={openReleaseWorkspace} />}
-        {activeView === "harness" && <HarnessPlanPreview release={currentRelease} artistId={selectedArtist} artistName={artist.name} defaultInstruction={`Create a plan-only promotional workflow for ${currentRelease?.title ?? (title || "the active release")}: generate cover concepts, analyze artwork readiness, upscale final assets, transform files for social channels and draft campaign copy.`} />}
+        {activeView === "ai-studio" && <ConversationWorkspace release={currentRelease} artistId={selectedArtist} artistName={artist.name} status={status} onOpenRelease={() => openReleaseWorkspace(currentRelease)} />}
 
         {activeView==="contacts"&&<ContactsPage releases={releases} onTasksChanged={setTasks} />}
 
@@ -570,9 +571,11 @@ export function App() {
           <SpotifyPanel spotify={spotify} clientId={spotifyClientId} artistIds={spotifyArtistIds} releases={releases} spotifyReleases={spotifyReleases} matches={catalogMatches} message={spotifyMessage} busy={spotifyBusy} onClientIdChange={setSpotifyClientId} onArtistIdsChange={setSpotifyArtistIds} onSave={saveSpotifyConfiguration} onConnect={connectSpotify} onSync={syncSpotifyCatalog} onAcceptMatch={acceptCatalogMatch} onLinkRelease={linkSpotifyRelease} />
         </div>}
 
-        {(activeView === "releases" || activeView === "ai-studio") && <div className="page-content release-page">
+{activeView==="settings"&&<section className="page-content developer-mode-page"><div className="panel developer-mode-gate"><div><span className="eyebrow">Settings &gt; Developer Mode</span><h2>Execution Monitor</h2><p>Developer diagnostics are gated here so normal AI Studio work stays conversational.</p></div><label className="developer-toggle"><input type="checkbox" checked={developerModeEnabled} onChange={(event)=>setDeveloperModeEnabled(event.target.checked)}/> Developer Mode enabled</label></div>{developerModeEnabled&&<HarnessPlanPreview release={currentRelease} artistId={selectedArtist} artistName={artist.name} defaultInstruction={`Create a plan-only promotional workflow for ${currentRelease?.title ?? (title || "the active release")}: generate cover concepts, analyze artwork readiness, upscale final assets, transform files for social channels and draft campaign copy.`}/>}</section>}
+
+        {activeView === "releases" && <div className="page-content release-page">
         <header>
-          <div><span className="eyebrow">{activeView === "ai-studio" ? "AI Studio" : "Release Manager"}</span><h1>{activeView === "ai-studio" ? "Create campaign content." : "Build the next release."}</h1></div>
+          <div><span className="eyebrow">Release Manager</span><h1>Build the next release.</h1></div>
           <div className="header-actions">{activeReleaseId && currentRelease && <button className="danger-button" onClick={() => void deleteRelease(currentRelease)}>Delete release</button>}<button className="primary" onClick={saveRelease}>{activeReleaseId ? "Save changes" : "Create release"}</button></div>
         </header>
         <section className="artist-strip">
@@ -583,12 +586,12 @@ export function App() {
           ))}
         </section>
 
-        <div className={`workspace ${activeView === "ai-studio" ? "ai-focus" : ""}`}>
+        <div className="workspace">
           <ReleaseSourcePanel title={title} setTitle={setTitle} artist={artist} primaryGenre={primaryGenre} setPrimaryGenre={setPrimaryGenre} releaseDate={releaseDate} setReleaseDate={setReleaseDate} releaseStatus={releaseStatus} setReleaseStatus={setReleaseStatus} activeReleaseId={activeReleaseId} allowedReleaseStatuses={allowedReleaseStatuses} persistedStatus={persistedStatus} story={story} setStory={setStory} saveMessage={saveMessage} attachAsset={attachAsset} assetMessage={assetMessage} assets={assets} audioAnalyses={audioAnalyses} detachAsset={detachAsset} playbackUrls={playbackUrls} analyzingAssetId={analyzingAssetId} analyzeAsset={analyzeAsset} formatBytes={formatBytes} formatDuration={formatDuration} />
 
           <CampaignDraftPanel aiSettings={aiSettings} updateAiSettings={updateAiSettings} status={status} generationState={generationState} generateWithOllama={generateWithOllama} generationMessage={generationMessage} generatedDraft={generatedDraft} draft={draft} releases={releases} activeReleaseId={activeReleaseId} selectRelease={selectRelease} deleteRelease={deleteRelease} drafts={drafts} nextDraftActions={nextDraftActions} changeDraftStatus={changeDraftStatus} />
         </div>
-        {activeView === "ai-studio" && <CampaignPackPanel campaignPackBusy={campaignPackBusy} activeReleaseId={activeReleaseId} aiSettings={aiSettings} generateCampaignPack={generateCampaignPack} campaignPackMessage={campaignPackMessage} mediaMessage={mediaMessage} campaignPackItems={campaignPackItems} nextDraftActions={nextDraftActions} changeCampaignPackStatus={changeCampaignPackStatus} mediaBusy={mediaBusy} mediaSettings={mediaSettings} generateMedia={generateMedia} mediaGenerations={mediaGenerations} mediaUrls={mediaUrls} refreshMedia={refreshMedia} reviewMedia={reviewMedia} />}
+        {activeView === "releases" && <CampaignPackPanel campaignPackBusy={campaignPackBusy} activeReleaseId={activeReleaseId} aiSettings={aiSettings} generateCampaignPack={generateCampaignPack} campaignPackMessage={campaignPackMessage} mediaMessage={mediaMessage} campaignPackItems={campaignPackItems} nextDraftActions={nextDraftActions} changeCampaignPackStatus={changeCampaignPackStatus} mediaBusy={mediaBusy} mediaSettings={mediaSettings} generateMedia={generateMedia} mediaGenerations={mediaGenerations} mediaUrls={mediaUrls} refreshMedia={refreshMedia} reviewMedia={reviewMedia} />}
         </div>}
       </main>
     </div>
