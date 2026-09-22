@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
 import type { AddContactInteractionInput, AiSettings, AssetKind, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, EditPromoContentInput, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, GeneratePromoContentInput, AiHarnessRequest, ConversationRequest, PublishingStatus, RetryPromoGenerationInput, ReviewPublishingQueueItemInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdatePromoReviewInput, UpdateReleaseInput, UpdateScheduleEventInput, CreateScheduleEventInput, UpdatePublishingQueueContentInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../shared/contracts.js";
+import { defaultInterfacePreferences, normalizeInterfacePreferences } from "../shared/interface-preferences.js";
 import type { HarnessExecutionApprovalRequest, HarnessExecutionRequest } from "../shared/harness-execution.js";
 import type { ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreateReleasePlanInput, RecordApprovalActionInput, ReorderCampaignItemsInput, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateCampaignItemInput, UpdateReleasePlanInput } from "../shared/contracts.js";
 
@@ -173,6 +174,12 @@ ipcMain.handle("studio:save-ai-settings", (_event, settings: AiSettings): AiSett
   studioDatabase.setSetting("ai.settings", safe);
   return safe;
 });
+ipcMain.handle("studio:get-interface-preferences", () => normalizeInterfacePreferences(studioDatabase.getSetting("interface.preferences", defaultInterfacePreferences)));
+ipcMain.handle("studio:save-interface-preferences", (_event, value: unknown) => {
+  const safe = normalizeInterfacePreferences(value);
+  studioDatabase.setSetting("interface.preferences", safe);
+  return safe;
+});
 ipcMain.handle("studio:generate-campaign-draft", (_event, input: GenerateCampaignDraftInput) => generateCampaignDraft(input));
 ipcMain.handle("studio:list-drafts", (_event, releaseId?: string | null) => studioDatabase.listDrafts(releaseId));
 ipcMain.handle("studio:save-generated-draft", (_event, input: SaveGeneratedDraftInput) => studioDatabase.saveGeneratedDraft(input));
@@ -220,6 +227,7 @@ ipcMain.handle("studio:save-media-generation-credentials",(_event,openAiKey:stri
 ipcMain.handle("studio:test-comfy-ui",(_event,url:string)=>mediaGenerationClient.testComfyUi(url));
 ipcMain.handle("studio:save-comfy-ui-settings",(_event,url:string,checkpoint:string)=>mediaGenerationClient.saveComfyUiSettings(url,checkpoint));
 ipcMain.handle("studio:get-local-service-status",()=>localServicesManager.status());
+ipcMain.handle("studio:get-kling-cli-status",()=>({ available:false, version:null, account:null, error:"Kling CLI not consolidated — UI disabled" }));
 ipcMain.handle("studio:set-local-services-auto-start",(_event,enabled:boolean)=>localServicesManager.setAutoStart(Boolean(enabled)));
 ipcMain.handle("studio:start-local-service",(_event,service:"ollama"|"comfyui")=>localServicesManager.start(service));
 ipcMain.handle("studio:stop-local-service",(_event,service:"ollama"|"comfyui")=>localServicesManager.stop(service));
