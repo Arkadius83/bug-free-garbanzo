@@ -43,6 +43,7 @@ export function App() {
   const [database, setDatabase] = useState<DatabaseHealth | null>(null);
   const [releases, setReleases] = useState<ReleaseSummary[]>([]);
   const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  const [draftDeleteMessage, setDraftDeleteMessage] = useState("");
   const [activeReleaseId, setActiveReleaseId] = useState<string | null>(null);
   const [assets, setAssets] = useState<AssetSummary[]>([]);
   const [assetMessage, setAssetMessage] = useState("");
@@ -432,6 +433,36 @@ export function App() {
     }
   }
 
+  async function deleteDraft(draftId: string) {
+    if (!window.studio) return;
+    if (!window.confirm("Delete this campaign draft? This cannot be undone.")) return;
+    try {
+      const draft = drafts.find((item) => item.id === draftId);
+      await window.studio.deleteDraft(draftId);
+      setDrafts(await window.studio.listDrafts());
+      if (draft) setReleaseReadiness(await window.studio.getReleaseReadiness(draft.releaseId));
+      setDraftDeleteMessage("Draft deleted.");
+      playInterfaceSound("success");
+    } catch (error) {
+      setDraftDeleteMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not delete draft");
+      playInterfaceSound("error");
+    }
+  }
+
+  async function deleteCampaignPackItem(itemId: string) {
+    if (!window.studio) return;
+    if (!window.confirm("Delete this promotion format? This cannot be undone.")) return;
+    try {
+      await window.studio.deleteCampaignPackItem(itemId);
+      if (activeReleaseId) setCampaignPackItems(await window.studio.listCampaignPackItems(activeReleaseId));
+      setCampaignPackMessage("Promotion format deleted.");
+      playInterfaceSound("success");
+    } catch (error) {
+      setCampaignPackMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not delete promotion format");
+      playInterfaceSound("error");
+    }
+  }
+
   async function selectRelease(release: ReleaseSummary) {
     setActiveReleaseId(release.id);
     setSelectedArtist(release.artistId);
@@ -763,17 +794,18 @@ export function App() {
             </div>
             <div className="draft-workflow">
               <strong>Campaign drafts</strong>
+              {draftDeleteMessage && <p className="task-message" role="status">{draftDeleteMessage}</p>}
               {drafts.length === 0 ? <p>No AI drafts saved yet.</p> : drafts.slice(0, 8).map((item) => (
                 <article key={item.id}>
                   <div className="draft-summary"><strong>{item.channel} · {item.language.toUpperCase()}</strong><span>{item.releaseTitle} · {item.model}</span><p>{item.content}</p></div>
-                  <div className="draft-actions"><b className={`status-${item.status}`}>{item.status}</b>{nextDraftActions(item.status).map((next) => <button key={next} onClick={() => void changeDraftStatus(item.id, next)}>{next}</button>)}</div>
+                  <div className="draft-actions"><b className={`status-${item.status}`}>{item.status}</b>{nextDraftActions(item.status).map((next) => <button key={next} onClick={() => void changeDraftStatus(item.id, next)}>{next}</button>)}<button className="danger-button" title="Delete" onClick={() => void deleteDraft(item.id)}>Delete</button></div>
                 </article>
               ))}
             </div>
           </section>
         </div>
         {activeView === "releases" && currentRelease && <section className="panel release-plan-panel"><ReleasePlanPanel release={currentRelease} /></section>}
-        {activeView === "releases" && <section className="panel campaign-pack-panel"><div className="campaign-pack-heading"><div><span className="eyebrow">Campaign Pack Generator V1</span><h2>One release. Every promotional format.</h2><p>Approve a media prompt first. ComfyUI starts automatically on demand; Kling CLI runs locally with no API credits.</p></div><button className="primary" disabled={campaignPackBusy||!activeReleaseId||!aiSettings.model} onClick={()=>void generateCampaignPack()}>{campaignPackBusy?"Generating pack...":`Generate ${aiSettings.language.toUpperCase()} pack`}</button></div>{(campaignPackMessage||mediaMessage)&&<p className="integration-message">{mediaMessage||campaignPackMessage}</p>}<div className="campaign-pack-grid">{campaignPackItems.map((item)=><article key={item.id}><div className="pack-item-head"><div><span>{item.kind.replaceAll("-"," ").toUpperCase()}</span><strong>{item.channel??"MEDIA GENERATION"} · {item.language.toUpperCase()}</strong></div><b className={`status-${item.status}`}>{item.status}</b></div><p>{item.content}</p><div className="pack-item-actions">{nextDraftActions(item.status).map((next)=><button key={next} onClick={()=>void changeCampaignPackStatus(item.id,next)}>{next}</button>)}{item.status==="approved"&&item.kind==="image-prompt"&&<><button className="local-generate" disabled={mediaBusy===item.id||!mediaSettings.comfyUiCheckpoint} onClick={()=>void generateMedia(item,"comfyui","image")}>Generate locally · ComfyUI</button><button disabled={mediaBusy===item.id||!mediaSettings.openAiConfigured} onClick={()=>void generateMedia(item,"openai","image")}>OpenAI</button><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","image")}>Kling CLI</button></>}{item.status==="approved"&&["visualizer-prompt","video-script"].includes(item.kind)&&<><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","video")}>Generate video · Kling CLI</button></>}</div></article>)}</div>{mediaGenerations.length>0&&<div className="media-gallery"><div className="campaign-pack-heading"><div><span className="eyebrow">Results gallery</span><h2>Generated media.</h2></div></div><div className="media-gallery-grid">{mediaGenerations.map((media)=><article key={media.id}>{mediaUrls[media.id]?(media.mediaType==="image"?<img src={mediaUrls[media.id]} alt={media.prompt}/>:<video src={mediaUrls[media.id]} controls preload="metadata"/>):<div className="media-pending">{media.status==="failed"?"Generation failed":"Generation in progress"}</div>}<div><strong>{media.provider.toUpperCase()} · {media.mediaType}</strong><b className={`status-${media.status}`}>{media.status}</b><p>{media.error??media.prompt}</p><div className="pack-item-actions">{media.status==="generating"&&<button disabled={mediaBusy===media.id} onClick={()=>void refreshMedia(media.id)}>Refresh {media.provider==="comfyui"?"ComfyUI":"Kling"} task</button>}{["ready","approved","rejected"].includes(media.status)&&<><button onClick={()=>void reviewMedia(media.id,"approved")}>Approve</button><button onClick={()=>void reviewMedia(media.id,"rejected")}>Reject</button></>}</div></div></article>)}</div></div>}</section>}
+        {activeView === "releases" && <section className="panel campaign-pack-panel"><div className="campaign-pack-heading"><div><span className="eyebrow">Campaign Pack Generator V1</span><h2>One release. Every promotional format.</h2><p>Approve a media prompt first. ComfyUI starts automatically on demand; Kling CLI runs locally with no API credits.</p></div><button className="primary" disabled={campaignPackBusy||!activeReleaseId||!aiSettings.model} onClick={()=>void generateCampaignPack()}>{campaignPackBusy?"Generating pack...":`Generate ${aiSettings.language.toUpperCase()} pack`}</button></div>{(campaignPackMessage||mediaMessage)&&<p className="integration-message">{mediaMessage||campaignPackMessage}</p>}<div className="campaign-pack-grid">{campaignPackItems.map((item)=><article key={item.id}><div className="pack-item-head"><div><span>{item.kind.replaceAll("-"," ").toUpperCase()}</span><strong>{item.channel??"MEDIA GENERATION"} · {item.language.toUpperCase()}</strong></div><b className={`status-${item.status}`}>{item.status}</b></div><p>{item.content}</p><div className="pack-item-actions">{nextDraftActions(item.status).map((next)=><button key={next} onClick={()=>void changeCampaignPackStatus(item.id,next)}>{next}</button>)}<button className="danger-button" title="Delete" onClick={()=>void deleteCampaignPackItem(item.id)}>Delete</button>{item.status==="approved"&&item.kind==="image-prompt"&&<><button className="local-generate" disabled={mediaBusy===item.id||!mediaSettings.comfyUiCheckpoint} onClick={()=>void generateMedia(item,"comfyui","image")}>Generate locally · ComfyUI</button><button disabled={mediaBusy===item.id||!mediaSettings.openAiConfigured} onClick={()=>void generateMedia(item,"openai","image")}>OpenAI</button><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","image")}>Kling CLI</button></>}{item.status==="approved"&&["visualizer-prompt","video-script"].includes(item.kind)&&<><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","video")}>Generate video · Kling CLI</button></>}</div></article>)}</div>{mediaGenerations.length>0&&<div className="media-gallery"><div className="campaign-pack-heading"><div><span className="eyebrow">Results gallery</span><h2>Generated media.</h2></div></div><div className="media-gallery-grid">{mediaGenerations.map((media)=><article key={media.id}>{mediaUrls[media.id]?(media.mediaType==="image"?<img src={mediaUrls[media.id]} alt={media.prompt}/>:<video src={mediaUrls[media.id]} controls preload="metadata"/>):<div className="media-pending">{media.status==="failed"?"Generation failed":"Generation in progress"}</div>}<div><strong>{media.provider.toUpperCase()} · {media.mediaType}</strong><b className={`status-${media.status}`}>{media.status}</b><p>{media.error??media.prompt}</p><div className="pack-item-actions">{media.status==="generating"&&<button disabled={mediaBusy===media.id} onClick={()=>void refreshMedia(media.id)}>Refresh {media.provider==="comfyui"?"ComfyUI":"Kling"} task</button>}{["ready","approved","rejected"].includes(media.status)&&<><button onClick={()=>void reviewMedia(media.id,"approved")}>Approve</button><button onClick={()=>void reviewMedia(media.id,"rejected")}>Reject</button></>}</div></div></article>)}</div></div>}</section>}
         </div></div>}
       </main>
       <BottomPlayer source={playerSource} playing={playerPlaying} onTogglePlay={() => setPlayerPlaying((p) => !p)} />

@@ -913,6 +913,7 @@ export interface StudioApi {
   listDrafts(releaseId?: string | null): Promise<DraftSummary[]>;
   saveGeneratedDraft(input: SaveGeneratedDraftInput): Promise<DraftSummary>;
   updateDraftStatus(draftId: string, status: DraftStatus): Promise<DraftSummary>;
+  deleteDraft(draftId: string): Promise<void>;
   listAssets(releaseId: string): Promise<AssetSummary[]>;
   selectAndAttachAsset(releaseId: string, kind: AssetKind): Promise<AssetSummary | null>;
   detachAsset(assetId: string): Promise<void>;
@@ -947,6 +948,7 @@ export interface StudioApi {
   generateCampaignPack(input: GenerateCampaignPackInput): Promise<CampaignPackItem[]>;
   listCampaignPackItems(releaseId: string): Promise<CampaignPackItem[]>;
   updateCampaignPackItemStatus(itemId: string, status: DraftStatus): Promise<CampaignPackItem>;
+  deleteCampaignPackItem(itemId: string): Promise<void>;
   getMediaGenerationSettings(): Promise<MediaGenerationSettings>;
   saveMediaGenerationCredentials(openAiApiKey: string, klingApiKey: string): Promise<MediaGenerationSettings>;
   testComfyUi(comfyUiUrl:string):Promise<MediaGenerationSettings>;
@@ -986,6 +988,7 @@ export interface StudioApi {
   retryPromoGeneration(input: RetryPromoGenerationInput): Promise<PromoGeneration>;
   updatePromoReview(input: UpdatePromoReviewInput): Promise<PromoGeneration>;
   editPromoContent(input: EditPromoContentInput): Promise<PromoGeneration>;
+  deletePromoGeneration(promoGenerationId: string): Promise<void>;
   createScheduleEvent(input: CreateScheduleEventInput): Promise<ScheduleEvent>;
   updateScheduleEvent(input: UpdateScheduleEventInput): Promise<ScheduleEvent>;
   cancelScheduleEvent(id: string): Promise<ScheduleEvent>;

@@ -245,6 +245,18 @@ export class StudioDatabase {
     return this.listDrafts().find((draft) => draft.id === draftId)!;
   }
 
+  deleteDraft(draftId: string): void {
+    const draft = this.database.prepare("SELECT id, campaign_id AS campaignId, status FROM drafts WHERE id = ?").get(draftId) as { id: string; campaignId: string; status: DraftStatus } | undefined;
+    if (!draft) throw new Error("Draft not found");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM drafts WHERE id = ?").run(draftId);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('draft', ?, 'draft.deleted', ?, ?)").run(draftId, JSON.stringify({ campaignId: draft.campaignId, status: draft.status }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
+
   listAssets(releaseId: string): AssetSummary[] {
     const rows = this.database.prepare(`
       SELECT a.id, r.id AS releaseId, a.track_id AS trackId, a.kind, a.file_path AS filePath,
@@ -538,6 +550,23 @@ export class StudioDatabase {
   listCampaignPackItems(releaseId:string):CampaignPackItem[]{return this.database.prepare(`SELECT i.id,i.release_id AS releaseId,r.title AS releaseTitle,i.kind,i.channel,i.language,i.content,i.status,i.model_name AS model,i.created_at AS createdAt,i.updated_at AS updatedAt FROM campaign_pack_items i JOIN releases r ON r.id=i.release_id WHERE i.release_id=? ORDER BY i.created_at DESC,i.id`).all(releaseId) as unknown as CampaignPackItem[];}
   updateCampaignPackItemStatus(itemId:string,status:DraftStatus):CampaignPackItem{const current=this.database.prepare("SELECT release_id AS releaseId,status FROM campaign_pack_items WHERE id=?").get(itemId) as {releaseId:string;status:DraftStatus}|undefined;if(!current)throw new Error("Campaign pack item not found");const allowed:Record<DraftStatus,DraftStatus[]>={draft:["approved","rejected"],approved:["draft","scheduled"],scheduled:["approved","published"],published:[],rejected:["draft"]};if(!allowed[current.status].includes(status))throw new Error(`Invalid campaign item transition: ${current.status} → ${status}`);this.database.prepare("UPDATE campaign_pack_items SET status=?,updated_at=? WHERE id=?").run(status,new Date().toISOString(),itemId);return this.listCampaignPackItems(current.releaseId).find((item)=>item.id===itemId)!;}
   getCampaignPackItemForGeneration(itemId:string):CampaignPackItem|undefined{return this.database.prepare(`SELECT i.id,i.release_id AS releaseId,r.title AS releaseTitle,i.kind,i.channel,i.language,i.content,i.status,i.model_name AS model,i.created_at AS createdAt,i.updated_at AS updatedAt FROM campaign_pack_items i JOIN releases r ON r.id=i.release_id WHERE i.id=?`).get(itemId) as unknown as CampaignPackItem|undefined;}
+  deleteCampaignPackItem(itemId: string): void {
+    const item = this.getCampaignPackItemForGeneration(itemId);
+    if (!item) throw new Error("Promotion format not found");
+    const queue = this.database.prepare("SELECT id, status FROM publishing_queue WHERE campaign_pack_item_id = ?").get(itemId) as { id: string; status: string } | undefined;
+    if (queue) throw new Error("Cannot delete: this promotion format is referenced by a Publishing Queue record; delete the queue record separately first");
+    const promo = this.database.prepare("SELECT id, review_status AS reviewStatus FROM promo_generations WHERE campaign_pack_item_id = ?").get(itemId) as { id: string; reviewStatus: string } | undefined;
+    if (promo) throw new Error("Cannot delete: this promotion format is referenced by generated promo content; delete the promo generation separately first");
+    const media = this.database.prepare("SELECT id, status FROM media_generations WHERE campaign_pack_item_id = ?").get(itemId) as { id: string; status: string } | undefined;
+    if (media) throw new Error("Cannot delete: this promotion format is referenced by a media generation record; delete the media generation separately first");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM campaign_pack_items WHERE id = ?").run(itemId);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_pack_item', ?, 'campaign_pack_item.deleted', ?, ?)").run(itemId, JSON.stringify({ releaseId: item.releaseId, kind: item.kind, status: item.status }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
   createMediaGeneration(item:CampaignPackItem,provider:MediaProvider,mediaType:GeneratedMediaType):MediaGenerationSummary{const id=randomUUID(),now=new Date().toISOString();this.database.prepare(`INSERT INTO media_generations(id,release_id,campaign_pack_item_id,provider,media_type,prompt,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'queued',?,?)`).run(id,item.releaseId,item.id,provider,mediaType,item.content,now,now);return this.getMediaGeneration(id)!;}
   updateMediaGeneration(id:string,values:{status:MediaGenerationStatus;providerTaskId?:string|null;localPath?:string|null;mimeType?:string|null;error?:string|null;metadata?:Record<string,unknown>}):MediaGenerationSummary{if(!this.getMediaGeneration(id))throw new Error("Media generation not found");this.database.prepare(`UPDATE media_generations SET status=?,provider_task_id=COALESCE(?,provider_task_id),local_path=COALESCE(?,local_path),mime_type=COALESCE(?,mime_type),error=?,metadata_json=?,updated_at=? WHERE id=?`).run(values.status,values.providerTaskId??null,values.localPath??null,values.mimeType??null,values.error??null,JSON.stringify(values.metadata??{}),new Date().toISOString(),id);return this.getMediaGeneration(id)!;}
   listMediaGenerations(releaseId:string):MediaGenerationSummary[]{return (this.database.prepare(`SELECT id,release_id AS releaseId,campaign_pack_item_id AS campaignPackItemId,provider,media_type AS mediaType,prompt,status,provider_task_id AS providerTaskId,mime_type AS mimeType,error,metadata_json AS metadata,created_at AS createdAt,updated_at AS updatedAt FROM media_generations WHERE release_id=? ORDER BY created_at DESC`).all(releaseId) as unknown as Array<Omit<MediaGenerationSummary,"metadata">&{metadata:string}>).map((row)=>({...row,metadata:JSON.parse(row.metadata||"{}")}));}
@@ -903,6 +932,23 @@ export class StudioDatabase {
     const now = new Date().toISOString();
     this.database.prepare(`UPDATE promo_generations SET generated_content = ?, status = 'SUCCESS', error = NULL, model = ?, campaign_pack_item_id = ?, review_status = 'GENERATED', edited_content = NULL, review_actor = NULL, review_reason = NULL, reviewed_at = NULL WHERE id = ?`).run(input.generatedContent, input.model, input.campaignPackItemId ?? null, input.promoGenerationId);
     return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE id = ?`).get(input.promoGenerationId) as unknown as PromoGeneration;
+  }
+
+  deletePromoGeneration(promoGenerationId: string): void {
+    const promo = this.getPromoGenerationById(promoGenerationId);
+    if (!promo) throw new Error("Promo generation not found");
+    const queued = this.database.prepare("SELECT id FROM schedule_events WHERE promo_generation_id = ? AND publishing_queue_id IS NOT NULL").get(promoGenerationId) as { id: string } | undefined;
+    if (queued) throw new Error("Cannot delete: this generated promo item was sent to the Publishing Queue; delete the Publishing Queue record separately first");
+    const schedule = this.database.prepare("SELECT id, status FROM schedule_events WHERE promo_generation_id = ?").get(promoGenerationId) as { id: string; status: string } | undefined;
+    if (schedule) throw new Error(`Cannot delete: this generated promo item is referenced by a ScheduleEvent (${schedule.status}); delete the ScheduleEvent separately first`);
+    if (promo.reviewStatus === "APPROVED") throw new Error("Approved promo content is locked; return it to review before deleting");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM promo_generations WHERE id = ?").run(promoGenerationId);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('promo_generation', ?, 'promo_generation.deleted', ?, ?)").run(promoGenerationId, JSON.stringify({ releasePlanId: promo.releasePlanId, campaignItemId: promo.campaignItemId, reviewStatus: promo.reviewStatus }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
   }
 
 

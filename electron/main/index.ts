@@ -184,6 +184,7 @@ ipcMain.handle("studio:generate-campaign-draft", (_event, input: GenerateCampaig
 ipcMain.handle("studio:list-drafts", (_event, releaseId?: string | null) => studioDatabase.listDrafts(releaseId));
 ipcMain.handle("studio:save-generated-draft", (_event, input: SaveGeneratedDraftInput) => studioDatabase.saveGeneratedDraft(input));
 ipcMain.handle("studio:update-draft-status", (_event, draftId: string, status: DraftStatus) => studioDatabase.updateDraftStatus(draftId, status));
+ipcMain.handle("studio:delete-draft", (_event, draftId: string) => studioDatabase.deleteDraft(draftId));
 ipcMain.handle("studio:list-assets", (_event, releaseId: string) => studioDatabase.listAssets(releaseId));
 ipcMain.handle("studio:detach-asset", (_event, assetId: string) => studioDatabase.detachAsset(assetId));
 ipcMain.handle("studio:get-audio-analysis", (_event, assetId: string) => studioDatabase.getAudioAnalysis(assetId));
@@ -222,6 +223,7 @@ ipcMain.handle("studio:get-catalog-match-suggestions", () => studioDatabase.getC
 ipcMain.handle("studio:generate-campaign-pack", async (_event, input:GenerateCampaignPackInput) => studioDatabase.saveCampaignPackItems(input.releaseId, input.language, input.model, await generateCampaignPackContent(input)));
 ipcMain.handle("studio:list-campaign-pack-items", (_event, releaseId:string) => studioDatabase.listCampaignPackItems(releaseId));
 ipcMain.handle("studio:update-campaign-pack-item-status", (_event,itemId:string,status:DraftStatus)=>studioDatabase.updateCampaignPackItemStatus(itemId,status));
+ipcMain.handle("studio:delete-campaign-pack-item", (_event,itemId:string)=>studioDatabase.deleteCampaignPackItem(itemId));
 ipcMain.handle("studio:get-media-generation-settings",()=>mediaGenerationClient.status());
 ipcMain.handle("studio:save-media-generation-credentials",(_event,openAiKey:string,klingKey:string)=>mediaGenerationClient.saveCredentials(openAiKey,klingKey));
 ipcMain.handle("studio:test-comfy-ui",(_event,url:string)=>mediaGenerationClient.testComfyUi(url));
@@ -266,6 +268,7 @@ ipcMain.handle("studio:generate-promo-content", async (_event, input: GeneratePr
   return generatePromoContent(input, { database: studioDatabase, getReleaseSummary: (releaseId) => releaseMap.get(releaseId) });
 });
 ipcMain.handle("studio:list-promo-generations", (_event, releasePlanId: string) => studioDatabase.listPromoGenerations(releasePlanId));
+ipcMain.handle("studio:delete-promo-generation", (_event, promoGenerationId: string) => studioDatabase.deletePromoGeneration(promoGenerationId));
 ipcMain.handle("studio:retry-promo-generation", async (_event, input: RetryPromoGenerationInput) => {
   const existing = studioDatabase.getPromoGenerationById(input.promoGenerationId);
   if (!existing) throw new Error("Promo generation not found");

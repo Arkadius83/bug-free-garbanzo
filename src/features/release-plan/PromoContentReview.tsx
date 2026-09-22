@@ -32,6 +32,7 @@ export function PromoContentReview({ generations, campaignItems, busy, onRefresh
   const [reviewBusy, setReviewBusy] = useState(false);
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, { platform: CampaignChannel; scheduledAt: string }>>({});
   const [scheduleMessage, setScheduleMessage] = useState<Record<string, string>>({});
+  const [deleteMessage, setDeleteMessage] = useState("");
 
   const getCampaignItem = (campaignItemId: string) => campaignItems.find((item) => item.id === campaignItemId);
   const getDisplayContent = (generation: PromoGeneration) => generation.editedContent || generation.generatedContent || generation.error || "";
@@ -78,10 +79,25 @@ export function PromoContentReview({ generations, campaignItems, busy, onRefresh
     } catch (error) { onError(error instanceof Error ? error.message : "Could not retry generation"); } finally { setReviewBusy(false); }
   }
 
+  async function handleDelete(generation: PromoGeneration) {
+    if (!window.studio) return;
+    if (!window.confirm("Delete this generated promo item? This cannot be undone.")) return;
+    setReviewBusy(true);
+    setDeleteMessage("");
+    try {
+      await window.studio.deletePromoGeneration(generation.id);
+      await onRefresh();
+      setDeleteMessage("Promo item deleted.");
+    } catch (error) {
+      onError(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not delete promo item");
+    } finally { setReviewBusy(false); }
+  }
+
   const editingGeneration = editing ? generations.find((generation) => generation.id === editing.promoGenerationId) : undefined;
 
   return <section className="pcr-section" aria-label="Promo Content Review">
     <span className="eyebrow">Promo Content Review</span>
+    {deleteMessage ? <p className="pcr-schedule-message" role="status">{deleteMessage}</p> : null}
     {generations.length === 0 ? <SurfacePanel className="pcr-empty-panel"><p className="pcr-empty">No promo content generated yet.</p></SurfacePanel> : null}
     {generations.map((generation) => {
       const item = getCampaignItem(generation.campaignItemId);
@@ -107,6 +123,7 @@ export function PromoContentReview({ generations, campaignItems, busy, onRefresh
           {isFailed ? <Button variant="secondary" disabled={busy || reviewBusy} onClick={() => void handleRetry(generation)}>Retry</Button> : null}
           {!isSkipped && !isFailed && !readOnly && !isEditing ? <><Button variant="ghost" disabled={busy || reviewBusy} onClick={() => setEditing({ promoGenerationId: generation.id, content: getDisplayContent(generation) })}>Edit</Button><Button disabled={busy || reviewBusy} onClick={() => void updateReview(generation, "APPROVED", "Content approved")}>Approve</Button><Button variant="ghost" disabled={busy || reviewBusy} onClick={() => void updateReview(generation, "REJECTED", "Content rejected")}>Reject</Button></> : null}
           {readOnly ? <><div className="pcr-schedule-box"><Select aria-label="Schedule platform" value={scheduleDrafts[generation.id]?.platform ?? platforms[0]} options={platforms.map((platform) => ({ value: platform, label: platform }))} onChange={(event) => setScheduleDrafts((current) => ({ ...current, [generation.id]: { platform: event.target.value as CampaignChannel, scheduledAt: current[generation.id]?.scheduledAt ?? "" } }))} /><Input aria-label="Schedule date and time" type="datetime-local" value={scheduleDrafts[generation.id]?.scheduledAt ?? ""} onChange={(event) => setScheduleDrafts((current) => ({ ...current, [generation.id]: { platform: current[generation.id]?.platform ?? platforms[0], scheduledAt: event.target.value } }))} /><Button disabled={busy || reviewBusy} onClick={() => void handleSchedule(generation, item)}>Add to Calendar</Button></div>{scheduleMessage[generation.id] ? <p className="pcr-schedule-message">{scheduleMessage[generation.id]}</p> : null}<Button variant="ghost" disabled={busy || reviewBusy} onClick={() => void updateReview(generation, "REVIEW_REQUIRED", "Returned to review")}>Return to Review</Button></> : null}
+          {!readOnly ? <Button variant="ghost" title="Delete" disabled={busy || reviewBusy} onClick={() => void handleDelete(generation)}>Delete</Button> : null}
         </div>
       </SurfacePanel>;
     })}

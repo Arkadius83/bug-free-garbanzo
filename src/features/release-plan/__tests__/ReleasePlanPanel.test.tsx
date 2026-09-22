@@ -25,6 +25,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   removeMockStudio();
 });
 
@@ -758,6 +759,47 @@ describe("ReleasePlanPanel", () => {
 
       await waitFor(() => expect(createSchedule).toHaveBeenCalledWith(expect.objectContaining({ promoGenerationId: "pg-1", platform: "Instagram" })));
       expect(screen.getByText("Added to Content Calendar.")).toBeInTheDocument();
+    });
+
+    it("deleting a promo item refreshes the list and keeps unrelated items", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      const deleteSpy = vi.fn(studio.deletePromoGeneration).mockResolvedValue(undefined);
+      studio.deletePromoGeneration = deleteSpy;
+      studio.getCurrentReleasePlan = async () => mockPlan({ status: "APPROVED" });
+      const doomed = { id: "pg-1", releaseId: "release-1", releasePlanId: "plan-1", campaignItemId: "item-1", contentType: "caption" as const, generatedContent: "Delete me", campaignPackItemId: null, status: "SUCCESS" as const, error: null, model: "test", reviewStatus: "GENERATED" as const, originalContent: null, editedContent: null, reviewActor: null, reviewReason: null, reviewedAt: null, createdAt: "2026-09-15T12:00:00Z" };
+      const kept = { id: "pg-2", releaseId: "release-1", releasePlanId: "plan-1", campaignItemId: "item-1", contentType: "caption" as const, generatedContent: "Keep me", campaignPackItemId: null, status: "SUCCESS" as const, error: null, model: "test", reviewStatus: "GENERATED" as const, originalContent: null, editedContent: null, reviewActor: null, reviewReason: null, reviewedAt: null, createdAt: "2026-09-15T12:00:01Z" };
+      studio.listPromoGenerations = vi.fn()
+        .mockResolvedValueOnce([doomed, kept])
+        .mockResolvedValue([kept]);
+
+      const user = userEvent.setup();
+      render(<ReleasePlanPanel release={release} />);
+      await screen.findByText("Delete me");
+
+      await user.click(screen.getAllByRole("button", { name: /^Delete$/i })[0]);
+
+      await waitFor(() => expect(deleteSpy).toHaveBeenCalledWith("pg-1"));
+      await waitFor(() => expect(screen.queryByText("Delete me")).not.toBeInTheDocument());
+      expect(screen.getByText("Keep me")).toBeInTheDocument();
+      expect(studio.listPromoGenerations).toHaveBeenCalledTimes(2);
+    });
+
+    it("shows the dependency error when promo deletion is blocked", async () => {
+      vi.spyOn(window, "confirm").mockReturnValue(true);
+      studio.deletePromoGeneration = async () => { throw new Error("Cannot delete: this generated promo item is referenced by a ScheduleEvent (READY); delete the ScheduleEvent separately first"); };
+      studio.getCurrentReleasePlan = async () => mockPlan({ status: "APPROVED" });
+      studio.listPromoGenerations = async () => [
+        { id: "pg-1", releaseId: "release-1", releasePlanId: "plan-1", campaignItemId: "item-1", contentType: "caption", generatedContent: "Scheduled content", campaignPackItemId: null, status: "SUCCESS" as const, error: null, model: "test", reviewStatus: "GENERATED" as const, originalContent: null, editedContent: null, reviewActor: null, reviewReason: null, reviewedAt: null, createdAt: "2026-09-15T12:00:00Z" }
+      ];
+
+      const user = userEvent.setup();
+      render(<ReleasePlanPanel release={release} />);
+      await screen.findByText("Scheduled content");
+
+      await user.click(screen.getAllByRole("button", { name: /^Delete$/i })[0]);
+
+      await waitFor(() => expect(screen.getByText(/referenced by a ScheduleEvent/)).toBeInTheDocument());
+      expect(screen.getByText("Scheduled content")).toBeInTheDocument();
     });
   });
 });
