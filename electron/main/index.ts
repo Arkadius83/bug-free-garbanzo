@@ -16,6 +16,9 @@ import { MediaGenerationClient } from "./media-generation.js";
 import { LocalServicesManager } from "./local-services.js";
 import { MetaClient } from "./meta.js";
 import { MediaBridgeClient } from "./media-bridge.js";
+import { YouTubeClient } from "./youtube.js";
+import { YouTubeDataService } from "./youtube-data.js";
+import { YouTubeAnalyticsService } from "./youtube-analytics.js";
 import { runAiHarnessPlanOnly } from "./ai-harness.js";
 import { createAiHarnessProviderRouter } from "./harness-provider-router.js";
 import { DEFAULT_APPROVAL_TTL_MS, createHarnessExecutionReview, createHarnessExecutorRegistry, createPersistentHarnessExecutionApproval, executePersistentApprovedHarnessTasks, readHarnessAuditLog } from "./harness-execution.js";
@@ -46,6 +49,9 @@ let mediaGenerationClient: MediaGenerationClient;
 let localServicesManager: LocalServicesManager;
 let metaClient: MetaClient;
 let mediaBridgeClient: MediaBridgeClient;
+let youTubeClient: YouTubeClient;
+let youTubeDataService: YouTubeDataService;
+let youTubeAnalyticsService: YouTubeAnalyticsService;
 const conversationAbortControllers = new Map<string, AbortController>();
 const conversationProviderRouter = createAiHarnessProviderRouter();
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -173,7 +179,7 @@ ipcMain.handle("studio:update-draft-status", (_event, draftId: string, status: D
 ipcMain.handle("studio:list-assets", (_event, releaseId: string) => studioDatabase.listAssets(releaseId));
 ipcMain.handle("studio:detach-asset", (_event, assetId: string) => studioDatabase.detachAsset(assetId));
 ipcMain.handle("studio:get-audio-analysis", (_event, assetId: string) => studioDatabase.getAudioAnalysis(assetId));
-ipcMain.handle("studio:get-asset-playback-url", (_event, assetId: string) => { const asset=studioDatabase.getAssetForAnalysis(assetId); if(!asset||asset.kind!=="audio")throw new Error("Audio asset not found"); return `studio-media://asset/${encodeURIComponent(assetId)}`; });
+ipcMain.handle("studio:get-asset-playback-url", (_event, assetId: string) => { const asset=studioDatabase.getAssetForAnalysis(assetId); if(!asset||!["audio","cover"].includes(asset.kind))throw new Error("Audio or cover asset not found"); return `studio-media://asset/${encodeURIComponent(assetId)}`; });
 ipcMain.handle("studio:get-release-readiness", (_event, releaseId: string) => studioDatabase.getReleaseReadiness(releaseId));
 ipcMain.handle("studio:list-tasks", (_event, releaseId?: string | null) => studioDatabase.listTasks(releaseId));
 ipcMain.handle("studio:create-task", (_event, input: CreateTaskInput) => studioDatabase.createTask(input));
@@ -236,6 +242,14 @@ ipcMain.handle("studio:begin-meta-connect",()=>metaClient.beginConnect());
 ipcMain.handle("studio:disconnect-meta",()=>metaClient.disconnect());
 ipcMain.handle("studio:get-media-bridge-status",()=>mediaBridgeClient.status());
 ipcMain.handle("studio:save-media-bridge-settings",(_event,accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string)=>mediaBridgeClient.saveSettings(accountId,bucket,accessKeyId,secretAccessKey));
+ipcMain.handle("studio:get-youtube-connection",()=>youTubeClient.status());
+ipcMain.handle("studio:save-youtube-credentials",(_event,clientId:string,clientSecret:string)=>youTubeClient.saveCredentials(clientId,clientSecret));
+ipcMain.handle("studio:begin-youtube-connect",()=>youTubeClient.beginConnect());
+ipcMain.handle("studio:disconnect-youtube",()=>youTubeClient.disconnect());
+ipcMain.handle("studio:get-youtube-channel-data",()=>youTubeDataService.getChannelData());
+ipcMain.handle("studio:sync-youtube-channel-data",()=>youTubeDataService.syncChannelData());
+ipcMain.handle("studio:get-youtube-analytics",( _event, range: import("../shared/contracts.js").YouTubeAnalyticsRange)=>youTubeAnalyticsService.getAnalytics(range));
+ipcMain.handle("studio:sync-youtube-analytics",( _event, range: import("../shared/contracts.js").YouTubeAnalyticsRange)=>youTubeAnalyticsService.syncAnalytics(range));
 ipcMain.handle("studio:publish-meta-queue-item",async(_event,id:string,destinationId:string)=>{const data=studioDatabase.getPublishingExportData(id);if(!["approved","scheduled","failed"].includes(data.item.status))throw new Error("Approve or schedule the post before publishing");if(!["Facebook","Instagram"].includes(data.item.platform))throw new Error("This queue item is not a Meta post");const destination=(await metaClient.status()).destinations.find((item)=>item.id===destinationId);if(!destination||destination.platform!==data.item.platform)throw new Error(`Select a connected ${data.item.platform} destination`);try{if(data.item.platform==="Instagram"){if(!data.mediaPath||data.item.mediaType!=="image")throw new Error("Instagram Feed publishing requires an approved PNG or JPEG image");const staged=await mediaBridgeClient.stage(data.mediaPath,data.mimeType);try{const remoteId=await metaClient.publishInstagram(destinationId,data.item.caption,staged.url);return studioDatabase.markPublishingSucceeded(id,destinationId,remoteId);}finally{await mediaBridgeClient.remove(staged.key).catch((error)=>console.warn("Could not remove temporary R2 object",error));}}if(data.item.mediaType==="video")throw new Error("Facebook video upload is not included in Meta Publishing V1; export the pack manually");const remoteId=await metaClient.publishFacebook(destinationId,data.item.caption,data.mediaPath,data.mimeType);return studioDatabase.markPublishingSucceeded(id,destinationId,remoteId);}catch(error){const message=error instanceof Error?error.message:"Meta publishing failed";studioDatabase.markPublishingFailed(id,message);throw error;}});
 ipcMain.handle("studio:generate-media",async(_event,input:GenerateMediaInput)=>{const item=studioDatabase.getCampaignPackItemForGeneration(input.campaignPackItemId);if(!item)throw new Error("Campaign prompt not found");if(item.status!=="approved")throw new Error("Approve the prompt before starting generation");if(input.mediaType==="image"&&item.kind!=="image-prompt")throw new Error("Select an approved image prompt");if(input.mediaType==="video"&&item.kind!=="visualizer-prompt"&&item.kind!=="video-script")throw new Error("Select an approved visualizer or video script");const brand=studioDatabase.getBrandProfileForRelease(item.releaseId);if(!brand)throw new Error("Brand profile not found");const aspectRatio=input.aspectRatio??brand.defaultAspectRatio;const enhancedPrompt=`${item.content}\n\nBRAND DIRECTION: ${brand.visualDirection}. PALETTE: ${brand.palette}. COMPOSITION: ${brand.requiredElements}. LAYOUT/TYPOGRAPHY SPACE: ${brand.typography}. FORBIDDEN: ${brand.forbiddenElements}. Output aspect ratio ${aspectRatio}. No rendered text unless explicitly requested.`;let row=studioDatabase.createMediaGeneration(item,input.provider,input.mediaType);row=studioDatabase.updateMediaGeneration(row.id,{status:"generating",metadata:{aspectRatio,brandArtistId:brand.artistId,enhancedPrompt}});try{if(input.provider==="comfyui"){const service=await localServicesManager.start("comfyui");if(!service.comfyUi.running)throw new Error(service.comfyUi.error??"ComfyUI did not become ready within 60 seconds");}const result=await mediaGenerationClient.generate(input.provider,input.mediaType,enhancedPrompt,{aspectRatio,negativePrompt:brand.negativePrompt});if(result.bytes||result.remoteUrl){const saved=await mediaGenerationClient.saveRemoteResult(row.id,result,input.mediaType);return studioDatabase.updateMediaGeneration(row.id,{status:"ready",providerTaskId:result.providerTaskId,localPath:saved.localPath,mimeType:saved.mimeType,metadata:{...row.metadata,...saved.metadata}});}return studioDatabase.updateMediaGeneration(row.id,{status:"generating",providerTaskId:result.providerTaskId,metadata:{...row.metadata,...result.metadata}});}catch(error){studioDatabase.updateMediaGeneration(row.id,{status:"failed",error:error instanceof Error?error.message:"Generation failed",metadata:row.metadata});throw error;}});
 ipcMain.handle("studio:refresh-media-generation",async(_event,id:string)=>{const row=studioDatabase.getMediaGeneration(id);if(!row)throw new Error("Media generation not found");if(!row.providerTaskId||!["kling","comfyui"].includes(row.provider))return row;try{const result=row.provider==="comfyui"?await mediaGenerationClient.refreshComfyUi(row.providerTaskId):await mediaGenerationClient.refreshKling(row.providerTaskId,row.mediaType);if(!result)return row;const saved=await mediaGenerationClient.saveRemoteResult(row.id,result,row.mediaType);return studioDatabase.updateMediaGeneration(row.id,{status:"ready",localPath:saved.localPath,mimeType:saved.mimeType,metadata:{...row.metadata,...saved.metadata}});}catch(error){return studioDatabase.updateMediaGeneration(row.id,{status:"failed",error:error instanceof Error?error.message:`${row.provider} generation failed`,metadata:row.metadata});}});
@@ -290,8 +304,25 @@ void app.whenReady().then(async () => {
   localServicesManager = new LocalServicesManager(app.getPath("userData"));
   metaClient = new MetaClient(app.getPath("userData"));
   mediaBridgeClient = new MediaBridgeClient(app.getPath("userData"));
+  youTubeClient = new YouTubeClient(app.getPath("userData"));
+  youTubeDataService = new YouTubeDataService(app.getPath("userData"));
+  youTubeAnalyticsService = new YouTubeAnalyticsService(app.getPath("userData"), () => youTubeClient.getAnalyticsAccessToken(), () => youTubeDataService.getChannelData());
   await localServicesManager.startConfigured();
-  protocol.handle("studio-media", (request) => { const url=new URL(request.url),id=decodeURIComponent(url.pathname.slice(1));if(url.hostname==="asset"){const asset=studioDatabase.getAssetForAnalysis(id);if(!asset||asset.kind!=="audio")return new Response("Not found",{status:404});return net.fetch(pathToFileURL(asset.filePath).toString(),{headers:request.headers});}if(url.hostname==="generation"){const media=studioDatabase.getMediaGenerationFile(id);if(!media)return new Response("Not found",{status:404});return net.fetch(pathToFileURL(media.filePath).toString(),{headers:request.headers});}return new Response("Not found",{status:404});});
+  protocol.handle("studio-media", (request) => {
+      const url=new URL(request.url),id=decodeURIComponent(url.pathname.slice(1));
+      if(url.hostname==="asset"){
+        const asset=studioDatabase.getAssetForAnalysis(id);
+        if(!asset) return new Response("Not found",{status:404});
+        const mimeType = inferMimeType(asset.filePath) ?? "application/octet-stream";
+        return net.fetch(pathToFileURL(asset.filePath).toString()).then(async (r) => {
+          const h = new Headers(r.headers);
+          h.set("Access-Control-Allow-Origin", "*");
+          if(!h.has("Content-Type")) h.set("Content-Type", mimeType);
+          if(!h.has("Content-Length")) { try { h.set("Content-Length", String((await stat(asset.filePath)).size)); } catch { /* ignore */ } }
+          return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
+        });
+      }
+      if(url.hostname==="generation"){const media=studioDatabase.getMediaGenerationFile(id);if(!media)return new Response("Not found",{status:404});return net.fetch(pathToFileURL(media.filePath).toString(),{headers:request.headers});}return new Response("Not found",{status:404});});
   if (process.platform === "win32" && !app.isPackaged) app.setAsDefaultProtocolClient("ai-studio-manager", process.execPath, [path.resolve(process.argv[1])]);
   else app.setAsDefaultProtocolClient("ai-studio-manager");
   createWindow();
