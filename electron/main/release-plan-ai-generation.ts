@@ -5,6 +5,46 @@ import type { GeneratedReleasePlanDraft, GeneratedReleasePlanItem } from "./rele
 const VALID_CAMPAIGN_CHANNELS = new Set<CampaignChannel>(["Instagram", "Facebook", "TikTok", "SoundCloud", "YouTube"]);
 const VALID_CONTENT_TYPES = new Set<CampaignItemContentType>(["caption", "video-hook", "video-script", "image-prompt", "visualizer-prompt", "story", "email", "other"]);
 
+const CANONICAL_ARTIST_NAMES = new Set(["The Arkadiusz", "Arkadelic", "AR-TEK", "Echoes of Arcadia"]);
+
+function buildCanonicalProtectionForReleasePlan(artistName: string, releaseTitle: string): string {
+  const parts: string[] = [];
+  if (CANONICAL_ARTIST_NAMES.has(artistName)) {
+    parts.push(`Artist name "${artistName}" is a canonical proper noun. Use it exactly as written. Do not translate, respell, transliterate, abbreviate, normalize or stylize it.`);
+  }
+  if (releaseTitle) {
+    parts.push(`Release title "${releaseTitle}" is a canonical proper noun. Use it exactly as written.`);
+  }
+  if (parts.length === 0) return "";
+  return "CRITICAL CANONICAL NAME PROTECTION:\n" + parts.join("\n") + "\n";
+}
+
+function correctCanonicalVariantsInReleasePlan(output: string, artistName: string, releaseTitle: string): string {
+  let corrected = output;
+  const artistVariants = new Map<string, string>([
+    ["Arkadelik", "Arkadelic"],
+    ["Arkadelick", "Arkadelic"],
+    ["Arkadellic", "Arkadelic"],
+    ["ARKADELIC", "Arkadelic"],
+    ["arkadelic", "Arkadelic"],
+    ["The Arkadius", "The Arkadiusz"],
+    ["The Arkadius", "The Arkadiusz"],
+    ["Arkadius", "The Arkadiusz"],
+    ["AR-Tek", "AR-TEK"],
+    ["Ar-Tek", "AR-TEK"],
+    ["Artek", "AR-TEK"],
+    ["Echoes Of Arcadia", "Echoes of Arcadia"],
+    ["Echoes of Arcadias", "Echoes of Arcadia"],
+  ]);
+  for (const [wrong, correct] of artistVariants) {
+    if (wrong !== correct) {
+      const regex = new RegExp(`\\b${wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
+      corrected = corrected.replace(regex, correct);
+    }
+  }
+  return corrected;
+}
+
 export type ReleasePlanGenerationContext = {
   release: ReleaseSummary;
   assets: AssetSummary[];
@@ -263,7 +303,8 @@ export async function generateAiReleasePlanDraft(
 ): Promise<AiGenerationResult | null> {
   const systemPrompt = buildReleasePlanSystemPrompt();
   const userPrompt = buildReleasePlanUserPrompt(context);
-  const fullPrompt = `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPrompt}`;
+  const canonicalProtection = buildCanonicalProtectionForReleasePlan(context.release.artistName, context.release.title);
+  const fullPrompt = `SYSTEM:\n${systemPrompt}\n\nUSER:\n${userPrompt}${canonicalProtection ? "\n\n" + canonicalProtection : ""}`;
 
   options.signal?.throwIfAborted();
   const startMs = Date.now();
@@ -278,7 +319,10 @@ export async function generateAiReleasePlanDraft(
     return null;
   }
 
-  const parsed = parseJsonFromAiResponse(result.output);
+  let output = result.output;
+  output = correctCanonicalVariantsInReleasePlan(output, context.release.artistName, context.release.title);
+
+  const parsed = parseJsonFromAiResponse(output);
   const draft = validateAndNormalizeDraft(parsed);
   if (!draft) {
     console.log(`[release-plan-ai] AI output failed validation after ${durationMs}ms. provider=${result.provider ?? "none"} model=${result.model ?? "none"}`);

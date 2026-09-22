@@ -4,6 +4,46 @@ import { generateCampaignDraft } from "./ollama.js";
 
 const GENERABLE_CONTENT_TYPES = new Set<CampaignItemContentType>(["caption", "video-hook", "video-script", "image-prompt", "visualizer-prompt"]);
 
+const CANONICAL_ARTIST_NAMES = new Set(["The Arkadiusz", "Arkadelic", "AR-TEK", "Echoes of Arcadia"]);
+
+function buildCanonicalProtectionForPromo(artistName: string, releaseTitle: string): string {
+  const parts: string[] = [];
+  if (CANONICAL_ARTIST_NAMES.has(artistName)) {
+    parts.push(`Artist name "${artistName}" is a canonical proper noun. Use it exactly as written. Do not translate, respell, transliterate, abbreviate, normalize or stylize it.`);
+  }
+  if (releaseTitle) {
+    parts.push(`Release title "${releaseTitle}" is a canonical proper noun. Use it exactly as written.`);
+  }
+  if (parts.length === 0) return "";
+  return "CRITICAL CANONICAL NAME PROTECTION:\n" + parts.join("\n") + "\n";
+}
+
+function correctCanonicalVariantsInPromo(output: string, artistName: string, releaseTitle: string): string {
+  let corrected = output;
+  const artistVariants = new Map<string, string>([
+    ["Arkadelik", "Arkadelic"],
+    ["Arkadelick", "Arkadelic"],
+    ["Arkadellic", "Arkadelic"],
+    ["ARKADELIC", "Arkadelic"],
+    ["arkadelic", "Arkadelic"],
+    ["The Arkadius", "The Arkadiusz"],
+    ["The Arkadius", "The Arkadiusz"],
+    ["Arkadius", "The Arkadiusz"],
+    ["AR-Tek", "AR-TEK"],
+    ["Ar-Tek", "AR-TEK"],
+    ["Artek", "AR-TEK"],
+    ["Echoes Of Arcadia", "Echoes of Arcadia"],
+    ["Echoes of Arcadias", "Echoes of Arcadia"],
+  ]);
+  for (const [wrong, correct] of artistVariants) {
+    if (wrong !== correct) {
+      const regex = new RegExp(`\\b${wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
+      corrected = corrected.replace(regex, correct);
+    }
+  }
+  return corrected;
+}
+
 interface PromoGenerationDeps {
   database: StudioDatabase;
   getReleaseSummary: (releaseId: string) => ReleaseSummary | undefined;
@@ -153,7 +193,9 @@ async function generateSingleItem(
 
   const enhancedPrompt = buildEnhancedPrompt(item, channel);
   const result = await generateCampaignDraft({ ...draftInput, channel });
-  return result.content || enhancedPrompt;
+  let content = result.content || enhancedPrompt;
+  content = correctCanonicalVariantsInPromo(content, release.artistName, release.title);
+  return content;
 }
 
 function buildEnhancedPrompt(item: CampaignItem, channel: CampaignChannel): string {
