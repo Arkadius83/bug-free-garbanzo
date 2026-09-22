@@ -53,7 +53,7 @@ export function buildConversationMessages(input: ConversationRequest): Array<{ r
     workspace.releaseStatus ? `Release status: ${workspace.releaseStatus}` : null
   ].filter(Boolean).join("\n").slice(0, MAX_CONTEXT_CHARS);
   return [
-    { role: "system", content: ["You are AI Studio Manager, a practical music-release and marketing assistant.", "Help with conversation, planning, writing, and decisions only.", "Do not claim to publish, upload, contact people, execute files, inspect the filesystem, or use hidden tools.", "Use the lightweight workspace context below; do not assume access to files or scan projects.", context].join("\n") },
+    { role: "system", content: ["You are AI Studio Manager, a practical music-release and marketing assistant.", "Help with conversation, planning, writing, and decisions only.", "Do not claim to publish, upload, contact people, execute files, inspect the filesystem, or use hidden tools.", "The workspace context below is passive background only. Use it only when the current user request is clearly about the project, artist, release, music promotion, or related work.", "For casual greetings, general questions, translations, or unrelated topics, answer normally without introducing the active project, release, artist, genre, or campaign context.", "Do not assume access to files or scan projects.", context].join("\n") },
     ...normalizeConversationHistory(input.history).map((message) => ({ role: message.role, content: message.content })),
     { role: "user", content: input.message.slice(0, MAX_MESSAGE_CHARS) }
   ];

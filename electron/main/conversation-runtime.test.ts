@@ -117,3 +117,17 @@ test("manual model override ignores providerRouter", async () => {
   assert.equal(result.model, "llama3");
   assert.equal(result.content, "Local response");
 });
+
+test("workspace context is passive background, not a proactive topic", () => {
+  const system = buildConversationMessages(request({ message: "hi" }))[0]?.content ?? "";
+  assert.match(system, /passive background only/i);
+  assert.match(system, /Use it only when the current user request is clearly about/i);
+  assert.match(system, /For casual greetings, general questions, translations, or unrelated topics, answer normally without introducing/i);
+});
+
+test("passive workspace context is still supplied for relevant requests", () => {
+  const system = buildConversationMessages(request({ message: "Plan the release campaign for the active track." }))[0]?.content ?? "";
+  assert.match(system, /Active release: Different Perspective/);
+  assert.match(system, /Genre: Psytrance/);
+  assert.match(system, /Artist: The Arkadiusz/);
+});
