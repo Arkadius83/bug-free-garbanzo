@@ -876,9 +876,15 @@ export class StudioDatabase {
 
   updatePromoGenerationReview(input: { promoGenerationId: string; reviewStatus: string; reviewActor?: string; reviewReason?: string }): PromoGeneration {
     const now = new Date().toISOString();
-    const existing = this.database.prepare(`SELECT id FROM promo_generations WHERE id = ?`).get(input.promoGenerationId);
+    const existing = this.database.prepare(`SELECT id, campaign_pack_item_id AS campaignPackItemId FROM promo_generations WHERE id = ?`).get(input.promoGenerationId) as { id: string; campaignPackItemId: string | null } | undefined;
     if (!existing) throw new Error("Promo generation not found");
     this.database.prepare(`UPDATE promo_generations SET review_status = ?, review_actor = ?, review_reason = ?, reviewed_at = ? WHERE id = ?`).run(input.reviewStatus, input.reviewActor ?? "local-user", input.reviewReason ?? "", now, input.promoGenerationId);
+    if (input.reviewStatus === "APPROVED" && existing.campaignPackItemId) {
+      const caption = this.database.prepare("SELECT kind, status FROM campaign_pack_items WHERE id = ?").get(existing.campaignPackItemId) as { kind: CampaignPackKind; status: DraftStatus } | undefined;
+      if (caption && caption.kind === "caption" && caption.status === "draft") {
+        this.database.prepare("UPDATE campaign_pack_items SET status = 'approved', updated_at = ? WHERE id = ?").run(now, existing.campaignPackItemId);
+      }
+    }
     return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE id = ?`).get(input.promoGenerationId) as unknown as PromoGeneration;
   }
 
