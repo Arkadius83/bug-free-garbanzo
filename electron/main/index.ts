@@ -7,6 +7,7 @@ import type { AddContactInteractionInput, AiSettings, AssetKind, CreatePublishin
 import type { HarnessExecutionApprovalRequest, HarnessExecutionRequest } from "../shared/harness-execution.js";
 import type { ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreateReleasePlanInput, RecordApprovalActionInput, ReorderCampaignItemsInput, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateCampaignItemInput, UpdateReleasePlanInput } from "../shared/contracts.js";
 
+import { generateAndPersistAiReleasePlan } from "./release-plan-generation-service.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
@@ -33,8 +34,8 @@ ipcMain.handle("studio:delete-campaign-item", (_event, id: string) => studioData
 ipcMain.handle("studio:reorder-campaign-items", (_event, input: ReorderCampaignItemsInput) => studioDatabase.reorderCampaignItems(input));
 ipcMain.handle("studio:record-approval-action", (_event, input: RecordApprovalActionInput) => studioDatabase.recordApprovalAction(input));
 ipcMain.handle("studio:list-approval-records", (_event, entityType: "release_plan", entityId: string) => studioDatabase.listApprovalRecords(entityType, entityId));
-ipcMain.handle("studio:generate-release-plan", (_event, input: GenerateReleasePlanInput) => studioDatabase.generateReleasePlan(input));
-ipcMain.handle("studio:regenerate-release-plan", (_event, input: RegenerateReleasePlanInput) => studioDatabase.regenerateReleasePlan(input));
+ipcMain.handle("studio:generate-release-plan", (_event, input: GenerateReleasePlanInput) => generateAndPersistAiReleasePlan(studioDatabase, conversationProviderRouter, input, false));
+ipcMain.handle("studio:regenerate-release-plan", (_event, input: RegenerateReleasePlanInput) => generateAndPersistAiReleasePlan(studioDatabase, conversationProviderRouter, input, true));
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
