@@ -135,6 +135,12 @@ export function createMockStudio(overrides?: Partial<StudioApi>): MockStudio {
     deleteDraft: async () => undefined,
     deleteCampaignPackItem: async () => undefined,
     deletePromoGeneration: async () => undefined,
+    getCampaignPackItemDependencyStatus: async () => ({
+      canDelete: true,
+      deleteMode: "normal" as const,
+      dependencies: { publishingQueue: 0, promoGenerations: 0, mediaGenerations: 0 }
+    }),
+    cleanupStaleMediaGenerations: async () => ({ removedIds: [], removedFiles: [] }),
     reorderCampaignItems: async (input) => input.itemIds.map((id, i) => mockItem({ id, sortOrder: i })),
     listApprovalRecords: async () => [],
     generatePromoContent: async (input: GeneratePromoContentInput) => ({ runId: input.releasePlanId, totalItems: 0, generated: 0, failed: 0, skipped: 0, items: [] }),

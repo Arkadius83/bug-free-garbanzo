@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AddContactInteractionInput, AnalyticsPlatformSummary, AssetSummary, AttachAssetInput, AudioAnalysisSummary, BrandProfile, CampaignPackItem, CampaignPackKind, CatalogMatchSuggestion, ContactInteraction, ContactSummary, ContentLanguage, ApprovalAction, ApprovalEntityType, ApprovalRecord, CampaignChannel, CampaignItem, CampaignItemContentType, CampaignItemStatus, ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreatePublishingQueueInput, CreateScheduleEventInput, ReviewPublishingQueueItemInput, UpdatePublishingQueueContentInput, CreateReleaseDraftInput, CreateReleasePlanInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, GeneratedMediaType, MediaGenerationStatus, MediaGenerationSummary, MediaProvider, PostPublishSnapshot, PromoGeneration, PublishingQueueItem, PublishingStatus, QueueScheduleEventResult, RecordApprovalActionInput, ReleaseAnalyticsSummary, ReleasePlan, ReleasePlanStatus, ReleaseReadiness, ReleaseSummary, ScheduleEvent, ScheduleEventStatus, ReorderCampaignItemsInput, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateBrandProfileInput, UpdateCampaignItemInput, UpdateReleaseInput, UpdateScheduleEventInput, UpdateReleasePlanInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../../shared/contracts.js";
+import type { AddContactInteractionInput, AnalyticsPlatformSummary, AssetSummary, AttachAssetInput, AudioAnalysisSummary, BrandProfile, CampaignPackItem, CampaignPackItemDependencyStatus, CampaignPackKind, CatalogMatchSuggestion, ContactInteraction, ContactSummary, ContentLanguage, ApprovalAction, ApprovalEntityType, ApprovalRecord, CampaignChannel, CampaignItem, CampaignItemContentType, CampaignItemStatus, ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreatePublishingQueueInput, CreateScheduleEventInput, ReviewPublishingQueueItemInput, UpdatePublishingQueueContentInput, CreateReleaseDraftInput, CreateReleasePlanInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, GeneratedMediaType, MediaGenerationStatus, MediaGenerationSummary, MediaProvider, PostPublishSnapshot, PromoGeneration, PublishingQueueItem, PublishingStatus, QueueScheduleEventResult, RecordApprovalActionInput, ReleaseAnalyticsSummary, ReleasePlan, ReleasePlanStatus, ReleaseReadiness, ReleaseSummary, ScheduleEvent, ScheduleEventStatus, ReorderCampaignItemsInput, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, StaleMediaCleanupResult, TaskStatus, TaskSummary, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateBrandProfileInput, UpdateCampaignItemInput, UpdateReleaseInput, UpdateScheduleEventInput, UpdateReleasePlanInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../../shared/contracts.js";
 import { buildReleasePlanDraft, type GeneratedReleasePlanDraft, type GeneratedReleasePlanItem } from "../release-plan-generation.js";
 
 import { migrateDatabase } from "./migration-runner.js";
@@ -550,22 +550,56 @@ export class StudioDatabase {
   listCampaignPackItems(releaseId:string):CampaignPackItem[]{return this.database.prepare(`SELECT i.id,i.release_id AS releaseId,r.title AS releaseTitle,i.kind,i.channel,i.language,i.content,i.status,i.model_name AS model,i.created_at AS createdAt,i.updated_at AS updatedAt FROM campaign_pack_items i JOIN releases r ON r.id=i.release_id WHERE i.release_id=? ORDER BY i.created_at DESC,i.id`).all(releaseId) as unknown as CampaignPackItem[];}
   updateCampaignPackItemStatus(itemId:string,status:DraftStatus):CampaignPackItem{const current=this.database.prepare("SELECT release_id AS releaseId,status FROM campaign_pack_items WHERE id=?").get(itemId) as {releaseId:string;status:DraftStatus}|undefined;if(!current)throw new Error("Campaign pack item not found");const allowed:Record<DraftStatus,DraftStatus[]>={draft:["approved","rejected"],approved:["draft","scheduled"],scheduled:["approved","published"],published:[],rejected:["draft"]};if(!allowed[current.status].includes(status))throw new Error(`Invalid campaign item transition: ${current.status} → ${status}`);this.database.prepare("UPDATE campaign_pack_items SET status=?,updated_at=? WHERE id=?").run(status,new Date().toISOString(),itemId);return this.listCampaignPackItems(current.releaseId).find((item)=>item.id===itemId)!;}
   getCampaignPackItemForGeneration(itemId:string):CampaignPackItem|undefined{return this.database.prepare(`SELECT i.id,i.release_id AS releaseId,r.title AS releaseTitle,i.kind,i.channel,i.language,i.content,i.status,i.model_name AS model,i.created_at AS createdAt,i.updated_at AS updatedAt FROM campaign_pack_items i JOIN releases r ON r.id=i.release_id WHERE i.id=?`).get(itemId) as unknown as CampaignPackItem|undefined;}
+  getCampaignPackItemDependencyStatus(itemId: string): CampaignPackItemDependencyStatus {
+    if (!this.getCampaignPackItemForGeneration(itemId)) throw new Error("Promotion format not found");
+    const publishingQueue = Number((this.database.prepare("SELECT COUNT(*) AS n FROM publishing_queue WHERE campaign_pack_item_id = ?").get(itemId) as { n: number }).n);
+    const promoGenerations = Number((this.database.prepare("SELECT COUNT(*) AS n FROM promo_generations WHERE campaign_pack_item_id = ?").get(itemId) as { n: number }).n);
+    const mediaGenerations = Number((this.database.prepare("SELECT COUNT(*) AS n FROM media_generations WHERE campaign_pack_item_id = ?").get(itemId) as { n: number }).n);
+    const blocked = publishingQueue > 0 || mediaGenerations > 0;
+    return {
+      canDelete: !blocked,
+      deleteMode: blocked ? "blocked" : promoGenerations > 0 ? "detach-promo" : "normal",
+      dependencies: { publishingQueue, promoGenerations, mediaGenerations }
+    };
+  }
   deleteCampaignPackItem(itemId: string): void {
     const item = this.getCampaignPackItemForGeneration(itemId);
     if (!item) throw new Error("Promotion format not found");
-    const queue = this.database.prepare("SELECT id, status FROM publishing_queue WHERE campaign_pack_item_id = ?").get(itemId) as { id: string; status: string } | undefined;
-    if (queue) throw new Error("Cannot delete: this promotion format is referenced by a Publishing Queue record; delete the queue record separately first");
-    const promo = this.database.prepare("SELECT id, review_status AS reviewStatus FROM promo_generations WHERE campaign_pack_item_id = ?").get(itemId) as { id: string; reviewStatus: string } | undefined;
-    if (promo) throw new Error("Cannot delete: this promotion format is referenced by generated promo content; delete the promo generation separately first");
-    const media = this.database.prepare("SELECT id, status FROM media_generations WHERE campaign_pack_item_id = ?").get(itemId) as { id: string; status: string } | undefined;
-    if (media) throw new Error("Cannot delete: this promotion format is referenced by a media generation record; delete the media generation separately first");
+    const status = this.getCampaignPackItemDependencyStatus(itemId);
+    if (status.dependencies.publishingQueue > 0) throw new Error("Cannot delete: this promotion format is referenced by a Publishing Queue record; delete the queue record separately first");
+    if (status.dependencies.mediaGenerations > 0) throw new Error("Cannot delete: this promotion format is referenced by a media generation record; delete the media generation separately first");
     const now = new Date().toISOString();
     this.database.exec("BEGIN IMMEDIATE");
     try {
+      this.database.prepare("UPDATE promo_generations SET campaign_pack_item_id = NULL WHERE campaign_pack_item_id = ?").run(itemId);
       this.database.prepare("DELETE FROM campaign_pack_items WHERE id = ?").run(itemId);
-      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_pack_item', ?, 'campaign_pack_item.deleted', ?, ?)").run(itemId, JSON.stringify({ releaseId: item.releaseId, kind: item.kind, status: item.status }), now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_pack_item', ?, 'campaign_pack_item.deleted', ?, ?)").run(itemId, JSON.stringify({ releaseId: item.releaseId, kind: item.kind, status: item.status, deleteMode: status.deleteMode, detachedPromos: status.dependencies.promoGenerations }), now);
       this.database.exec("COMMIT");
     } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
+  cleanupStaleMediaGenerations(releaseId: string): StaleMediaCleanupResult {
+    const rows = this.database.prepare("SELECT id, local_path AS localPath FROM media_generations WHERE release_id = ? AND status IN ('failed','rejected')").all(releaseId) as Array<{ id: string; localPath: string | null }>;
+    const removable = rows.filter((row) => !this.database.prepare("SELECT 1 FROM publishing_queue WHERE media_generation_id = ?").get(row.id));
+    const removedIds: string[] = [];
+    const removedFiles: string[] = [];
+    if (removable.length) {
+      this.database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const row of removable) {
+          const result = this.database.prepare("DELETE FROM media_generations WHERE id = ? AND status IN ('failed','rejected')").run(row.id);
+          if (Number(result.changes) === 0) continue;
+          removedIds.push(row.id);
+        }
+        this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release', ?, 'media_generations.stale_cleanup', ?, ?)").run(releaseId, JSON.stringify({ releaseId, removedIds }), new Date().toISOString());
+        this.database.exec("COMMIT");
+      } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+      for (const row of removable) {
+        if (!removedIds.includes(row.id) || !row.localPath) continue;
+        try { unlinkSync(row.localPath); removedFiles.push(row.localPath); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      }
+    }
+    return { removedIds, removedFiles };
   }
   createMediaGeneration(item:CampaignPackItem,provider:MediaProvider,mediaType:GeneratedMediaType):MediaGenerationSummary{const id=randomUUID(),now=new Date().toISOString();this.database.prepare(`INSERT INTO media_generations(id,release_id,campaign_pack_item_id,provider,media_type,prompt,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'queued',?,?)`).run(id,item.releaseId,item.id,provider,mediaType,item.content,now,now);return this.getMediaGeneration(id)!;}
   updateMediaGeneration(id:string,values:{status:MediaGenerationStatus;providerTaskId?:string|null;localPath?:string|null;mimeType?:string|null;error?:string|null;metadata?:Record<string,unknown>}):MediaGenerationSummary{if(!this.getMediaGeneration(id))throw new Error("Media generation not found");this.database.prepare(`UPDATE media_generations SET status=?,provider_task_id=COALESCE(?,provider_task_id),local_path=COALESCE(?,local_path),mime_type=COALESCE(?,mime_type),error=?,metadata_json=?,updated_at=? WHERE id=?`).run(values.status,values.providerTaskId??null,values.localPath??null,values.mimeType??null,values.error??null,JSON.stringify(values.metadata??{}),new Date().toISOString(),id);return this.getMediaGeneration(id)!;}

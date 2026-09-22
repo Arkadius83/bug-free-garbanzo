@@ -224,6 +224,8 @@ ipcMain.handle("studio:generate-campaign-pack", async (_event, input:GenerateCam
 ipcMain.handle("studio:list-campaign-pack-items", (_event, releaseId:string) => studioDatabase.listCampaignPackItems(releaseId));
 ipcMain.handle("studio:update-campaign-pack-item-status", (_event,itemId:string,status:DraftStatus)=>studioDatabase.updateCampaignPackItemStatus(itemId,status));
 ipcMain.handle("studio:delete-campaign-pack-item", (_event,itemId:string)=>studioDatabase.deleteCampaignPackItem(itemId));
+ipcMain.handle("studio:get-campaign-pack-item-dependency-status", (_event,itemId:string)=>studioDatabase.getCampaignPackItemDependencyStatus(itemId));
+ipcMain.handle("studio:cleanup-stale-media-generations", (_event,releaseId:string)=>studioDatabase.cleanupStaleMediaGenerations(releaseId));
 ipcMain.handle("studio:get-media-generation-settings",()=>mediaGenerationClient.status());
 ipcMain.handle("studio:save-media-generation-credentials",(_event,openAiKey:string,klingKey:string)=>mediaGenerationClient.saveCredentials(openAiKey,klingKey));
 ipcMain.handle("studio:test-comfy-ui",(_event,url:string)=>mediaGenerationClient.testComfyUi(url));

@@ -12,8 +12,9 @@
 .pack-item-head strong { font-size:11px; }
 .pack-item-head>b { font-size:9px; text-transform:uppercase; }
 .campaign-pack-grid article>p { white-space:pre-wrap; color:#c7cdd3; font-size:11px; line-height:1.55; }
-.pack-item-actions { display:flex; gap:6px; }
+.pack-item-actions { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
 .pack-item-actions button { padding:5px 8px; font-size:9px; }
+.pack-lock-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#f0c96e; border:1px solid #7d6530; background:#2b2211; border-radius:5px; padding:3px 6px; }
 .local-generate { border-color:#2f806b!important; color:#6fe1b8!important; background:#10231f!important; }
 
 /* Readability: generated prompts should be comfortable at 100% zoom. */

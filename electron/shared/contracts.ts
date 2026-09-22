@@ -319,6 +319,16 @@ export interface SpotifyReleaseSummary { id: string; name: string; albumType: st
 export interface CatalogMatchSuggestion { soundCloudTrackId: number; soundCloudTitle: string; spotifyReleaseId: string; spotifyTitle: string; artistId: ArtistAlias; score: number; reason: string; }
 export type CampaignPackKind = "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt";
 export interface CampaignPackItem { id: string; releaseId: string; releaseTitle: string; kind: CampaignPackKind; channel: CampaignChannel | null; language: ContentLanguage; content: string; status: DraftStatus; model: string; createdAt: string; updatedAt: string; }
+export interface CampaignPackItemDependencyStatus {
+  canDelete: boolean;
+  deleteMode: "normal" | "detach-promo" | "blocked";
+  dependencies: {
+    publishingQueue: number;
+    promoGenerations: number;
+    mediaGenerations: number;
+  };
+}
+export interface StaleMediaCleanupResult { removedIds: string[]; removedFiles: string[]; }
 export interface GenerateCampaignPackInput extends GenerateCampaignDraftInput { releaseId: string; }
 export type MediaProvider = "openai" | "kling" | "kling-cli" | "comfyui";
 export type GeneratedMediaType = "image" | "video";
@@ -949,6 +959,8 @@ export interface StudioApi {
   listCampaignPackItems(releaseId: string): Promise<CampaignPackItem[]>;
   updateCampaignPackItemStatus(itemId: string, status: DraftStatus): Promise<CampaignPackItem>;
   deleteCampaignPackItem(itemId: string): Promise<void>;
+  getCampaignPackItemDependencyStatus(itemId: string): Promise<CampaignPackItemDependencyStatus>;
+  cleanupStaleMediaGenerations(releaseId: string): Promise<StaleMediaCleanupResult>;
   getMediaGenerationSettings(): Promise<MediaGenerationSettings>;
   saveMediaGenerationCredentials(openAiApiKey: string, klingApiKey: string): Promise<MediaGenerationSettings>;
   testComfyUi(comfyUiUrl:string):Promise<MediaGenerationSettings>;

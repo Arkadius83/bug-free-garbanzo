@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, BrandProfile, CampaignChannel, CampaignPackItem, CatalogMatchSuggestion, ContactChannel, ContactRelationshipStatus, ContactSummary, ContactType, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, KlingCliStatus, LocalServiceStatus, MediaAspectRatio, MediaBridgeStatus, MediaGenerationSettings, MediaGenerationSummary, MediaProvider, MetaConnection, MetaTestPublishResult, PublishingQueueItem, ReleaseReadiness, ReleaseStatus, ReleaseSummary, ScheduleEvent, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudContentType, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyConnection, SpotifyReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary, UpsertContactInput, YouTubeConnection, YouTubePrivacyStatus, YouTubeTestPublishResult, TikTokConnection, TikTokCreatorInfo, TikTokTestPublishResult, TikTokPublishMode, YouTubeChannelDataSnapshot, YouTubeAnalyticsRange, YouTubeAnalyticsSnapshot } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, BrandProfile, CampaignChannel, CampaignPackItem, CampaignPackItemDependencyStatus, CatalogMatchSuggestion, ContactChannel, ContactRelationshipStatus, ContactSummary, ContactType, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, KlingCliStatus, LocalServiceStatus, MediaAspectRatio, MediaBridgeStatus, MediaGenerationSettings, MediaGenerationSummary, MediaProvider, MetaConnection, MetaTestPublishResult, PublishingQueueItem, ReleaseReadiness, ReleaseStatus, ReleaseSummary, ScheduleEvent, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudContentType, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyConnection, SpotifyReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary, UpsertContactInput, YouTubeConnection, YouTubePrivacyStatus, YouTubeTestPublishResult, TikTokConnection, TikTokCreatorInfo, TikTokTestPublishResult, TikTokPublishMode, YouTubeChannelDataSnapshot, YouTubeAnalyticsRange, YouTubeAnalyticsSnapshot } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 import { AudioPlayer } from "./AudioPlayer";
 import { HarnessPlanPreview } from "./HarnessPlanPreview";
@@ -11,6 +11,7 @@ import { Dashboard } from "./features/dashboard/Dashboard";
 import { BottomPlayer } from "./features/dashboard/BottomPlayer";
 import { SettingsPage } from "./features/settings";
 import { PublishingPage } from "./features/publishing";
+import { PackItemDeleteControls } from "./features/campaign-pack/PackItemDeleteControls";
 import { Button } from "./ui/Button";
 import { Tabs } from "./ui/Tabs";
 import { ReleaseFoundation } from "./features/releases/ReleaseFoundation";
@@ -92,6 +93,7 @@ export function App() {
   const [campaignPackItems, setCampaignPackItems] = useState<CampaignPackItem[]>([]);
   const [campaignPackBusy, setCampaignPackBusy] = useState(false);
   const [campaignPackMessage, setCampaignPackMessage] = useState("");
+  const [packDependencyStatuses, setPackDependencyStatuses] = useState<Record<string, CampaignPackItemDependencyStatus>>({});
   const [mediaSettings,setMediaSettings]=useState<MediaGenerationSettings>({openAiConfigured:false,klingConfigured:false,klingCliConfigured:false,klingCliVersion:null,comfyUiUrl:"http://127.0.0.1:8188",comfyUiAvailable:false,comfyUiCheckpoints:[],comfyUiCheckpoint:null,comfyUiError:null});
   const [klingCliStatus,setKlingCliStatus]=useState<KlingCliStatus|null>(null);
    const [openAiKey,setOpenAiKey]=useState("");
@@ -177,7 +179,7 @@ export function App() {
   useEffect(()=>{if(activeView!=="analytics"||!window.studio)return;setAnalyticsMessage("Loading real catalog analytics...");void Promise.all([window.studio.listSoundCloudTracks(),window.studio.listSpotifyReleases(),window.studio.listPublishingQueue(),window.studio.listTasks()]).then(async([tracks,spotifyRows,queue,savedTasks])=>{setSoundCloudTracks(tracks);setSpotifyReleases(spotifyRows);setPublishingQueue(queue);setTasks(savedTasks);const [readiness,performance]=await Promise.all([Promise.all(releases.map(async(release)=>[release.id,await window.studio!.getReleaseReadiness(release.id)] as const)),Promise.all(tracks.map(async(track)=>[track.id,await window.studio!.getSoundCloudTrackPerformance(track.id)] as const))]);setAnalyticsReadiness(Object.fromEntries(readiness));setAnalyticsPerformance(Object.fromEntries(performance));setAnalyticsMessage("");}).catch((error)=>setAnalyticsMessage(error instanceof Error?error.message:"Could not load analytics"));},[activeView,releases]);
   useEffect(()=>{if(activeView!=="contacts"||!window.studio)return;void window.studio.listContacts().then(setContacts).catch((error)=>setContactMessage(error instanceof Error?error.message:"Could not load contacts"));},[activeView]);
 
-  useEffect(() => { if (activeView === "releases" && activeReleaseId && window.studio) void Promise.all([window.studio.listCampaignPackItems(activeReleaseId),window.studio.listMediaGenerations(activeReleaseId),window.studio.getMediaGenerationSettings(),window.studio.getKlingCliStatus()]).then(([items,media,mediaSettingsResult,klingCli])=>{setCampaignPackItems(items);setMediaGenerations(media);setMediaSettings(mediaSettingsResult);setKlingCliStatus(klingCli);}).catch((error) => setCampaignPackMessage(error instanceof Error ? error.message : "Could not load campaign pack")); }, [activeView, activeReleaseId]);
+  useEffect(() => { if (activeView === "releases" && activeReleaseId && window.studio) void Promise.all([window.studio.listCampaignPackItems(activeReleaseId),window.studio.listMediaGenerations(activeReleaseId),window.studio.getMediaGenerationSettings(),window.studio.getKlingCliStatus()]).then(([items,media,mediaSettingsResult,klingCli])=>{setCampaignPackItems(items);setMediaGenerations(media);setMediaSettings(mediaSettingsResult);setKlingCliStatus(klingCli);return Promise.all(items.map(async (item)=>[item.id, await window.studio!.getCampaignPackItemDependencyStatus(item.id)] as const)).then((entries)=>setPackDependencyStatuses(Object.fromEntries(entries)));}).catch((error) => setCampaignPackMessage(error instanceof Error ? error.message : "Could not load campaign pack")); }, [activeView, activeReleaseId]);
   useEffect(()=>{if(!window.studio)return;void Promise.all(mediaGenerations.filter((item)=>["ready","approved","rejected"].includes(item.status)).map(async(item)=>[item.id,await window.studio!.getGeneratedMediaUrl(item.id)] as const)).then((entries)=>setMediaUrls(Object.fromEntries(entries))).catch(()=>undefined);},[mediaGenerations]);
   useEffect(()=>{if(!window.studio)return;const audioAssets=assets.filter((asset)=>asset.kind==="audio");void Promise.all(audioAssets.map(async(asset)=>[asset.id,await window.studio!.getAssetPlaybackUrl(asset.id)] as const)).then((entries)=>setPlaybackUrls(Object.fromEntries(entries))).catch((error)=>setAssetMessage(error instanceof Error?error.message:"Could not prepare audio preview"));},[assets]);
   const pendingMediaKey=mediaGenerations.filter((item)=>item.status==="generating"&&["comfyui","kling-cli"].includes(item.provider)).map((item)=>item.id).sort().join("|");
@@ -450,15 +452,48 @@ export function App() {
   }
 
   async function deleteCampaignPackItem(itemId: string) {
-    if (!window.studio) return;
-    if (!window.confirm("Delete this promotion format? This cannot be undone.")) return;
+    const studio = window.studio;
+    if (!studio) return;
+    const dependency = packDependencyStatuses[itemId] ?? null;
+    if (dependency && !dependency.canDelete) {
+      setCampaignPackMessage(dependency.dependencies.publishingQueue > 0 ? "Locked: publishing queue" : "Locked: media generation");
+      playInterfaceSound("error");
+      return;
+    }
+    const confirmText = dependency?.deleteMode === "detach-promo"
+      ? "Delete this promotion format? Linked promo content and schedule stay unchanged; only the source reference is detached. This cannot be undone."
+      : "Delete this promotion format? This cannot be undone.";
+    if (!window.confirm(confirmText)) return;
     try {
-      await window.studio.deleteCampaignPackItem(itemId);
-      if (activeReleaseId) setCampaignPackItems(await window.studio.listCampaignPackItems(activeReleaseId));
-      setCampaignPackMessage("Promotion format deleted.");
+      await studio.deleteCampaignPackItem(itemId);
+      if (activeReleaseId) {
+        const items = await studio.listCampaignPackItems(activeReleaseId);
+        setCampaignPackItems(items);
+        const entries = await Promise.all(items.map(async (item) => [item.id, await studio.getCampaignPackItemDependencyStatus(item.id)] as const));
+        setPackDependencyStatuses(Object.fromEntries(entries));
+      }
+      setCampaignPackMessage(dependency?.deleteMode === "detach-promo" ? "Promotion format deleted. Promo content unchanged." : "Promotion format deleted.");
       playInterfaceSound("success");
     } catch (error) {
       setCampaignPackMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not delete promotion format");
+      playInterfaceSound("error");
+    }
+  }
+
+  async function cleanupStaleMedia() {
+    const studio = window.studio;
+    if (!studio || !activeReleaseId) return;
+    try {
+      const result = await studio.cleanupStaleMediaGenerations(activeReleaseId);
+      setMediaGenerations(await studio.listMediaGenerations(activeReleaseId));
+      const items = await studio.listCampaignPackItems(activeReleaseId);
+      setCampaignPackItems(items);
+      const entries = await Promise.all(items.map(async (item) => [item.id, await studio.getCampaignPackItemDependencyStatus(item.id)] as const));
+      setPackDependencyStatuses(Object.fromEntries(entries));
+      setMediaMessage(result.removedIds.length ? `Removed ${result.removedIds.length} stale media generation(s).` : "No stale media to clean up.");
+      playInterfaceSound(result.removedIds.length ? "success" : "error");
+    } catch (error) {
+      setMediaMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not clean stale media");
       playInterfaceSound("error");
     }
   }
@@ -805,7 +840,7 @@ export function App() {
           </section>
         </div>
         {activeView === "releases" && currentRelease && <section className="panel release-plan-panel"><ReleasePlanPanel release={currentRelease} /></section>}
-        {activeView === "releases" && <section className="panel campaign-pack-panel"><div className="campaign-pack-heading"><div><span className="eyebrow">Campaign Pack Generator V1</span><h2>One release. Every promotional format.</h2><p>Approve a media prompt first. ComfyUI starts automatically on demand; Kling CLI runs locally with no API credits.</p></div><button className="primary" disabled={campaignPackBusy||!activeReleaseId||!aiSettings.model} onClick={()=>void generateCampaignPack()}>{campaignPackBusy?"Generating pack...":`Generate ${aiSettings.language.toUpperCase()} pack`}</button></div>{(campaignPackMessage||mediaMessage)&&<p className="integration-message">{mediaMessage||campaignPackMessage}</p>}<div className="campaign-pack-grid">{campaignPackItems.map((item)=><article key={item.id}><div className="pack-item-head"><div><span>{item.kind.replaceAll("-"," ").toUpperCase()}</span><strong>{item.channel??"MEDIA GENERATION"} · {item.language.toUpperCase()}</strong></div><b className={`status-${item.status}`}>{item.status}</b></div><p>{item.content}</p><div className="pack-item-actions">{nextDraftActions(item.status).map((next)=><button key={next} onClick={()=>void changeCampaignPackStatus(item.id,next)}>{next}</button>)}<button className="danger-button" title="Delete" onClick={()=>void deleteCampaignPackItem(item.id)}>Delete</button>{item.status==="approved"&&item.kind==="image-prompt"&&<><button className="local-generate" disabled={mediaBusy===item.id||!mediaSettings.comfyUiCheckpoint} onClick={()=>void generateMedia(item,"comfyui","image")}>Generate locally · ComfyUI</button><button disabled={mediaBusy===item.id||!mediaSettings.openAiConfigured} onClick={()=>void generateMedia(item,"openai","image")}>OpenAI</button><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","image")}>Kling CLI</button></>}{item.status==="approved"&&["visualizer-prompt","video-script"].includes(item.kind)&&<><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","video")}>Generate video · Kling CLI</button></>}</div></article>)}</div>{mediaGenerations.length>0&&<div className="media-gallery"><div className="campaign-pack-heading"><div><span className="eyebrow">Results gallery</span><h2>Generated media.</h2></div></div><div className="media-gallery-grid">{mediaGenerations.map((media)=><article key={media.id}>{mediaUrls[media.id]?(media.mediaType==="image"?<img src={mediaUrls[media.id]} alt={media.prompt}/>:<video src={mediaUrls[media.id]} controls preload="metadata"/>):<div className="media-pending">{media.status==="failed"?"Generation failed":"Generation in progress"}</div>}<div><strong>{media.provider.toUpperCase()} · {media.mediaType}</strong><b className={`status-${media.status}`}>{media.status}</b><p>{media.error??media.prompt}</p><div className="pack-item-actions">{media.status==="generating"&&<button disabled={mediaBusy===media.id} onClick={()=>void refreshMedia(media.id)}>Refresh {media.provider==="comfyui"?"ComfyUI":"Kling"} task</button>}{["ready","approved","rejected"].includes(media.status)&&<><button onClick={()=>void reviewMedia(media.id,"approved")}>Approve</button><button onClick={()=>void reviewMedia(media.id,"rejected")}>Reject</button></>}</div></div></article>)}</div></div>}</section>}
+        {activeView === "releases" && <section className="panel campaign-pack-panel"><div className="campaign-pack-heading"><div><span className="eyebrow">Campaign Pack Generator V1</span><h2>One release. Every promotional format.</h2><p>Approve a media prompt first. ComfyUI starts automatically on demand; Kling CLI runs locally with no API credits.</p></div><button className="primary" disabled={campaignPackBusy||!activeReleaseId||!aiSettings.model} onClick={()=>void generateCampaignPack()}>{campaignPackBusy?"Generating pack...":`Generate ${aiSettings.language.toUpperCase()} pack`}</button>{mediaGenerations.some((row)=>["failed","rejected"].includes(row.status))&&<button className="danger-button" disabled={!activeReleaseId||mediaBusy!==null} title="Remove failed/rejected media generations and their local files" onClick={()=>void cleanupStaleMedia()}>Clean stale media</button>}</div>{(campaignPackMessage||mediaMessage)&&<p className="integration-message">{mediaMessage||campaignPackMessage}</p>}<div className="campaign-pack-grid">{campaignPackItems.map((item)=><article key={item.id}><div className="pack-item-head"><div><span>{item.kind.replaceAll("-"," ").toUpperCase()}</span><strong>{item.channel??"MEDIA GENERATION"} · {item.language.toUpperCase()}</strong></div><b className={`status-${item.status}`}>{item.status}</b></div><p>{item.content}</p><div className="pack-item-actions">{nextDraftActions(item.status).map((next)=><button key={next} onClick={()=>void changeCampaignPackStatus(item.id,next)}>{next}</button>)}<PackItemDeleteControls dependencyStatus={packDependencyStatuses[item.id]??null} onDelete={()=>void deleteCampaignPackItem(item.id)} />{item.status==="approved"&&item.kind==="image-prompt"&&<><button className="local-generate" disabled={mediaBusy===item.id||!mediaSettings.comfyUiCheckpoint} onClick={()=>void generateMedia(item,"comfyui","image")}>Generate locally · ComfyUI</button><button disabled={mediaBusy===item.id||!mediaSettings.openAiConfigured} onClick={()=>void generateMedia(item,"openai","image")}>OpenAI</button><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","image")}>Kling CLI</button></>}{item.status==="approved"&&["visualizer-prompt","video-script"].includes(item.kind)&&<><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","video")}>Generate video · Kling CLI</button></>}</div></article>)}</div>{mediaGenerations.length>0&&<div className="media-gallery"><div className="campaign-pack-heading"><div><span className="eyebrow">Results gallery</span><h2>Generated media.</h2></div></div><div className="media-gallery-grid">{mediaGenerations.map((media)=><article key={media.id}>{mediaUrls[media.id]?(media.mediaType==="image"?<img src={mediaUrls[media.id]} alt={media.prompt}/>:<video src={mediaUrls[media.id]} controls preload="metadata"/>):<div className="media-pending">{media.status==="failed"?"Generation failed":"Generation in progress"}</div>}<div><strong>{media.provider.toUpperCase()} · {media.mediaType}</strong><b className={`status-${media.status}`}>{media.status}</b><p>{media.error??media.prompt}</p><div className="pack-item-actions">{media.status==="generating"&&<button disabled={mediaBusy===media.id} onClick={()=>void refreshMedia(media.id)}>Refresh {media.provider==="comfyui"?"ComfyUI":"Kling"} task</button>}{["ready","approved","rejected"].includes(media.status)&&<><button onClick={()=>void reviewMedia(media.id,"approved")}>Approve</button><button onClick={()=>void reviewMedia(media.id,"rejected")}>Reject</button></>}</div></div></article>)}</div></div>}</section>}
         </div></div>}
       </main>
       <BottomPlayer source={playerSource} playing={playerPlaying} onTogglePlay={() => setPlayerPlaying((p) => !p)} />
