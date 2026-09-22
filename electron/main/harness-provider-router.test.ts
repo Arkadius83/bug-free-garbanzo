@@ -199,16 +199,18 @@ test("process wiring reports invalid JSON despite exit zero", async () => {
   const result = await runProcessWithStateTracking("mock", [], ".", { hardLimitMs: 1000, label: "provider runner", providerId: "provider-runner", spawnProcess: fakeRunner("invalid-json", 0, null) });
   assert.equal(result.diagnostic.finalStatus, "invalid_result");
 });
-test("process wiring cancellation wins over valid output", async () => {
+test("process wiring valid result resolves before cancellation", async () => {
   const controller = new AbortController();
-  await assert.rejects(runProcessWithStateTracking("mock", [], ".", { signal: controller.signal, hardLimitMs: 1000, label: "provider runner", spawnProcess: fakeRunner(successfulJson, null, "SIGTERM", controller) }), (error: unknown) => {
-    assert.equal((error as { diagnostic: { finalStatus: string } }).diagnostic.finalStatus, "cancelled"); return true;
-  });
+  const result = await runProcessWithStateTracking("mock", [], ".", { signal: controller.signal, hardLimitMs: 1000, label: "provider runner", spawnProcess: fakeRunner(successfulJson, null, "SIGTERM", controller) });
+  assert.equal(result.finalState, "DONE");
+  assert.equal(result.diagnostic.finalStatus, "success");
+  assert.equal(result.diagnostic.validResultReceived, true);
 });
-test("process wiring hard timeout wins over valid output", async () => {
-  await assert.rejects(runProcessWithStateTracking("mock", [], ".", { hardLimitMs: 0, label: "provider runner", spawnProcess: fakeRunner(successfulJson, null, "SIGTERM", undefined, true) }), (error: unknown) => {
-    assert.equal((error as { diagnostic: { finalStatus: string } }).diagnostic.finalStatus, "timeout"); return true;
-  });
+test("process wiring valid result resolves before hard timeout", async () => {
+  const result = await runProcessWithStateTracking("mock", [], ".", { hardLimitMs: 0, label: "provider runner", spawnProcess: fakeRunner(successfulJson, null, "SIGTERM", undefined, true) });
+  assert.equal(result.finalState, "DONE");
+  assert.equal(result.diagnostic.finalStatus, "success");
+  assert.equal(result.diagnostic.validResultReceived, true);
 });
 test("process wiring reports crash metadata", async () => {
   await assert.rejects(runProcessWithStateTracking("mock", [], ".", { hardLimitMs: 1000, label: "provider runner", spawnProcess: fakeRunner("", 1, null) }), (error: unknown) => {

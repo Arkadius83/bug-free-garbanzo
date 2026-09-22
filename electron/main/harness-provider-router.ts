@@ -109,6 +109,12 @@ export function parseProviderResult(stdout: string): ConversationProviderRouteRe
 function hasSuccessfulProviderResult(stdout: string): boolean {
   return parseProviderResult(stdout)?.ok === true;
 }
+
+function detectValidResultInBuffer(stdout: string, label: string): boolean {
+  if (label !== "provider runner") return false;
+  return hasSuccessfulProviderResult(stdout);
+}
+
 export function classifyProviderProcessClose(input: { code: number | null; signal: NodeJS.Signals | null; stdout: string; signalAborted: boolean; timedOut: boolean; label: string }): ProviderProcessCloseDecision {
   const exit = `exit code ${input.code === null ? "null" : input.code} signal ${input.signal ?? "none"}`;
   if (input.signalAborted) return { action: "cancel", detail: `user abort; ${exit}` };
@@ -212,9 +218,10 @@ export async function runProcessWithStateTracking(
     let state: ProviderState = "CONNECTING";
     let stdout = "";
     let stderr = "";
-    let hardLimitTimer: ReturnType<typeof setTimeout> | null = null;
+let hardLimitTimer: ReturnType<typeof setTimeout> | null = null;
     let timedOut = false;
     let settled = false;
+    let resolvedEarly = false;
     const onAbort = () => { child.kill("SIGTERM"); };
 
     function clearTimers(): void {
@@ -243,8 +250,17 @@ export async function runProcessWithStateTracking(
       });
     }
 
-    transitionTo("RUNNING", "process spawned");
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+transitionTo("RUNNING", "process spawned");
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout += chunk.toString();
+      if (!settled && detectValidResultInBuffer(stdout, options.label)) {
+        console.log(`[provider-router] Valid result received for ${options.label} - cleaning up`);
+        resolvedEarly = true;
+        settled = true;
+        clearTimers();
+        child.kill("SIGTERM");
+      }
+    });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
     child.on("error", (error) => {
       if (settled) return;
@@ -255,7 +271,15 @@ export async function runProcessWithStateTracking(
       const diagnostic = diagnosticFor(decision, null, null, error.message);
       reject(Object.assign(error, { diagnostic }));
     });
-    child.on("close", (code, signal) => {
+child.on("close", (code, signal) => {
+      if (resolvedEarly) {
+        console.log(`[provider-router] ${options.label} exited after early resolution: ${code === null ? "null" : code} signal ${signal ?? "none"}`);
+        transitionTo("DONE", `early resolution; exit code ${code === null ? "null" : code} signal ${signal ?? "none"}`);
+        const decision: ProviderProcessCloseDecision = { action: "resolve", detail: `early resolution; exit code ${code === null ? "null" : code} signal ${signal ?? "none"}` };
+        const diagnostic = diagnosticFor(decision, code, signal);
+        resolve({ stdout, finalState: state, diagnostic });
+        return;
+      }
       if (settled) return;
       settled = true;
       clearTimers();
