@@ -3,6 +3,12 @@ import type { StudioApi } from "../shared/contracts.js";
 const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
 const api: StudioApi = {
+  sendConversationMessage: (input, onChunk) => {
+    const listener = (_event: Electron.IpcRendererEvent, chunk: { requestId: string }) => { if (chunk.requestId === input.requestId) onChunk?.(chunk as never); };
+    if (onChunk) ipcRenderer.on("studio:conversation-chunk", listener);
+    return ipcRenderer.invoke("studio:send-conversation-message", input).finally(() => { if (onChunk) ipcRenderer.removeListener("studio:conversation-chunk", listener); });
+  },
+  cancelConversation: (requestId) => ipcRenderer.invoke("studio:cancel-conversation", requestId),
   runAiHarnessPlan: (input) => ipcRenderer.invoke("studio:run-ai-harness-plan", input),
   getHarnessExecutionContext: () => ipcRenderer.invoke("studio:get-harness-execution-context"),
   reviewHarnessExecution: (input) => ipcRenderer.invoke("studio:review-harness-execution", input),

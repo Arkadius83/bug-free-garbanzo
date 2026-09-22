@@ -90,7 +90,7 @@ export function App() {
           const analyses = await Promise.all(initialAssets.filter((asset) => asset.kind === "audio").map(async (asset) => [asset.id, await window.studio!.getAudioAnalysis(asset.id)] as const));
           setAudioAnalyses(Object.fromEntries(analyses.filter((entry): entry is readonly [string, AudioAnalysisSummary] => entry[1] !== null)));
         }
-        const savedModelStillExists = system.ollama.models.some((model) => model.name === savedAiSettings.model);
+        const savedModelStillExists = savedAiSettings.model === null || system.ollama.models.some((model) => model.name === savedAiSettings.model);
         const preferredModel = system.ollama.models.find((model) => /^deepseek-r1(?::|$)/i.test(model.name)) ?? system.ollama.models[0];
         const resolvedSettings = savedModelStillExists || system.ollama.models.length === 0
           ? savedAiSettings
@@ -555,7 +555,7 @@ export function App() {
         </div>}
 
         {activeView==="analytics"&&<AnalyticsPage releases={releases} onOpenRelease={openReleaseWorkspace} />}
-        {activeView === "ai-studio" && <ConversationWorkspace release={currentRelease} artistId={selectedArtist} artistName={artist.name} status={status} onOpenRelease={() => openReleaseWorkspace(currentRelease)} />}
+        {activeView === "ai-studio" && <ConversationWorkspace release={currentRelease} artistId={selectedArtist} artistName={artist.name} status={status} activeModel={aiSettings.model} onModelChange={(model) => void updateAiSettings({ ...aiSettings, model })} onOpenRelease={() => openReleaseWorkspace(currentRelease)} />}
 
         {activeView==="contacts"&&<ContactsPage releases={releases} onTasksChanged={setTasks} />}
 

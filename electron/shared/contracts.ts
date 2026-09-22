@@ -23,6 +23,51 @@ export interface AiSettings {
   channel: CampaignChannel;
 }
 
+
+export type ConversationRole = "user" | "assistant" | "system";
+export type ConversationRuntimeState = "Ready" | "Thinking" | "Responding" | "Error";
+
+export interface ConversationMessage {
+  id: string;
+  role: Exclude<ConversationRole, "system">;
+  content: string;
+  createdAt: string;
+}
+
+export interface ConversationWorkspaceContext {
+  projectName: string;
+  artistId: ArtistAlias;
+  artistName: string;
+  releaseId?: string | null;
+  releaseTitle?: string | null;
+  primaryGenre?: string | null;
+  releaseStatus?: string | null;
+}
+
+export interface ConversationRequest {
+  requestId: string;
+  model: string | null;
+  message: string;
+  history: ConversationMessage[];
+  workspace: ConversationWorkspaceContext;
+  stream?: boolean;
+}
+
+export interface ConversationChunk {
+  requestId: string;
+  content: string;
+  done: boolean;
+}
+
+export interface ConversationResponse {
+  requestId: string;
+  provider: string;
+  model: string;
+  content: string;
+  streamed: boolean;
+  interrupted: boolean;
+  error?: string;
+}
 export interface GenerateCampaignDraftInput {
   model: string;
   language: ContentLanguage;
@@ -353,6 +398,8 @@ export interface UpdateReleaseInput extends CreateReleaseDraftInput {
 }
 
 export interface StudioApi {
+  sendConversationMessage(input: ConversationRequest, onChunk?: (chunk: ConversationChunk) => void): Promise<ConversationResponse>;
+  cancelConversation(requestId: string): Promise<void>;
   runAiHarnessPlan(input: AiHarnessRequest): Promise<AiHarnessResponse>;
   getHarnessExecutionContext(): Promise<HarnessExecutionContext>;
   reviewHarnessExecution(input: HarnessExecutionApprovalRequest): Promise<HarnessExecutionReview>;
@@ -437,4 +484,3 @@ export interface StudioApi {
   getMediaBridgeStatus():Promise<MediaBridgeStatus>;
   saveMediaBridgeSettings(accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string):Promise<MediaBridgeStatus>;
 }
-
