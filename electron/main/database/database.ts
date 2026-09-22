@@ -3,6 +3,9 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AddContactInteractionInput, AssetSummary, AttachAssetInput, AudioAnalysisSummary, BrandProfile, CampaignPackItem, CampaignPackKind, CatalogMatchSuggestion, ContactInteraction, ContactSummary, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, GeneratedMediaType, MediaGenerationStatus, MediaGenerationSummary, MediaProvider, PublishingQueueItem, PublishingStatus, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../../shared/contracts.js";
+import type { ApprovalAction, ApprovalEntityType, ApprovalRecord, CampaignItem, CampaignItemContentType, CampaignItemStatus, ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreateReleasePlanInput, RecordApprovalActionInput, ReleasePlan, ReleasePlanStatus, ReorderCampaignItemsInput, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateCampaignItemInput, UpdateReleasePlanInput } from "../../shared/contracts.js";
+import { buildReleasePlanDraft, type GeneratedReleasePlanDraft, type GeneratedReleasePlanItem } from "../release-plan-generation.js";
+
 import { migrateDatabase } from "./migration-runner.js";
 
 const seedArtists = [
@@ -11,6 +14,39 @@ const seedArtists = [
   ["ar-tek", "AR-TEK", ["Techno", "Psy-Tech"], "Minimal, technological, hypnotic, club-focused"],
   ["echoes-of-arcadia", "Echoes of Arcadia", ["Psybient", "Psychill", "Downtempo", "Ambient"], "Cinematic, spacious, contemplative, organic"]
 ] as const;
+
+const releasePlanTransitions: Record<ReleasePlanStatus, ReleasePlanStatus[]> = {
+  DRAFT: ["REVIEWED", "CANCELLED"],
+  REVIEWED: ["DRAFT", "APPROVED", "CANCELLED"],
+  APPROVED: ["EXECUTING", "CANCELLED"],
+  EXECUTING: ["COMPLETED", "FAILED", "CANCELLED"],
+  COMPLETED: [],
+  CANCELLED: [],
+  FAILED: ["DRAFT", "CANCELLED"]
+};
+const releasePlanStatuses = new Set<ReleasePlanStatus>(["DRAFT", "REVIEWED", "APPROVED", "EXECUTING", "COMPLETED", "CANCELLED", "FAILED"]);
+const campaignItemStatuses = new Set<CampaignItemStatus>(["DRAFT", "READY", "APPROVED", "CANCELLED"]);
+const campaignItemContentTypes = new Set<CampaignItemContentType>(["caption", "video-hook", "video-script", "image-prompt", "visualizer-prompt", "story", "email", "other"]);
+const approvalActions = new Set<ApprovalAction>(["SUBMITTED", "APPROVED", "REJECTED", "REVISION_REQUESTED"]);
+const approvalEntityTypes = new Set<ApprovalEntityType>(["release_plan"]);
+const immutableReleasePlanStatuses = new Set<ReleasePlanStatus>(["APPROVED", "EXECUTING", "COMPLETED"]);
+
+function parseStringArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch { return []; }
+}
+
+function normalizeCampaignPlatforms(value: readonly string[]): import("../../shared/contracts.js").CampaignChannel[] {
+  const allowed = new Set(["Instagram", "Facebook", "TikTok", "SoundCloud", "YouTube"]);
+  if (value.some((item) => !allowed.has(item))) throw new Error("Invalid campaign target platform");
+  return [...new Set(value)] as import("../../shared/contracts.js").CampaignChannel[];
+}
+
+function parseCampaignPlatforms(value: string): import("../../shared/contracts.js").CampaignChannel[] {
+  return normalizeCampaignPlatforms(parseStringArray(value));
+}
 
 export class StudioDatabase {
   private readonly database: DatabaseSync;
@@ -557,6 +593,283 @@ export class StudioDatabase {
       `).run(randomUUID(), link.projectId, releaseId, check.detail, check.complete ? "done" : "todo", check.weight >= 20 ? "high" : "medium", assignee, sourceKey, now, now);
       this.database.prepare("UPDATE tasks SET title = ?, status = ?, priority = ?, assignee = ?, updated_at = ? WHERE source_key = ?").run(check.detail, check.complete ? "done" : "todo", check.weight >= 20 ? "high" : "medium", assignee, now, sourceKey);
     }
+  }
+
+  createReleasePlan(input: CreateReleasePlanInput): ReleasePlan {
+    const release = this.database.prepare("SELECT title FROM releases WHERE id = ?").get(input.releaseId) as { title: string } | undefined;
+    if (!release) throw new Error("Release not found");
+    const title = input.title.trim();
+    if (!title) throw new Error("Release plan title is required");
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const summary = input.summary?.trim() ?? "";
+    const createdBy = input.createdBy?.trim() || "local-user";
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const revisionNumber = this.nextReleasePlanRevisionNumber(input.releaseId);
+      this.database.prepare(`INSERT INTO release_plans (id, release_id, revision_number, title, summary, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, input.releaseId, revisionNumber, title, summary, createdBy, now, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'release_plan.created', ?, ?)").run(id, JSON.stringify({ releaseId: input.releaseId, title }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getReleasePlan(id)!;
+  }
+
+  getReleasePlan(id: string): ReleasePlan | null {
+    const row = this.database.prepare(`SELECT id, release_id AS releaseId, status, version, revision_number AS revisionNumber, previous_plan_id AS previousPlanId, title, summary, created_by AS createdBy, approved_at AS approvedAt, completed_at AS completedAt, created_at AS createdAt, updated_at AS updatedAt FROM release_plans WHERE id = ?`).get(id) as Omit<ReleasePlan, "campaignItems"> | undefined;
+    return row ? { ...row, campaignItems: this.listCampaignItems(row.id) } : null;
+  }
+
+  listReleasePlans(releaseId: string): ReleasePlan[] {
+    if (!this.database.prepare("SELECT 1 FROM releases WHERE id = ?").get(releaseId)) throw new Error("Release not found");
+    const rows = this.database.prepare(`SELECT id, release_id AS releaseId, status, version, revision_number AS revisionNumber, previous_plan_id AS previousPlanId, title, summary, created_by AS createdBy, approved_at AS approvedAt, completed_at AS completedAt, created_at AS createdAt, updated_at AS updatedAt FROM release_plans WHERE release_id = ? ORDER BY revision_number DESC, created_at DESC, id DESC`).all(releaseId) as unknown as Array<Omit<ReleasePlan, "campaignItems">>;
+    return rows.map((row) => ({ ...row, campaignItems: this.listCampaignItems(row.id) }));
+  }
+
+  getCurrentReleasePlan(releaseId: string): ReleasePlan | null {
+    if (!this.database.prepare("SELECT 1 FROM releases WHERE id = ?").get(releaseId)) throw new Error("Release not found");
+    const row = this.database.prepare("SELECT id FROM release_plans WHERE release_id = ? ORDER BY revision_number DESC, created_at DESC, id DESC LIMIT 1").get(releaseId) as { id: string } | undefined;
+    return row ? this.getReleasePlan(row.id) : null;
+  }
+
+  generateReleasePlan(input: GenerateReleasePlanInput): ReleasePlan {
+    return this.createGeneratedReleasePlanRevision(input.releaseId, { actor: input.actor, reason: "generated" });
+  }
+
+  regenerateReleasePlan(input: RegenerateReleasePlanInput): ReleasePlan {
+    return this.createGeneratedReleasePlanRevision(input.releaseId, { actor: input.actor, reason: input.reason ?? "regenerated" });
+  }
+
+  generateReleasePlanFromDraft(releaseId: string, draft: GeneratedReleasePlanDraft, options: { actor?: string }): ReleasePlan {
+    return this.createGeneratedReleasePlanRevision(releaseId, { actor: options.actor, reason: "ai-generated", draft });
+  }
+
+  regenerateReleasePlanFromDraft(releaseId: string, draft: GeneratedReleasePlanDraft, options: { actor?: string; reason?: string }): ReleasePlan {
+    return this.createGeneratedReleasePlanRevision(releaseId, { actor: options.actor, reason: options.reason ?? "ai-regenerated", draft });
+  }
+
+  approveReleasePlan(input: ApproveReleasePlanInput): ReleasePlan {
+    const current = this.getReleasePlan(input.id);
+    if (!current) throw new Error("Release plan not found");
+    return this.changeReleasePlanStatus({ id: input.id, status: "APPROVED", actor: input.actor, reason: input.reason });
+  }
+
+  updateReleasePlan(input: UpdateReleasePlanInput): ReleasePlan {
+    const current = this.getReleasePlan(input.id);
+    if (!current) throw new Error("Release plan not found");
+    if (immutableReleasePlanStatuses.has(current.status)) throw new Error("Release plan is immutable in its current status; generate a new revision instead.");
+    const title = input.title === undefined ? current.title : input.title.trim();
+    const summary = input.summary === undefined ? current.summary : input.summary.trim();
+    if (!title) throw new Error("Release plan title is required");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("UPDATE release_plans SET title = ?, summary = ?, version = version + 1, updated_at = ? WHERE id = ?").run(title, summary, now, input.id);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'release_plan.updated', ?, ?)").run(input.id, JSON.stringify({ title, summary }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getReleasePlan(input.id)!;
+  }
+
+  changeReleasePlanStatus(input: ChangeReleasePlanStatusInput): ReleasePlan {
+    if (!releasePlanStatuses.has(input.status)) throw new Error("Invalid release plan status");
+    const current = this.getReleasePlan(input.id);
+    if (!current) throw new Error("Release plan not found");
+    if (!releasePlanTransitions[current.status].includes(input.status)) throw new Error(`Invalid release plan transition: ${current.status} → ${input.status}`);
+    const now = new Date().toISOString();
+    const actor = input.actor?.trim() || "local-user";
+    const reason = input.reason?.trim() ?? "";
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("UPDATE release_plans SET status = ?, version = version + 1, approved_at = CASE WHEN ? = 'APPROVED' THEN ? ELSE approved_at END, completed_at = CASE WHEN ? = 'COMPLETED' THEN ? ELSE completed_at END, updated_at = ? WHERE id = ?").run(input.status, input.status, now, input.status, now, now, input.id);
+      if (input.status === "APPROVED") this.insertApprovalRecord({ entityType: "release_plan", entityId: input.id, action: "APPROVED", actor, reason, previousStatus: current.status, newStatus: input.status }, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'release_plan.status_changed', ?, ?)").run(input.id, JSON.stringify({ from: current.status, to: input.status, actor, reason }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getReleasePlan(input.id)!;
+  }
+
+  createCampaignItem(input: CreateCampaignItemInput): CampaignItem {
+    const targetPlan = this.getReleasePlan(input.releasePlanId);
+    if (!targetPlan) throw new Error("Release plan not found");
+    if (immutableReleasePlanStatuses.has(targetPlan.status)) throw new Error("Approved release plans are immutable; create a new draft revision before editing campaign items.");
+    const title = input.title.trim();
+    if (!title) throw new Error("Campaign item title is required");
+    if (!campaignItemContentTypes.has(input.contentType)) throw new Error("Invalid campaign item content type");
+    const status = input.status ?? "DRAFT";
+    if (!campaignItemStatuses.has(status)) throw new Error("Invalid campaign item status");
+    const sortOrder = input.sortOrder ?? this.nextCampaignItemSortOrder(input.releasePlanId);
+    if (!Number.isSafeInteger(sortOrder) || sortOrder < 0) throw new Error("Invalid campaign item sort order");
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare(`INSERT INTO campaign_items (id, release_plan_id, title, purpose, content_type, target_platforms_json, planned_date, planned_time, cta, notes, asset_requirements_json, copy_requirements_json, status, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, input.releasePlanId, title, input.purpose.trim(), input.contentType, JSON.stringify(normalizeCampaignPlatforms(input.targetPlatforms)), input.plannedDate ?? null, input.plannedTime ?? null, input.cta?.trim() ?? "", input.notes?.trim() ?? "", JSON.stringify(input.assetRequirements ?? []), JSON.stringify(input.copyRequirements ?? []), status, sortOrder, now, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_item', ?, 'campaign_item.created', ?, ?)").run(id, JSON.stringify({ releasePlanId: input.releasePlanId, sortOrder }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getCampaignItem(id)!;
+  }
+
+  updateCampaignItem(input: UpdateCampaignItemInput): CampaignItem {
+    const current = this.getCampaignItem(input.id);
+    if (!current) throw new Error("Campaign item not found");
+    this.assertReleasePlanMutable(current.releasePlanId);
+    const next = {
+      title: input.title === undefined ? current.title : input.title.trim(),
+      purpose: input.purpose === undefined ? current.purpose : input.purpose.trim(),
+      contentType: input.contentType ?? current.contentType,
+      targetPlatforms: input.targetPlatforms ?? current.targetPlatforms,
+      plannedDate: input.plannedDate === undefined ? current.plannedDate : input.plannedDate,
+      plannedTime: input.plannedTime === undefined ? current.plannedTime : input.plannedTime,
+      cta: input.cta === undefined ? current.cta : input.cta.trim(),
+      notes: input.notes === undefined ? current.notes : input.notes.trim(),
+      assetRequirements: input.assetRequirements ?? current.assetRequirements,
+      copyRequirements: input.copyRequirements ?? current.copyRequirements,
+      status: input.status ?? current.status,
+      sortOrder: input.sortOrder ?? current.sortOrder
+    };
+    if (!next.title) throw new Error("Campaign item title is required");
+    if (!Number.isSafeInteger(next.sortOrder) || next.sortOrder < 0) throw new Error("Invalid campaign item sort order");
+    if (!campaignItemContentTypes.has(next.contentType)) throw new Error("Invalid campaign item content type");
+    if (!campaignItemStatuses.has(next.status)) throw new Error("Invalid campaign item status");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare(`UPDATE campaign_items SET title=?, purpose=?, content_type=?, target_platforms_json=?, planned_date=?, planned_time=?, cta=?, notes=?, asset_requirements_json=?, copy_requirements_json=?, status=?, sort_order=?, updated_at=? WHERE id=?`).run(next.title, next.purpose, next.contentType, JSON.stringify(normalizeCampaignPlatforms(next.targetPlatforms)), next.plannedDate, next.plannedTime, next.cta, next.notes, JSON.stringify(next.assetRequirements), JSON.stringify(next.copyRequirements), next.status, next.sortOrder, now, input.id);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_item', ?, 'campaign_item.updated', ?, ?)").run(input.id, JSON.stringify({ releasePlanId: current.releasePlanId }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getCampaignItem(input.id)!;
+  }
+
+  deleteCampaignItem(id: string): void {
+    const current = this.getCampaignItem(id);
+    if (!current) throw new Error("Campaign item not found");
+    this.assertReleasePlanMutable(current.releasePlanId);
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM campaign_items WHERE id = ?").run(id);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_item', ?, 'campaign_item.deleted', ?, ?)").run(id, JSON.stringify({ releasePlanId: current.releasePlanId, sortOrder: current.sortOrder }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
+
+  reorderCampaignItems(input: ReorderCampaignItemsInput): CampaignItem[] {
+    this.assertReleasePlanMutable(input.releasePlanId);
+    const current = this.listCampaignItems(input.releasePlanId);
+    const currentIds = current.map((item) => item.id).sort();
+    const nextIds = [...input.itemIds].sort();
+    if (currentIds.length !== nextIds.length || currentIds.some((id, index) => id !== nextIds[index])) throw new Error("Campaign item reorder must include every item exactly once");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      input.itemIds.forEach((id, index) => this.database.prepare("UPDATE campaign_items SET sort_order = ?, updated_at = ? WHERE id = ? AND release_plan_id = ?").run(-100000 - index, now, id, input.releasePlanId));
+      input.itemIds.forEach((id, index) => this.database.prepare("UPDATE campaign_items SET sort_order = ?, updated_at = ? WHERE id = ? AND release_plan_id = ?").run(index, now, id, input.releasePlanId));
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'campaign_items.reordered', ?, ?)").run(input.releasePlanId, JSON.stringify({ itemIds: input.itemIds }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.listCampaignItems(input.releasePlanId);
+  }
+
+  replaceReleasePlanItems(releasePlanId: string, items: Omit<CreateCampaignItemInput, "releasePlanId" | "sortOrder">[]): CampaignItem[] {
+    if (!this.getReleasePlan(releasePlanId)) throw new Error("Release plan not found");
+    this.assertReleasePlanMutable(releasePlanId);
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM campaign_items WHERE release_plan_id = ?").run(releasePlanId);
+      const insert = this.database.prepare(`INSERT INTO campaign_items (id, release_plan_id, title, purpose, content_type, target_platforms_json, planned_date, planned_time, cta, notes, asset_requirements_json, copy_requirements_json, status, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      items.forEach((item, index) => {
+        const title = item.title.trim();
+        if (!title) throw new Error("Campaign item title is required");
+        if (!campaignItemContentTypes.has(item.contentType)) throw new Error("Invalid campaign item content type");
+        const status = item.status ?? "DRAFT";
+        if (!campaignItemStatuses.has(status)) throw new Error("Invalid campaign item status");
+        insert.run(randomUUID(), releasePlanId, title, item.purpose.trim(), item.contentType, JSON.stringify(normalizeCampaignPlatforms(item.targetPlatforms)), item.plannedDate ?? null, item.plannedTime ?? null, item.cta?.trim() ?? "", item.notes?.trim() ?? "", JSON.stringify(item.assetRequirements ?? []), JSON.stringify(item.copyRequirements ?? []), status, index, now, now);
+      });
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'campaign_items.replaced', ?, ?)").run(releasePlanId, JSON.stringify({ count: items.length }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.listCampaignItems(releasePlanId);
+  }
+
+  private createGeneratedReleasePlanRevision(releaseId: string, options: { actor?: string; reason?: string; draft?: GeneratedReleasePlanDraft }): ReleasePlan {
+    const release = this.listReleases().find((item) => item.id === releaseId);
+    if (!release) throw new Error("Release not found");
+    const previous = this.getCurrentReleasePlan(releaseId);
+    const draft = options.draft ?? buildReleasePlanDraft({ release, assets: this.listAssets(releaseId), brandProfile: this.getBrandProfileForRelease(releaseId) ?? null });
+    const now = new Date().toISOString();
+    const id = randomUUID();
+    if (typeof draft.title !== "string" || !draft.title.trim()) throw new Error("Release plan title is required");
+    if (typeof draft.summary !== "string" || !Array.isArray(draft.items)) throw new Error("Invalid release plan draft");
+    const actor = options.actor?.trim() || "local-user";
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const revisionNumber = this.nextReleasePlanRevisionNumber(releaseId);
+      this.database.prepare(`INSERT INTO release_plans (id, release_id, revision_number, previous_plan_id, title, summary, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, releaseId, revisionNumber, previous?.id ?? null, draft.title.trim(), draft.summary, actor, now, now);
+      this.insertGeneratedCampaignItems(id, draft.items, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'release_plan.generated', ?, ?)").run(id, JSON.stringify({ releaseId, previousPlanId: previous?.id ?? null, revisionNumber, reason: options.reason ?? "generated" }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getReleasePlan(id)!;
+  }
+
+  private insertGeneratedCampaignItems(releasePlanId: string, items: GeneratedReleasePlanItem[], createdAt: string): void {
+    const insert = this.database.prepare(`INSERT INTO campaign_items (id, release_plan_id, title, purpose, content_type, target_platforms_json, planned_date, planned_time, cta, notes, asset_requirements_json, copy_requirements_json, status, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)`);
+    items.forEach((item, index) => {
+      const title = item.title.trim();
+      if (!title) throw new Error("Campaign item title is required");
+      if (!campaignItemContentTypes.has(item.contentType)) throw new Error("Invalid campaign item content type");
+      insert.run(randomUUID(), releasePlanId, title, item.purpose.trim(), item.contentType, JSON.stringify(normalizeCampaignPlatforms(item.targetPlatforms)), item.plannedDate, item.plannedTime, item.cta.trim(), item.notes.trim(), JSON.stringify(item.assetRequirements), JSON.stringify(item.copyRequirements), index, createdAt, createdAt);
+    });
+  }
+
+  private nextReleasePlanRevisionNumber(releaseId: string): number {
+    const row = this.database.prepare("SELECT COALESCE(MAX(revision_number), 0) + 1 AS nextRevisionNumber FROM release_plans WHERE release_id = ?").get(releaseId) as { nextRevisionNumber: number };
+    return row.nextRevisionNumber;
+  }
+
+  recordApprovalAction(input: RecordApprovalActionInput): ApprovalRecord {
+    const now = new Date().toISOString();
+    return this.insertApprovalRecord(input, now);
+  }
+
+  listApprovalRecords(entityType: ApprovalEntityType, entityId: string): ApprovalRecord[] {
+    if (!approvalEntityTypes.has(entityType)) throw new Error("Invalid approval entity type");
+    return this.database.prepare(`SELECT id, entity_type AS entityType, entity_id AS entityId, action, actor, reason, previous_status AS previousStatus, new_status AS newStatus, created_at AS createdAt FROM approval_records WHERE entity_type = ? AND entity_id = ? ORDER BY created_at ASC, rowid ASC`).all(entityType, entityId) as unknown as ApprovalRecord[];
+  }
+
+  private assertReleasePlanMutable(releasePlanId: string): void {
+    const plan = this.getReleasePlan(releasePlanId);
+    if (!plan) throw new Error("Release plan not found");
+    if (immutableReleasePlanStatuses.has(plan.status)) throw new Error("Approved release plans are immutable; create a new draft revision before editing.");
+  }
+
+  private listCampaignItems(releasePlanId: string): CampaignItem[] {
+    const rows = this.database.prepare(`SELECT id, release_plan_id AS releasePlanId, title, purpose, content_type AS contentType, target_platforms_json AS targetPlatforms, planned_date AS plannedDate, planned_time AS plannedTime, cta, notes, asset_requirements_json AS assetRequirements, copy_requirements_json AS copyRequirements, status, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt FROM campaign_items WHERE release_plan_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC`).all(releasePlanId) as unknown as Array<Omit<CampaignItem, "targetPlatforms" | "assetRequirements" | "copyRequirements"> & { targetPlatforms: string; assetRequirements: string; copyRequirements: string }>;
+    return rows.map((row) => ({ ...row, targetPlatforms: parseCampaignPlatforms(row.targetPlatforms), assetRequirements: parseStringArray(row.assetRequirements), copyRequirements: parseStringArray(row.copyRequirements) }));
+  }
+
+  private getCampaignItem(id: string): CampaignItem | null {
+    const row = this.database.prepare(`SELECT id, release_plan_id AS releasePlanId, title, purpose, content_type AS contentType, target_platforms_json AS targetPlatforms, planned_date AS plannedDate, planned_time AS plannedTime, cta, notes, asset_requirements_json AS assetRequirements, copy_requirements_json AS copyRequirements, status, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt FROM campaign_items WHERE id = ?`).get(id) as (Omit<CampaignItem, "targetPlatforms" | "assetRequirements" | "copyRequirements"> & { targetPlatforms: string; assetRequirements: string; copyRequirements: string }) | undefined;
+    return row ? { ...row, targetPlatforms: parseCampaignPlatforms(row.targetPlatforms), assetRequirements: parseStringArray(row.assetRequirements), copyRequirements: parseStringArray(row.copyRequirements) } : null;
+  }
+
+  private nextCampaignItemSortOrder(releasePlanId: string): number {
+    const row = this.database.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS nextSortOrder FROM campaign_items WHERE release_plan_id = ?").get(releasePlanId) as { nextSortOrder: number };
+    return row.nextSortOrder;
+  }
+
+  private insertApprovalRecord(input: RecordApprovalActionInput, createdAt: string): ApprovalRecord {
+    if (!approvalEntityTypes.has(input.entityType)) throw new Error("Invalid approval entity type");
+    if (!approvalActions.has(input.action)) throw new Error("Invalid approval action");
+    if (input.entityType === "release_plan" && !this.getReleasePlan(input.entityId)) throw new Error("Release plan not found");
+    const actor = input.actor?.trim() || "local-user";
+    const reason = input.reason?.trim() ?? "";
+    const id = randomUUID();
+    this.database.prepare(`INSERT INTO approval_records (id, entity_type, entity_id, action, actor, reason, previous_status, new_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, input.entityType, input.entityId, input.action, actor, reason, input.previousStatus ?? null, input.newStatus ?? null, createdAt);
+    return { id, entityType: input.entityType, entityId: input.entityId, action: input.action, actor, reason, previousStatus: input.previousStatus ?? null, newStatus: input.newStatus ?? null, createdAt };
   }
 
   close(): void { this.database.close(); }

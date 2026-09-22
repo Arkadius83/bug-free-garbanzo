@@ -416,6 +416,132 @@ export interface AiHarnessResponse {
   results: AiHarnessTaskResult[];
   errors: AiHarnessError[];
 }
+export type ReleasePlanStatus = "DRAFT" | "REVIEWED" | "APPROVED" | "EXECUTING" | "COMPLETED" | "CANCELLED" | "FAILED";
+export type CampaignItemStatus = "DRAFT" | "READY" | "APPROVED" | "CANCELLED";
+export type CampaignItemContentType = "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt" | "story" | "email" | "other";
+export type ApprovalAction = "SUBMITTED" | "APPROVED" | "REJECTED" | "REVISION_REQUESTED";
+export type ApprovalEntityType = "release_plan";
+
+export interface CampaignItem {
+  id: string;
+  releasePlanId: string;
+  title: string;
+  purpose: string;
+  contentType: CampaignItemContentType;
+  targetPlatforms: CampaignChannel[];
+  plannedDate: string | null;
+  plannedTime: string | null;
+  cta: string;
+  notes: string;
+  assetRequirements: string[];
+  copyRequirements: string[];
+  status: CampaignItemStatus;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReleasePlan {
+  id: string;
+  releaseId: string;
+  status: ReleasePlanStatus;
+  version: number;
+  revisionNumber: number;
+  previousPlanId: string | null;
+  title: string;
+  summary: string;
+  createdBy: string;
+  approvedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  campaignItems: CampaignItem[];
+}
+
+export interface CreateReleasePlanInput {
+  releaseId: string;
+  title: string;
+  summary?: string;
+  createdBy?: string;
+}
+
+export interface UpdateReleasePlanInput {
+  id: string;
+  title?: string;
+  summary?: string;
+}
+
+export interface ChangeReleasePlanStatusInput {
+  id: string;
+  status: ReleasePlanStatus;
+  actor?: string;
+  reason?: string;
+}
+
+export interface GenerateReleasePlanInput {
+  releaseId: string;
+  actor?: string;
+}
+
+export interface RegenerateReleasePlanInput {
+  releaseId: string;
+  actor?: string;
+  reason?: string;
+}
+
+export interface ApproveReleasePlanInput {
+  id: string;
+  actor?: string;
+  reason?: string;
+}
+
+export interface CreateCampaignItemInput {
+  releasePlanId: string;
+  title: string;
+  purpose: string;
+  contentType: CampaignItemContentType;
+  targetPlatforms: CampaignChannel[];
+  plannedDate?: string | null;
+  plannedTime?: string | null;
+  cta?: string;
+  notes?: string;
+  assetRequirements?: string[];
+  copyRequirements?: string[];
+  status?: CampaignItemStatus;
+  sortOrder?: number;
+}
+
+export interface UpdateCampaignItemInput extends Partial<Omit<CreateCampaignItemInput, "releasePlanId">> {
+  id: string;
+}
+
+export interface ReorderCampaignItemsInput {
+  releasePlanId: string;
+  itemIds: string[];
+}
+
+export interface ApprovalRecord {
+  id: string;
+  entityType: ApprovalEntityType;
+  entityId: string;
+  action: ApprovalAction;
+  actor: string;
+  reason: string;
+  previousStatus: string | null;
+  newStatus: string | null;
+  createdAt: string;
+}
+
+export interface RecordApprovalActionInput {
+  entityType: ApprovalEntityType;
+  entityId: string;
+  action: ApprovalAction;
+  actor?: string;
+  reason?: string;
+  previousStatus?: string | null;
+  newStatus?: string | null;
+}
+
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
   title: string;
@@ -444,6 +570,22 @@ export interface StudioApi {
   createReleaseDraft(input: CreateReleaseDraftInput): Promise<ReleaseSummary>;
   updateRelease(input: UpdateReleaseInput): Promise<ReleaseSummary>;
   deleteRelease(releaseId: string): Promise<void>;
+  generateReleasePlan(input: GenerateReleasePlanInput): Promise<ReleasePlan>;
+  regenerateReleasePlan(input: RegenerateReleasePlanInput): Promise<ReleasePlan>;
+  getCurrentReleasePlan(releaseId: string): Promise<ReleasePlan | null>;
+  approveReleasePlan(input: ApproveReleasePlanInput): Promise<ReleasePlan>;
+  createReleasePlan(input: CreateReleasePlanInput): Promise<ReleasePlan>;
+  getReleasePlan(id: string): Promise<ReleasePlan | null>;
+  listReleasePlans(releaseId: string): Promise<ReleasePlan[]>;
+  updateReleasePlan(input: UpdateReleasePlanInput): Promise<ReleasePlan>;
+  changeReleasePlanStatus(input: ChangeReleasePlanStatusInput): Promise<ReleasePlan>;
+  createCampaignItem(input: CreateCampaignItemInput): Promise<CampaignItem>;
+  updateCampaignItem(input: UpdateCampaignItemInput): Promise<CampaignItem>;
+  deleteCampaignItem(id: string): Promise<void>;
+  reorderCampaignItems(input: ReorderCampaignItemsInput): Promise<CampaignItem[]>;
+  recordApprovalAction(input: RecordApprovalActionInput): Promise<ApprovalRecord>;
+  listApprovalRecords(entityType: ApprovalEntityType, entityId: string): Promise<ApprovalRecord[]>;
+
   getAiSettings(): Promise<AiSettings>;
   saveAiSettings(settings: AiSettings): Promise<AiSettings>;
   generateCampaignDraft(input: GenerateCampaignDraftInput): Promise<GeneratedCampaignDraft>;

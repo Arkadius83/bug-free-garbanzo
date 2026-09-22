@@ -5,6 +5,8 @@ import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
 import type { AddContactInteractionInput, AiSettings, AssetKind, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, AiHarnessRequest, ConversationRequest, PublishingStatus, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../shared/contracts.js";
 import type { HarnessExecutionApprovalRequest, HarnessExecutionRequest } from "../shared/harness-execution.js";
+import type { ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreateReleasePlanInput, RecordApprovalActionInput, ReorderCampaignItemsInput, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateCampaignItemInput, UpdateReleasePlanInput } from "../shared/contracts.js";
+
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
@@ -17,6 +19,22 @@ import { runAiHarnessPlanOnly } from "./ai-harness.js";
 import { createAiHarnessProviderRouter } from "./harness-provider-router.js";
 import { DEFAULT_APPROVAL_TTL_MS, createHarnessExecutionReview, createHarnessExecutorRegistry, createPersistentHarnessExecutionApproval, executePersistentApprovedHarnessTasks, readHarnessAuditLog } from "./harness-execution.js";
 import { ConversationRuntimeError, humanizeConversationError, runConversation } from "./conversation-runtime.js";
+
+ipcMain.handle("studio:create-release-plan", (_event, input: CreateReleasePlanInput) => studioDatabase.createReleasePlan(input));
+ipcMain.handle("studio:get-release-plan", (_event, id: string) => studioDatabase.getReleasePlan(id));
+ipcMain.handle("studio:list-release-plans", (_event, releaseId: string) => studioDatabase.listReleasePlans(releaseId));
+ipcMain.handle("studio:update-release-plan", (_event, input: UpdateReleasePlanInput) => studioDatabase.updateReleasePlan(input));
+ipcMain.handle("studio:change-release-plan-status", (_event, input: ChangeReleasePlanStatusInput) => studioDatabase.changeReleasePlanStatus(input));
+ipcMain.handle("studio:get-current-release-plan", (_event, releaseId: string) => studioDatabase.getCurrentReleasePlan(releaseId));
+ipcMain.handle("studio:approve-release-plan", (_event, input: ApproveReleasePlanInput) => studioDatabase.approveReleasePlan(input));
+ipcMain.handle("studio:create-campaign-item", (_event, input: CreateCampaignItemInput) => studioDatabase.createCampaignItem(input));
+ipcMain.handle("studio:update-campaign-item", (_event, input: UpdateCampaignItemInput) => studioDatabase.updateCampaignItem(input));
+ipcMain.handle("studio:delete-campaign-item", (_event, id: string) => studioDatabase.deleteCampaignItem(id));
+ipcMain.handle("studio:reorder-campaign-items", (_event, input: ReorderCampaignItemsInput) => studioDatabase.reorderCampaignItems(input));
+ipcMain.handle("studio:record-approval-action", (_event, input: RecordApprovalActionInput) => studioDatabase.recordApprovalAction(input));
+ipcMain.handle("studio:list-approval-records", (_event, entityType: "release_plan", entityId: string) => studioDatabase.listApprovalRecords(entityType, entityId));
+ipcMain.handle("studio:generate-release-plan", (_event, input: GenerateReleasePlanInput) => studioDatabase.generateReleasePlan(input));
+ipcMain.handle("studio:regenerate-release-plan", (_event, input: RegenerateReleasePlanInput) => studioDatabase.regenerateReleasePlan(input));
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
