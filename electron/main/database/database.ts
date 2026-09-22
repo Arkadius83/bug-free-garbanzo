@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { AddContactInteractionInput, AssetSummary, AttachAssetInput, AudioAnalysisSummary, BrandProfile, CampaignPackItem, CampaignPackKind, CatalogMatchSuggestion, ContactInteraction, ContactSummary, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, GeneratedMediaType, MediaGenerationStatus, MediaGenerationSummary, MediaProvider, PublishingQueueItem, PublishingStatus, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../../shared/contracts.js";
-import { migrations } from "./migrations.js";
+import type { AddContactInteractionInput, AnalyticsPlatformSummary, AssetSummary, AttachAssetInput, AudioAnalysisSummary, BrandProfile, CampaignPackItem, CampaignPackItemDependencyStatus, CampaignPackKind, CatalogMatchSuggestion, ContactInteraction, ContactSummary, ContentLanguage, ApprovalAction, ApprovalEntityType, ApprovalRecord, CampaignChannel, CampaignItem, CampaignItemContentType, CampaignItemStatus, ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreatePublishingQueueInput, CreateScheduleEventInput, ReviewPublishingQueueItemInput, UpdatePublishingQueueContentInput, CreateReleaseDraftInput, CreateReleasePlanInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, GeneratedMediaType, MediaGenerationStatus, MediaGenerationSummary, MediaProvider, PostPublishSnapshot, PromoGeneration, PublishingQueueItem, PublishingStatus, QueueScheduleEventResult, RecordApprovalActionInput, ReleaseAnalyticsSummary, ReleasePlan, ReleasePlanStatus, ReleaseReadiness, ReleaseSummary, ScheduleEvent, ScheduleEventStatus, ReorderCampaignItemsInput, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, StaleMediaCleanupResult, TaskStatus, TaskSummary, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateBrandProfileInput, UpdateCampaignItemInput, UpdateReleaseInput, UpdateScheduleEventInput, UpdateReleasePlanInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../../shared/contracts.js";
+import { buildReleasePlanDraft, type GeneratedReleasePlanDraft, type GeneratedReleasePlanItem } from "../release-plan-generation.js";
+
+import { migrateDatabase } from "./migration-runner.js";
 
 const seedArtists = [
   ["the-arkadiusz", "The Arkadiusz", ["Full-On Psytrance", "Dark Psy", "Progressive Psytrance", "Classic Psytrance"], "Psychedelic, conscious, direct, emotionally grounded"],
@@ -11,6 +13,51 @@ const seedArtists = [
   ["ar-tek", "AR-TEK", ["Techno", "Psy-Tech"], "Minimal, technological, hypnotic, club-focused"],
   ["echoes-of-arcadia", "Echoes of Arcadia", ["Psybient", "Psychill", "Downtempo", "Ambient"], "Cinematic, spacious, contemplative, organic"]
 ] as const;
+
+const releasePlanTransitions: Record<ReleasePlanStatus, ReleasePlanStatus[]> = {
+  DRAFT: ["REVIEWED", "CANCELLED"],
+  REVIEWED: ["DRAFT", "APPROVED", "CANCELLED"],
+  APPROVED: ["EXECUTING", "CANCELLED"],
+  EXECUTING: ["COMPLETED", "FAILED", "CANCELLED"],
+  COMPLETED: [],
+  CANCELLED: [],
+  FAILED: ["DRAFT", "CANCELLED"]
+};
+const releasePlanStatuses = new Set<ReleasePlanStatus>(["DRAFT", "REVIEWED", "APPROVED", "EXECUTING", "COMPLETED", "CANCELLED", "FAILED"]);
+const campaignItemStatuses = new Set<CampaignItemStatus>(["DRAFT", "READY", "APPROVED", "CANCELLED"]);
+const campaignItemContentTypes = new Set<CampaignItemContentType>(["caption", "video-hook", "video-script", "image-prompt", "visualizer-prompt", "story", "email", "other"]);
+const approvalActions = new Set<ApprovalAction>(["SUBMITTED", "APPROVED", "REJECTED", "REVISION_REQUESTED"]);
+const approvalEntityTypes = new Set<ApprovalEntityType>(["release_plan"]);
+const immutableReleasePlanStatuses = new Set<ReleasePlanStatus>(["APPROVED", "EXECUTING", "COMPLETED"]);
+const scheduleEventStatuses = new Set<ScheduleEventStatus>(["DRAFT", "SCHEDULED", "CANCELLED", "READY"]);
+const scheduleEventPlatforms = new Set<CampaignChannel>(["Instagram", "Facebook", "TikTok", "SoundCloud", "YouTube"]);
+const supportedScheduledPublishingPlatforms = new Set<CampaignChannel>(["Instagram", "Facebook"]);
+
+function normalizeScheduleInstant(value: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) throw new Error("Invalid schedule date");
+  return d.toISOString();
+}
+function normalizeScheduleTimezone(value: string): string {
+  try { Intl.DateTimeFormat(undefined, { timeZone: value }); return value; } catch { throw new Error("Invalid schedule timezone"); }
+}
+
+function parseStringArray(value: string): string[] {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch { return []; }
+}
+
+function normalizeCampaignPlatforms(value: readonly string[]): import("../../shared/contracts.js").CampaignChannel[] {
+  const allowed = new Set(["Instagram", "Facebook", "TikTok", "SoundCloud", "YouTube"]);
+  if (value.some((item) => !allowed.has(item))) throw new Error("Invalid campaign target platform");
+  return [...new Set(value)] as import("../../shared/contracts.js").CampaignChannel[];
+}
+
+function parseCampaignPlatforms(value: string): import("../../shared/contracts.js").CampaignChannel[] {
+  return normalizeCampaignPlatforms(parseStringArray(value));
+}
 
 export class StudioDatabase {
   private readonly database: DatabaseSync;
@@ -22,21 +69,7 @@ export class StudioDatabase {
   }
 
   initialize(): void {
-    const currentVersion = Number(this.database.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    const latestVersion = migrations.at(-1)?.version ?? 0;
-    if (currentVersion > latestVersion) throw new Error(`Database schema ${currentVersion} is newer than supported ${latestVersion}`);
-
-    for (const migration of migrations.filter((item) => item.version > currentVersion)) {
-      this.database.exec("BEGIN IMMEDIATE");
-      try {
-        this.database.exec(migration.sql);
-        this.database.exec(`PRAGMA user_version = ${migration.version}`);
-        this.database.exec("COMMIT");
-      } catch (error) {
-        this.database.exec("ROLLBACK");
-        throw new Error(`Migration ${migration.version} (${migration.name}) failed`, { cause: error });
-      }
-    }
+    migrateDatabase(this.database);
     this.seedArtistProfiles();
     this.seedBrandProfiles();
   }
@@ -210,6 +243,18 @@ export class StudioDatabase {
       throw error;
     }
     return this.listDrafts().find((draft) => draft.id === draftId)!;
+  }
+
+  deleteDraft(draftId: string): void {
+    const draft = this.database.prepare("SELECT id, campaign_id AS campaignId, status FROM drafts WHERE id = ?").get(draftId) as { id: string; campaignId: string; status: DraftStatus } | undefined;
+    if (!draft) throw new Error("Draft not found");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM drafts WHERE id = ?").run(draftId);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('draft', ?, 'draft.deleted', ?, ?)").run(draftId, JSON.stringify({ campaignId: draft.campaignId, status: draft.status }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
   }
 
   listAssets(releaseId: string): AssetSummary[] {
@@ -505,18 +550,73 @@ export class StudioDatabase {
   listCampaignPackItems(releaseId:string):CampaignPackItem[]{return this.database.prepare(`SELECT i.id,i.release_id AS releaseId,r.title AS releaseTitle,i.kind,i.channel,i.language,i.content,i.status,i.model_name AS model,i.created_at AS createdAt,i.updated_at AS updatedAt FROM campaign_pack_items i JOIN releases r ON r.id=i.release_id WHERE i.release_id=? ORDER BY i.created_at DESC,i.id`).all(releaseId) as unknown as CampaignPackItem[];}
   updateCampaignPackItemStatus(itemId:string,status:DraftStatus):CampaignPackItem{const current=this.database.prepare("SELECT release_id AS releaseId,status FROM campaign_pack_items WHERE id=?").get(itemId) as {releaseId:string;status:DraftStatus}|undefined;if(!current)throw new Error("Campaign pack item not found");const allowed:Record<DraftStatus,DraftStatus[]>={draft:["approved","rejected"],approved:["draft","scheduled"],scheduled:["approved","published"],published:[],rejected:["draft"]};if(!allowed[current.status].includes(status))throw new Error(`Invalid campaign item transition: ${current.status} → ${status}`);this.database.prepare("UPDATE campaign_pack_items SET status=?,updated_at=? WHERE id=?").run(status,new Date().toISOString(),itemId);return this.listCampaignPackItems(current.releaseId).find((item)=>item.id===itemId)!;}
   getCampaignPackItemForGeneration(itemId:string):CampaignPackItem|undefined{return this.database.prepare(`SELECT i.id,i.release_id AS releaseId,r.title AS releaseTitle,i.kind,i.channel,i.language,i.content,i.status,i.model_name AS model,i.created_at AS createdAt,i.updated_at AS updatedAt FROM campaign_pack_items i JOIN releases r ON r.id=i.release_id WHERE i.id=?`).get(itemId) as unknown as CampaignPackItem|undefined;}
+  getCampaignPackItemDependencyStatus(itemId: string): CampaignPackItemDependencyStatus {
+    if (!this.getCampaignPackItemForGeneration(itemId)) throw new Error("Promotion format not found");
+    const publishingQueue = Number((this.database.prepare("SELECT COUNT(*) AS n FROM publishing_queue WHERE campaign_pack_item_id = ?").get(itemId) as { n: number }).n);
+    const promoGenerations = Number((this.database.prepare("SELECT COUNT(*) AS n FROM promo_generations WHERE campaign_pack_item_id = ?").get(itemId) as { n: number }).n);
+    const mediaGenerations = Number((this.database.prepare("SELECT COUNT(*) AS n FROM media_generations WHERE campaign_pack_item_id = ?").get(itemId) as { n: number }).n);
+    const blocked = publishingQueue > 0 || mediaGenerations > 0;
+    return {
+      canDelete: !blocked,
+      deleteMode: blocked ? "blocked" : promoGenerations > 0 ? "detach-promo" : "normal",
+      dependencies: { publishingQueue, promoGenerations, mediaGenerations }
+    };
+  }
+  deleteCampaignPackItem(itemId: string): void {
+    const item = this.getCampaignPackItemForGeneration(itemId);
+    if (!item) throw new Error("Promotion format not found");
+    const status = this.getCampaignPackItemDependencyStatus(itemId);
+    if (status.dependencies.publishingQueue > 0) throw new Error("Cannot delete: this promotion format is referenced by a Publishing Queue record; delete the queue record separately first");
+    if (status.dependencies.mediaGenerations > 0) throw new Error("Cannot delete: this promotion format is referenced by a media generation record; delete the media generation separately first");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("UPDATE promo_generations SET campaign_pack_item_id = NULL WHERE campaign_pack_item_id = ?").run(itemId);
+      this.database.prepare("DELETE FROM campaign_pack_items WHERE id = ?").run(itemId);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_pack_item', ?, 'campaign_pack_item.deleted', ?, ?)").run(itemId, JSON.stringify({ releaseId: item.releaseId, kind: item.kind, status: item.status, deleteMode: status.deleteMode, detachedPromos: status.dependencies.promoGenerations }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
+  cleanupStaleMediaGenerations(releaseId: string): StaleMediaCleanupResult {
+    const rows = this.database.prepare("SELECT id, local_path AS localPath FROM media_generations WHERE release_id = ? AND status IN ('failed','rejected')").all(releaseId) as Array<{ id: string; localPath: string | null }>;
+    const removable = rows.filter((row) => !this.database.prepare("SELECT 1 FROM publishing_queue WHERE media_generation_id = ?").get(row.id));
+    const removedIds: string[] = [];
+    const removedFiles: string[] = [];
+    if (removable.length) {
+      this.database.exec("BEGIN IMMEDIATE");
+      try {
+        for (const row of removable) {
+          const result = this.database.prepare("DELETE FROM media_generations WHERE id = ? AND status IN ('failed','rejected')").run(row.id);
+          if (Number(result.changes) === 0) continue;
+          removedIds.push(row.id);
+        }
+        this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release', ?, 'media_generations.stale_cleanup', ?, ?)").run(releaseId, JSON.stringify({ releaseId, removedIds }), new Date().toISOString());
+        this.database.exec("COMMIT");
+      } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+      for (const row of removable) {
+        if (!removedIds.includes(row.id) || !row.localPath) continue;
+        try { unlinkSync(row.localPath); removedFiles.push(row.localPath); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+      }
+    }
+    return { removedIds, removedFiles };
+  }
   createMediaGeneration(item:CampaignPackItem,provider:MediaProvider,mediaType:GeneratedMediaType):MediaGenerationSummary{const id=randomUUID(),now=new Date().toISOString();this.database.prepare(`INSERT INTO media_generations(id,release_id,campaign_pack_item_id,provider,media_type,prompt,status,created_at,updated_at) VALUES(?,?,?,?,?,?,'queued',?,?)`).run(id,item.releaseId,item.id,provider,mediaType,item.content,now,now);return this.getMediaGeneration(id)!;}
   updateMediaGeneration(id:string,values:{status:MediaGenerationStatus;providerTaskId?:string|null;localPath?:string|null;mimeType?:string|null;error?:string|null;metadata?:Record<string,unknown>}):MediaGenerationSummary{if(!this.getMediaGeneration(id))throw new Error("Media generation not found");this.database.prepare(`UPDATE media_generations SET status=?,provider_task_id=COALESCE(?,provider_task_id),local_path=COALESCE(?,local_path),mime_type=COALESCE(?,mime_type),error=?,metadata_json=?,updated_at=? WHERE id=?`).run(values.status,values.providerTaskId??null,values.localPath??null,values.mimeType??null,values.error??null,JSON.stringify(values.metadata??{}),new Date().toISOString(),id);return this.getMediaGeneration(id)!;}
   listMediaGenerations(releaseId:string):MediaGenerationSummary[]{return (this.database.prepare(`SELECT id,release_id AS releaseId,campaign_pack_item_id AS campaignPackItemId,provider,media_type AS mediaType,prompt,status,provider_task_id AS providerTaskId,mime_type AS mimeType,error,metadata_json AS metadata,created_at AS createdAt,updated_at AS updatedAt FROM media_generations WHERE release_id=? ORDER BY created_at DESC`).all(releaseId) as unknown as Array<Omit<MediaGenerationSummary,"metadata">&{metadata:string}>).map((row)=>({...row,metadata:JSON.parse(row.metadata||"{}")}));}
   getMediaGeneration(id:string):MediaGenerationSummary|undefined{const row=this.database.prepare(`SELECT id,release_id AS releaseId,campaign_pack_item_id AS campaignPackItemId,provider,media_type AS mediaType,prompt,status,provider_task_id AS providerTaskId,mime_type AS mimeType,error,metadata_json AS metadata,created_at AS createdAt,updated_at AS updatedAt FROM media_generations WHERE id=?`).get(id) as unknown as (Omit<MediaGenerationSummary,"metadata">&{metadata:string})|undefined;return row?{...row,metadata:JSON.parse(row.metadata||"{}")} : undefined;}
   getMediaGenerationFile(id:string):{filePath:string;mimeType:string|null}|undefined{return this.database.prepare("SELECT local_path AS filePath,mime_type AS mimeType FROM media_generations WHERE id=? AND local_path IS NOT NULL").get(id) as {filePath:string;mimeType:string|null}|undefined;}
   createPublishingQueueItem(input:CreatePublishingQueueInput):PublishingQueueItem{const caption=this.database.prepare("SELECT release_id AS releaseId,content,status,kind FROM campaign_pack_items WHERE id=?").get(input.campaignPackItemId) as {releaseId:string;content:string;status:DraftStatus;kind:CampaignPackKind}|undefined;if(!caption||caption.releaseId!==input.releaseId||caption.kind!=="caption")throw new Error("Select a caption from this release");if(caption.status!=="approved")throw new Error("Approve the caption before adding it to the publishing queue");if(input.mediaGenerationId){const media=this.getMediaGeneration(input.mediaGenerationId);if(!media||media.releaseId!==input.releaseId||media.status!=="approved")throw new Error("Select approved media from this release");}if(!["Instagram","Facebook","TikTok","SoundCloud","YouTube"].includes(input.platform))throw new Error("Invalid publishing platform");const id=randomUUID(),now=new Date().toISOString();this.database.prepare(`INSERT INTO publishing_queue(id,release_id,campaign_pack_item_id,media_generation_id,platform,caption,scheduled_at,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,'draft',?,?)`).run(id,input.releaseId,input.campaignPackItemId,input.mediaGenerationId,input.platform,caption.content,input.scheduledAt||null,now,now);return this.getPublishingQueueItem(id)!;}
-  listPublishingQueue():PublishingQueueItem[]{const rows=this.database.prepare(`SELECT q.id,q.release_id AS releaseId,r.title AS releaseTitle,q.platform,q.campaign_pack_item_id AS campaignPackItemId,q.media_generation_id AS mediaGenerationId,q.caption,q.scheduled_at AS scheduledAt,q.status,q.error,q.exported_at AS exportedAt,q.remote_post_id AS remotePostId,q.published_at AS publishedAt,q.destination_id AS destinationId,m.media_type AS mediaType,m.provider AS mediaProvider,EXISTS(SELECT 1 FROM soundcloud_tracks sc WHERE sc.release_id=q.release_id AND sc.content_type='bootleg') AS rightsBlocked,q.created_at AS createdAt,q.updated_at AS updatedAt FROM publishing_queue q JOIN releases r ON r.id=q.release_id LEFT JOIN media_generations m ON m.id=q.media_generation_id ORDER BY CASE WHEN q.scheduled_at IS NULL THEN 1 ELSE 0 END,q.scheduled_at,q.created_at DESC`).all() as unknown as Array<Omit<PublishingQueueItem,"rightsBlocked">&{rightsBlocked:number}>;return rows.map((row)=>({...row,rightsBlocked:Boolean(row.rightsBlocked)}));}
+  listPublishingQueue():PublishingQueueItem[]{const rows=this.database.prepare(`SELECT q.id,q.release_id AS releaseId,r.title AS releaseTitle,q.platform,q.campaign_pack_item_id AS campaignPackItemId,q.media_generation_id AS mediaGenerationId,q.caption,q.scheduled_at AS scheduledAt,q.status,q.error,q.exported_at AS exportedAt,q.remote_post_id AS remotePostId,q.published_at AS publishedAt,q.destination_id AS destinationId,m.media_type AS mediaType,m.provider AS mediaProvider,EXISTS(SELECT 1 FROM soundcloud_tracks sc WHERE sc.release_id=q.release_id AND sc.content_type='bootleg') AS rightsBlocked,se.id AS sourceScheduleEventId,ci.title AS sourceCampaignItemTitle,q.reviewed_by AS reviewedBy,q.reviewed_at AS reviewedAt,q.review_reason AS reviewReason,q.created_at AS createdAt,q.updated_at AS updatedAt FROM publishing_queue q JOIN releases r ON r.id=q.release_id LEFT JOIN media_generations m ON m.id=q.media_generation_id LEFT JOIN schedule_events se ON se.publishing_queue_id=q.id LEFT JOIN campaign_items ci ON ci.id=se.campaign_item_id ORDER BY CASE WHEN q.scheduled_at IS NULL THEN 1 ELSE 0 END,q.scheduled_at,q.created_at DESC`).all() as unknown as Array<Omit<PublishingQueueItem,"rightsBlocked">&{rightsBlocked:number}>;return rows.map((row)=>({...row,rightsBlocked:Boolean(row.rightsBlocked)}));}
   getPublishingQueueItem(id:string):PublishingQueueItem|undefined{return this.listPublishingQueue().find((item)=>item.id===id);}
-  updatePublishingQueueStatus(id:string,status:PublishingStatus):PublishingQueueItem{const current=this.getPublishingQueueItem(id);if(!current)throw new Error("Publishing queue item not found");const allowed:Record<PublishingStatus,PublishingStatus[]>={draft:["approved"],approved:["draft","scheduled"],scheduled:["approved","published","failed"],published:[],failed:["draft"]};if(!allowed[current.status].includes(status))throw new Error(`Invalid publishing transition: ${current.status} → ${status}`);if(status==="scheduled"&&!current.scheduledAt)throw new Error("Choose a publishing date before scheduling");if(current.rightsBlocked&&["SoundCloud","YouTube"].includes(current.platform)&&["approved","scheduled","published"].includes(status))throw new Error("Bootleg rights are not cleared: official publishing is blocked");this.database.prepare("UPDATE publishing_queue SET status=?,error=NULL,updated_at=? WHERE id=?").run(status,new Date().toISOString(),id);return this.getPublishingQueueItem(id)!;}
+  reviewPublishingQueueItem(input:ReviewPublishingQueueItemInput):PublishingQueueItem{const current=this.getPublishingQueueItem(input.id);if(!current)throw new Error("Publishing queue item not found");const nextByAction={APPROVE:"approved",REJECT:"failed",RETURN_TO_DRAFT:"draft",SCHEDULE:"scheduled"} as const;const status=nextByAction[input.action];const allowed:Record<PublishingStatus,PublishingStatus[]>={draft:["approved","failed"],approved:["draft","scheduled"],scheduled:["approved","publishing","failed"],publishing:[],published:[],failed:["draft"]};if(!allowed[current.status].includes(status))throw new Error(`Invalid publishing transition: ${current.status} â†’ ${status}`);if(["approved","scheduled"].includes(status))this.assertQueueReadyForReview(current);if(status==="scheduled"&&!current.scheduledAt)throw new Error("Choose a publishing date before scheduling");const now=new Date().toISOString(),actor=input.actor?.trim()||"local-user",reason=input.reason?.trim()||null;this.database.exec("BEGIN IMMEDIATE");try{this.database.prepare("UPDATE publishing_queue SET status=?,error=?,reviewed_by=?,reviewed_at=?,review_reason=?,updated_at=? WHERE id=?").run(status,status==="failed"?(reason||"Rejected during human review"):null,actor,now,reason,now,input.id);this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('publishing_queue', ?, 'publishing_queue.reviewed', ?, ?)").run(input.id,JSON.stringify({action:input.action,from:current.status,to:status,actor,reason,sourceScheduleEventId:current.sourceScheduleEventId}),now);this.database.exec("COMMIT");}catch(error){this.database.exec("ROLLBACK");throw error;}return this.getPublishingQueueItem(input.id)!;}
+  updatePublishingQueueContent(input:UpdatePublishingQueueContentInput):PublishingQueueItem{const current=this.getPublishingQueueItem(input.id);if(!current)throw new Error("Publishing queue item not found");if(current.status!=="draft")throw new Error("Return this queue item to Draft before editing it");const caption=input.caption.trim();if(!caption)throw new Error("Caption is required");const scheduledAt=input.scheduledAt?normalizeScheduleInstant(input.scheduledAt):null;const now=new Date().toISOString();this.database.prepare("UPDATE publishing_queue SET caption=?,scheduled_at=?,updated_at=? WHERE id=?").run(caption,scheduledAt,now,input.id);this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('publishing_queue', ?, 'publishing_queue.content_updated', ?, ?)").run(input.id,JSON.stringify({sourceScheduleEventId:current.sourceScheduleEventId}),now);return this.getPublishingQueueItem(input.id)!;}
+  updatePublishingQueueStatus(id:string,status:PublishingStatus):PublishingQueueItem{const current=this.getPublishingQueueItem(id);if(!current)throw new Error("Publishing queue item not found");const allowed:Record<PublishingStatus,PublishingStatus[]>={draft:["approved"],approved:["draft","scheduled"],scheduled:["approved","publishing","published","failed"],publishing:["published","failed"],published:[],failed:["draft"]};if(!allowed[current.status].includes(status))throw new Error(`Invalid publishing transition: ${current.status} → ${status}`);if(status==="scheduled"&&!current.scheduledAt)throw new Error("Choose a publishing date before scheduling");if(current.rightsBlocked&&["SoundCloud","YouTube"].includes(current.platform)&&["approved","scheduled","published"].includes(status))throw new Error("Bootleg rights are not cleared: official publishing is blocked");this.database.prepare("UPDATE publishing_queue SET status=?,error=NULL,updated_at=? WHERE id=?").run(status,new Date().toISOString(),id);return this.getPublishingQueueItem(id)!;}  private assertQueueReadyForReview(item:PublishingQueueItem):void{if(!item.sourceScheduleEventId)throw new Error("This queue item must come from a ScheduleEvent before review");if(!["Instagram","Facebook"].includes(item.platform))throw new Error(`${item.platform} is not supported by publishing yet`);if(!item.caption.trim())throw new Error("A caption is required before approval");const source=this.database.prepare("SELECT se.id,se.status AS scheduleStatus,pg.status AS promoStatus,pg.review_status AS reviewStatus,cpi.status AS captionStatus FROM schedule_events se JOIN promo_generations pg ON pg.id=se.promo_generation_id JOIN campaign_pack_items cpi ON cpi.id=? WHERE se.id=? AND se.publishing_queue_id=?").get(item.campaignPackItemId,item.sourceScheduleEventId,item.id) as {id:string;scheduleStatus:ScheduleEventStatus;promoStatus:string;reviewStatus:string;captionStatus:DraftStatus}|undefined;if(!source||source.scheduleStatus!=="READY"||source.promoStatus!=="SUCCESS"||source.reviewStatus!=="APPROVED"||source.captionStatus!=="approved")throw new Error("The source promo content is no longer approved");if(item.mediaGenerationId){const media=this.getMediaGeneration(item.mediaGenerationId);if(!media||media.status!=="approved")throw new Error("Attached media must be approved before queue approval");}}
+
   markPublishingPackExported(id:string):PublishingQueueItem{if(!this.getPublishingQueueItem(id))throw new Error("Publishing queue item not found");this.database.prepare("UPDATE publishing_queue SET exported_at=?,updated_at=? WHERE id=?").run(new Date().toISOString(),new Date().toISOString(),id);return this.getPublishingQueueItem(id)!;}
   markPublishingSucceeded(id:string,destinationId:string,remotePostId:string):PublishingQueueItem{const now=new Date().toISOString();this.database.prepare("UPDATE publishing_queue SET status='published',destination_id=?,remote_post_id=?,published_at=?,error=NULL,updated_at=? WHERE id=?").run(destinationId,remotePostId,now,now,id);return this.getPublishingQueueItem(id)!;}
   markPublishingFailed(id:string,error:string):PublishingQueueItem{this.database.prepare("UPDATE publishing_queue SET status='failed',error=?,updated_at=? WHERE id=?").run(error,new Date().toISOString(),id);return this.getPublishingQueueItem(id)!;}
+  beginPublishing(id:string):PublishingQueueItem{const current=this.getPublishingQueueItem(id);if(!current)throw new Error("Publishing queue item not found");if(current.status!=="scheduled")throw new Error("Only scheduled items can be published");const now=new Date().toISOString();this.database.prepare("UPDATE publishing_queue SET status='publishing',updated_at=? WHERE id=?").run(now,id);const updated=this.getPublishingQueueItem(id)!;this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('publishing_queue', ?, 'publishing_queue.publishing_started', ?, ?)").run(id,JSON.stringify({platform:updated.platform,releaseTitle:updated.releaseTitle}),now);return updated;}
   getPublishingExportData(id:string):{item:PublishingQueueItem;mediaPath:string|null;mimeType:string|null}{const item=this.getPublishingQueueItem(id);if(!item)throw new Error("Publishing queue item not found");const media=item.mediaGenerationId?this.getMediaGenerationFile(item.mediaGenerationId):undefined;return{item,mediaPath:media?.filePath??null,mimeType:media?.mimeType??null};}
   listBrandProfiles():BrandProfile[]{return this.database.prepare(`SELECT b.artist_id AS artistId,a.name AS artistName,b.visual_direction AS visualDirection,b.palette,b.typography,b.required_elements AS requiredElements,b.forbidden_elements AS forbiddenElements,b.negative_prompt AS negativePrompt,b.default_aspect_ratio AS defaultAspectRatio,b.updated_at AS updatedAt FROM brand_profiles b JOIN artist_profiles a ON a.id=b.artist_id ORDER BY a.name`).all() as unknown as BrandProfile[];}
   getBrandProfileForRelease(releaseId:string):BrandProfile|undefined{const row=this.database.prepare(`SELECT b.artist_id AS artistId,a.name AS artistName,b.visual_direction AS visualDirection,b.palette,b.typography,b.required_elements AS requiredElements,b.forbidden_elements AS forbiddenElements,b.negative_prompt AS negativePrompt,b.default_aspect_ratio AS defaultAspectRatio,b.updated_at AS updatedAt FROM releases r JOIN projects p ON p.id=r.project_id JOIN brand_profiles b ON b.artist_id=p.artist_id JOIN artist_profiles a ON a.id=b.artist_id WHERE r.id=?`).get(releaseId) as unknown as BrandProfile|undefined;return row;}
@@ -572,6 +672,447 @@ export class StudioDatabase {
       this.database.prepare("UPDATE tasks SET title = ?, status = ?, priority = ?, assignee = ?, updated_at = ? WHERE source_key = ?").run(check.detail, check.complete ? "done" : "todo", check.weight >= 20 ? "high" : "medium", assignee, now, sourceKey);
     }
   }
+
+  createReleasePlan(input: CreateReleasePlanInput): ReleasePlan {
+    const release = this.database.prepare("SELECT title FROM releases WHERE id = ?").get(input.releaseId) as { title: string } | undefined;
+    if (!release) throw new Error("Release not found");
+    const title = input.title.trim();
+    if (!title) throw new Error("Release plan title is required");
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    const summary = input.summary?.trim() ?? "";
+    const createdBy = input.createdBy?.trim() || "local-user";
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const revisionNumber = this.nextReleasePlanRevisionNumber(input.releaseId);
+      this.database.prepare(`INSERT INTO release_plans (id, release_id, revision_number, title, summary, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(id, input.releaseId, revisionNumber, title, summary, createdBy, now, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'release_plan.created', ?, ?)").run(id, JSON.stringify({ releaseId: input.releaseId, title }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getReleasePlan(id)!;
+  }
+
+  getReleasePlan(id: string): ReleasePlan | null {
+    const row = this.database.prepare(`SELECT id, release_id AS releaseId, status, version, revision_number AS revisionNumber, previous_plan_id AS previousPlanId, title, summary, created_by AS createdBy, approved_at AS approvedAt, completed_at AS completedAt, created_at AS createdAt, updated_at AS updatedAt FROM release_plans WHERE id = ?`).get(id) as Omit<ReleasePlan, "campaignItems"> | undefined;
+    return row ? { ...row, campaignItems: this.listCampaignItems(row.id) } : null;
+  }
+
+  listReleasePlans(releaseId: string): ReleasePlan[] {
+    if (!this.database.prepare("SELECT 1 FROM releases WHERE id = ?").get(releaseId)) throw new Error("Release not found");
+    const rows = this.database.prepare(`SELECT id, release_id AS releaseId, status, version, revision_number AS revisionNumber, previous_plan_id AS previousPlanId, title, summary, created_by AS createdBy, approved_at AS approvedAt, completed_at AS completedAt, created_at AS createdAt, updated_at AS updatedAt FROM release_plans WHERE release_id = ? ORDER BY revision_number DESC, created_at DESC, id DESC`).all(releaseId) as unknown as Array<Omit<ReleasePlan, "campaignItems">>;
+    return rows.map((row) => ({ ...row, campaignItems: this.listCampaignItems(row.id) }));
+  }
+
+  getCurrentReleasePlan(releaseId: string): ReleasePlan | null {
+    if (!this.database.prepare("SELECT 1 FROM releases WHERE id = ?").get(releaseId)) throw new Error("Release not found");
+    const row = this.database.prepare("SELECT id FROM release_plans WHERE release_id = ? ORDER BY revision_number DESC, created_at DESC, id DESC LIMIT 1").get(releaseId) as { id: string } | undefined;
+    return row ? this.getReleasePlan(row.id) : null;
+  }
+
+  generateReleasePlan(input: GenerateReleasePlanInput): ReleasePlan {
+    return this.createGeneratedReleasePlanRevision(input.releaseId, { actor: input.actor, reason: "generated" });
+  }
+
+  regenerateReleasePlan(input: RegenerateReleasePlanInput): ReleasePlan {
+    return this.createGeneratedReleasePlanRevision(input.releaseId, { actor: input.actor, reason: input.reason ?? "regenerated" });
+  }
+
+  generateReleasePlanFromDraft(releaseId: string, draft: GeneratedReleasePlanDraft, options: { actor?: string }): ReleasePlan {
+    return this.createGeneratedReleasePlanRevision(releaseId, { actor: options.actor, reason: "ai-generated", draft });
+  }
+
+  regenerateReleasePlanFromDraft(releaseId: string, draft: GeneratedReleasePlanDraft, options: { actor?: string; reason?: string }): ReleasePlan {
+    return this.createGeneratedReleasePlanRevision(releaseId, { actor: options.actor, reason: options.reason ?? "ai-regenerated", draft });
+  }
+
+  approveReleasePlan(input: ApproveReleasePlanInput): ReleasePlan {
+    const current = this.getReleasePlan(input.id);
+    if (!current) throw new Error("Release plan not found");
+    return this.changeReleasePlanStatus({ id: input.id, status: "APPROVED", actor: input.actor, reason: input.reason });
+  }
+
+  updateReleasePlan(input: UpdateReleasePlanInput): ReleasePlan {
+    const current = this.getReleasePlan(input.id);
+    if (!current) throw new Error("Release plan not found");
+    if (immutableReleasePlanStatuses.has(current.status)) throw new Error("Release plan is immutable in its current status; generate a new revision instead.");
+    const title = input.title === undefined ? current.title : input.title.trim();
+    const summary = input.summary === undefined ? current.summary : input.summary.trim();
+    if (!title) throw new Error("Release plan title is required");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("UPDATE release_plans SET title = ?, summary = ?, version = version + 1, updated_at = ? WHERE id = ?").run(title, summary, now, input.id);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'release_plan.updated', ?, ?)").run(input.id, JSON.stringify({ title, summary }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getReleasePlan(input.id)!;
+  }
+
+  changeReleasePlanStatus(input: ChangeReleasePlanStatusInput): ReleasePlan {
+    if (!releasePlanStatuses.has(input.status)) throw new Error("Invalid release plan status");
+    const current = this.getReleasePlan(input.id);
+    if (!current) throw new Error("Release plan not found");
+    if (!releasePlanTransitions[current.status].includes(input.status)) throw new Error(`Invalid release plan transition: ${current.status} → ${input.status}`);
+    const now = new Date().toISOString();
+    const actor = input.actor?.trim() || "local-user";
+    const reason = input.reason?.trim() ?? "";
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("UPDATE release_plans SET status = ?, version = version + 1, approved_at = CASE WHEN ? = 'APPROVED' THEN ? ELSE approved_at END, completed_at = CASE WHEN ? = 'COMPLETED' THEN ? ELSE completed_at END, updated_at = ? WHERE id = ?").run(input.status, input.status, now, input.status, now, now, input.id);
+      if (input.status === "APPROVED") this.insertApprovalRecord({ entityType: "release_plan", entityId: input.id, action: "APPROVED", actor, reason, previousStatus: current.status, newStatus: input.status }, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'release_plan.status_changed', ?, ?)").run(input.id, JSON.stringify({ from: current.status, to: input.status, actor, reason }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getReleasePlan(input.id)!;
+  }
+
+  createCampaignItem(input: CreateCampaignItemInput): CampaignItem {
+    const targetPlan = this.getReleasePlan(input.releasePlanId);
+    if (!targetPlan) throw new Error("Release plan not found");
+    if (immutableReleasePlanStatuses.has(targetPlan.status)) throw new Error("Approved release plans are immutable; create a new draft revision before editing campaign items.");
+    const title = input.title.trim();
+    if (!title) throw new Error("Campaign item title is required");
+    if (!campaignItemContentTypes.has(input.contentType)) throw new Error("Invalid campaign item content type");
+    const status = input.status ?? "DRAFT";
+    if (!campaignItemStatuses.has(status)) throw new Error("Invalid campaign item status");
+    const sortOrder = input.sortOrder ?? this.nextCampaignItemSortOrder(input.releasePlanId);
+    if (!Number.isSafeInteger(sortOrder) || sortOrder < 0) throw new Error("Invalid campaign item sort order");
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare(`INSERT INTO campaign_items (id, release_plan_id, title, purpose, content_type, target_platforms_json, planned_date, planned_time, cta, notes, asset_requirements_json, copy_requirements_json, status, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, input.releasePlanId, title, input.purpose.trim(), input.contentType, JSON.stringify(normalizeCampaignPlatforms(input.targetPlatforms)), input.plannedDate ?? null, input.plannedTime ?? null, input.cta?.trim() ?? "", input.notes?.trim() ?? "", JSON.stringify(input.assetRequirements ?? []), JSON.stringify(input.copyRequirements ?? []), status, sortOrder, now, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_item', ?, 'campaign_item.created', ?, ?)").run(id, JSON.stringify({ releasePlanId: input.releasePlanId, sortOrder }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getCampaignItem(id)!;
+  }
+
+  updateCampaignItem(input: UpdateCampaignItemInput): CampaignItem {
+    const current = this.getCampaignItem(input.id);
+    if (!current) throw new Error("Campaign item not found");
+    this.assertReleasePlanMutable(current.releasePlanId);
+    const next = {
+      title: input.title === undefined ? current.title : input.title.trim(),
+      purpose: input.purpose === undefined ? current.purpose : input.purpose.trim(),
+      contentType: input.contentType ?? current.contentType,
+      targetPlatforms: input.targetPlatforms ?? current.targetPlatforms,
+      plannedDate: input.plannedDate === undefined ? current.plannedDate : input.plannedDate,
+      plannedTime: input.plannedTime === undefined ? current.plannedTime : input.plannedTime,
+      cta: input.cta === undefined ? current.cta : input.cta.trim(),
+      notes: input.notes === undefined ? current.notes : input.notes.trim(),
+      assetRequirements: input.assetRequirements ?? current.assetRequirements,
+      copyRequirements: input.copyRequirements ?? current.copyRequirements,
+      status: input.status ?? current.status,
+      sortOrder: input.sortOrder ?? current.sortOrder
+    };
+    if (!next.title) throw new Error("Campaign item title is required");
+    if (!Number.isSafeInteger(next.sortOrder) || next.sortOrder < 0) throw new Error("Invalid campaign item sort order");
+    if (!campaignItemContentTypes.has(next.contentType)) throw new Error("Invalid campaign item content type");
+    if (!campaignItemStatuses.has(next.status)) throw new Error("Invalid campaign item status");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare(`UPDATE campaign_items SET title=?, purpose=?, content_type=?, target_platforms_json=?, planned_date=?, planned_time=?, cta=?, notes=?, asset_requirements_json=?, copy_requirements_json=?, status=?, sort_order=?, updated_at=? WHERE id=?`).run(next.title, next.purpose, next.contentType, JSON.stringify(normalizeCampaignPlatforms(next.targetPlatforms)), next.plannedDate, next.plannedTime, next.cta, next.notes, JSON.stringify(next.assetRequirements), JSON.stringify(next.copyRequirements), next.status, next.sortOrder, now, input.id);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_item', ?, 'campaign_item.updated', ?, ?)").run(input.id, JSON.stringify({ releasePlanId: current.releasePlanId }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getCampaignItem(input.id)!;
+  }
+
+  deleteCampaignItem(id: string): void {
+    const current = this.getCampaignItem(id);
+    if (!current) throw new Error("Campaign item not found");
+    this.assertReleasePlanMutable(current.releasePlanId);
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM campaign_items WHERE id = ?").run(id);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('campaign_item', ?, 'campaign_item.deleted', ?, ?)").run(id, JSON.stringify({ releasePlanId: current.releasePlanId, sortOrder: current.sortOrder }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
+
+  reorderCampaignItems(input: ReorderCampaignItemsInput): CampaignItem[] {
+    this.assertReleasePlanMutable(input.releasePlanId);
+    const current = this.listCampaignItems(input.releasePlanId);
+    const currentIds = current.map((item) => item.id).sort();
+    const nextIds = [...input.itemIds].sort();
+    if (currentIds.length !== nextIds.length || currentIds.some((id, index) => id !== nextIds[index])) throw new Error("Campaign item reorder must include every item exactly once");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      input.itemIds.forEach((id, index) => this.database.prepare("UPDATE campaign_items SET sort_order = ?, updated_at = ? WHERE id = ? AND release_plan_id = ?").run(-100000 - index, now, id, input.releasePlanId));
+      input.itemIds.forEach((id, index) => this.database.prepare("UPDATE campaign_items SET sort_order = ?, updated_at = ? WHERE id = ? AND release_plan_id = ?").run(index, now, id, input.releasePlanId));
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'campaign_items.reordered', ?, ?)").run(input.releasePlanId, JSON.stringify({ itemIds: input.itemIds }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.listCampaignItems(input.releasePlanId);
+  }
+
+  replaceReleasePlanItems(releasePlanId: string, items: Omit<CreateCampaignItemInput, "releasePlanId" | "sortOrder">[]): CampaignItem[] {
+    if (!this.getReleasePlan(releasePlanId)) throw new Error("Release plan not found");
+    this.assertReleasePlanMutable(releasePlanId);
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM campaign_items WHERE release_plan_id = ?").run(releasePlanId);
+      const insert = this.database.prepare(`INSERT INTO campaign_items (id, release_plan_id, title, purpose, content_type, target_platforms_json, planned_date, planned_time, cta, notes, asset_requirements_json, copy_requirements_json, status, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      items.forEach((item, index) => {
+        const title = item.title.trim();
+        if (!title) throw new Error("Campaign item title is required");
+        if (!campaignItemContentTypes.has(item.contentType)) throw new Error("Invalid campaign item content type");
+        const status = item.status ?? "DRAFT";
+        if (!campaignItemStatuses.has(status)) throw new Error("Invalid campaign item status");
+        insert.run(randomUUID(), releasePlanId, title, item.purpose.trim(), item.contentType, JSON.stringify(normalizeCampaignPlatforms(item.targetPlatforms)), item.plannedDate ?? null, item.plannedTime ?? null, item.cta?.trim() ?? "", item.notes?.trim() ?? "", JSON.stringify(item.assetRequirements ?? []), JSON.stringify(item.copyRequirements ?? []), status, index, now, now);
+      });
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'campaign_items.replaced', ?, ?)").run(releasePlanId, JSON.stringify({ count: items.length }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.listCampaignItems(releasePlanId);
+  }
+
+  private createGeneratedReleasePlanRevision(releaseId: string, options: { actor?: string; reason?: string; draft?: GeneratedReleasePlanDraft }): ReleasePlan {
+    const release = this.listReleases().find((item) => item.id === releaseId);
+    if (!release) throw new Error("Release not found");
+    const previous = this.getCurrentReleasePlan(releaseId);
+    const draft = options.draft ?? buildReleasePlanDraft({ release, assets: this.listAssets(releaseId), brandProfile: this.getBrandProfileForRelease(releaseId) ?? null });
+    const now = new Date().toISOString();
+    const id = randomUUID();
+    if (typeof draft.title !== "string" || !draft.title.trim()) throw new Error("Release plan title is required");
+    if (typeof draft.summary !== "string" || !Array.isArray(draft.items)) throw new Error("Invalid release plan draft");
+    const actor = options.actor?.trim() || "local-user";
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const revisionNumber = this.nextReleasePlanRevisionNumber(releaseId);
+      this.database.prepare(`INSERT INTO release_plans (id, release_id, revision_number, previous_plan_id, title, summary, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, releaseId, revisionNumber, previous?.id ?? null, draft.title.trim(), draft.summary, actor, now, now);
+      this.insertGeneratedCampaignItems(id, draft.items, now);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('release_plan', ?, 'release_plan.generated', ?, ?)").run(id, JSON.stringify({ releaseId, previousPlanId: previous?.id ?? null, revisionNumber, reason: options.reason ?? "generated" }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+    return this.getReleasePlan(id)!;
+  }
+
+  private insertGeneratedCampaignItems(releasePlanId: string, items: GeneratedReleasePlanItem[], createdAt: string): void {
+    const insert = this.database.prepare(`INSERT INTO campaign_items (id, release_plan_id, title, purpose, content_type, target_platforms_json, planned_date, planned_time, cta, notes, asset_requirements_json, copy_requirements_json, status, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)`);
+    items.forEach((item, index) => {
+      const title = item.title.trim();
+      if (!title) throw new Error("Campaign item title is required");
+      if (!campaignItemContentTypes.has(item.contentType)) throw new Error("Invalid campaign item content type");
+      insert.run(randomUUID(), releasePlanId, title, item.purpose.trim(), item.contentType, JSON.stringify(normalizeCampaignPlatforms(item.targetPlatforms)), item.plannedDate, item.plannedTime, item.cta.trim(), item.notes.trim(), JSON.stringify(item.assetRequirements), JSON.stringify(item.copyRequirements), index, createdAt, createdAt);
+    });
+  }
+
+  private nextReleasePlanRevisionNumber(releaseId: string): number {
+    const row = this.database.prepare("SELECT COALESCE(MAX(revision_number), 0) + 1 AS nextRevisionNumber FROM release_plans WHERE release_id = ?").get(releaseId) as { nextRevisionNumber: number };
+    return row.nextRevisionNumber;
+  }
+
+  recordApprovalAction(input: RecordApprovalActionInput): ApprovalRecord {
+    const now = new Date().toISOString();
+    return this.insertApprovalRecord(input, now);
+  }
+
+  listApprovalRecords(entityType: ApprovalEntityType, entityId: string): ApprovalRecord[] {
+    if (!approvalEntityTypes.has(entityType)) throw new Error("Invalid approval entity type");
+    return this.database.prepare(`SELECT id, entity_type AS entityType, entity_id AS entityId, action, actor, reason, previous_status AS previousStatus, new_status AS newStatus, created_at AS createdAt FROM approval_records WHERE entity_type = ? AND entity_id = ? ORDER BY created_at ASC, rowid ASC`).all(entityType, entityId) as unknown as ApprovalRecord[];
+  }
+
+  listPromoGenerations(releasePlanId: string): PromoGeneration[] {
+    return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE release_plan_id = ? ORDER BY created_at ASC, id ASC`).all(releasePlanId) as unknown as PromoGeneration[];
+  }
+
+  getPromoGenerationByCampaignItem(campaignItemId: string): PromoGeneration | undefined {
+    return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE campaign_item_id = ?`).get(campaignItemId) as PromoGeneration | undefined;
+  }
+
+  getPromoGenerationById(id: string): PromoGeneration | undefined {
+    return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE id = ?`).get(id) as PromoGeneration | undefined;
+  }
+
+  insertPromoGeneration(input: { releaseId: string; releasePlanId: string; campaignItemId: string; contentType: CampaignItemContentType; generatedContent: string; campaignPackItemId?: string | null; status: "SUCCESS" | "FAILED" | "SKIPPED"; error?: string | null; model: string }): PromoGeneration {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.database.prepare(`INSERT INTO promo_generations (id, release_id, release_plan_id, campaign_item_id, content_type, generated_content, campaign_pack_item_id, status, error, model, review_status, original_content, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'GENERATED', ?, ?)`).run(id, input.releaseId, input.releasePlanId, input.campaignItemId, input.contentType, input.generatedContent, input.campaignPackItemId ?? null, input.status, input.error ?? null, input.model, input.generatedContent || null, now);
+    return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE id = ?`).get(id) as unknown as PromoGeneration;
+  }
+
+  updatePromoGenerationReview(input: { promoGenerationId: string; reviewStatus: string; reviewActor?: string; reviewReason?: string }): PromoGeneration {
+    const now = new Date().toISOString();
+    const existing = this.database.prepare(`SELECT id, campaign_pack_item_id AS campaignPackItemId FROM promo_generations WHERE id = ?`).get(input.promoGenerationId) as { id: string; campaignPackItemId: string | null } | undefined;
+    if (!existing) throw new Error("Promo generation not found");
+    this.database.prepare(`UPDATE promo_generations SET review_status = ?, review_actor = ?, review_reason = ?, reviewed_at = ? WHERE id = ?`).run(input.reviewStatus, input.reviewActor ?? "local-user", input.reviewReason ?? "", now, input.promoGenerationId);
+    if (input.reviewStatus === "APPROVED" && existing.campaignPackItemId) {
+      const caption = this.database.prepare("SELECT kind, status FROM campaign_pack_items WHERE id = ?").get(existing.campaignPackItemId) as { kind: CampaignPackKind; status: DraftStatus } | undefined;
+      if (caption && caption.kind === "caption" && caption.status === "draft") {
+        this.database.prepare("UPDATE campaign_pack_items SET status = 'approved', updated_at = ? WHERE id = ?").run(now, existing.campaignPackItemId);
+      }
+    }
+    return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE id = ?`).get(input.promoGenerationId) as unknown as PromoGeneration;
+  }
+
+  editPromoGenerationContent(input: { promoGenerationId: string; editedContent: string }): PromoGeneration {
+    const existing = this.database.prepare(`SELECT id, review_status FROM promo_generations WHERE id = ?`).get(input.promoGenerationId) as { id: string; review_status: string } | undefined;
+    if (!existing) throw new Error("Promo generation not found");
+    if (existing.review_status === "APPROVED") throw new Error("Approved content cannot be edited. Return to review first.");
+    const now = new Date().toISOString();
+    this.database.prepare(`UPDATE promo_generations SET edited_content = ?, review_status = 'EDITED', reviewed_at = ? WHERE id = ?`).run(input.editedContent, now, input.promoGenerationId);
+    return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE id = ?`).get(input.promoGenerationId) as unknown as PromoGeneration;
+  }
+
+  retryPromoGeneration(input: { promoGenerationId: string; generatedContent: string; campaignPackItemId?: string | null; model: string }): PromoGeneration {
+    const existing = this.database.prepare(`SELECT id FROM promo_generations WHERE id = ?`).get(input.promoGenerationId);
+    if (!existing) throw new Error("Promo generation not found");
+    const now = new Date().toISOString();
+    this.database.prepare(`UPDATE promo_generations SET generated_content = ?, status = 'SUCCESS', error = NULL, model = ?, campaign_pack_item_id = ?, review_status = 'GENERATED', edited_content = NULL, review_actor = NULL, review_reason = NULL, reviewed_at = NULL WHERE id = ?`).run(input.generatedContent, input.model, input.campaignPackItemId ?? null, input.promoGenerationId);
+    return this.database.prepare(`SELECT id, release_id AS releaseId, release_plan_id AS releasePlanId, campaign_item_id AS campaignItemId, content_type AS contentType, generated_content AS generatedContent, campaign_pack_item_id AS campaignPackItemId, status, error, model, review_status AS reviewStatus, original_content AS originalContent, edited_content AS editedContent, review_actor AS reviewActor, review_reason AS reviewReason, reviewed_at AS reviewedAt, created_at AS createdAt FROM promo_generations WHERE id = ?`).get(input.promoGenerationId) as unknown as PromoGeneration;
+  }
+
+  deletePromoGeneration(promoGenerationId: string): void {
+    const promo = this.getPromoGenerationById(promoGenerationId);
+    if (!promo) throw new Error("Promo generation not found");
+    const queued = this.database.prepare("SELECT id FROM schedule_events WHERE promo_generation_id = ? AND publishing_queue_id IS NOT NULL").get(promoGenerationId) as { id: string } | undefined;
+    if (queued) throw new Error("Cannot delete: this generated promo item was sent to the Publishing Queue; delete the Publishing Queue record separately first");
+    const schedule = this.database.prepare("SELECT id, status FROM schedule_events WHERE promo_generation_id = ?").get(promoGenerationId) as { id: string; status: string } | undefined;
+    if (schedule) throw new Error(`Cannot delete: this generated promo item is referenced by a ScheduleEvent (${schedule.status}); delete the ScheduleEvent separately first`);
+    if (promo.reviewStatus === "APPROVED") throw new Error("Approved promo content is locked; return it to review before deleting");
+    const now = new Date().toISOString();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      this.database.prepare("DELETE FROM promo_generations WHERE id = ?").run(promoGenerationId);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES ('promo_generation', ?, 'promo_generation.deleted', ?, ?)").run(promoGenerationId, JSON.stringify({ releasePlanId: promo.releasePlanId, campaignItemId: promo.campaignItemId, reviewStatus: promo.reviewStatus }), now);
+      this.database.exec("COMMIT");
+    } catch (error) { this.database.exec("ROLLBACK"); throw error; }
+  }
+
+
+
+  createScheduleEvent(input: CreateScheduleEventInput): ScheduleEvent {
+    const promo = this.getApprovedPromoGenerationForScheduling(input.promoGenerationId);
+    const platform = this.normalizeSchedulePlatform(input.platform);
+    const scheduledAt = normalizeScheduleInstant(input.scheduledAt);
+    const timezone = normalizeScheduleTimezone(input.timezone);
+    const duplicate = this.database.prepare("SELECT id FROM schedule_events WHERE promo_generation_id = ? AND platform = ? AND scheduled_at = ? AND status != 'CANCELLED'").get(input.promoGenerationId, platform, scheduledAt) as { id: string } | undefined;
+    if (duplicate) throw new Error("This approved promo content is already scheduled for that platform and time");
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.database.prepare(`INSERT INTO schedule_events (id, release_id, release_plan_id, campaign_item_id, promo_generation_id, platform, scheduled_at, timezone, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?)`).run(id, promo.releaseId, promo.releasePlanId, promo.campaignItemId, promo.id, platform, scheduledAt, timezone, now, now);
+    return this.getScheduleEvent(id)!;
+  }
+
+  updateScheduleEvent(input: UpdateScheduleEventInput): ScheduleEvent {
+    const current = this.getScheduleEvent(input.id);
+    if (!current) throw new Error("Schedule event not found");
+    const platform = input.platform === undefined ? current.platform : this.normalizeSchedulePlatform(input.platform);
+    const scheduledAt = input.scheduledAt === undefined ? current.scheduledAt : normalizeScheduleInstant(input.scheduledAt);
+    const timezone = input.timezone === undefined ? current.timezone : normalizeScheduleTimezone(input.timezone);
+    const status = input.status === undefined ? current.status : input.status;
+    if (!scheduleEventStatuses.has(status)) throw new Error("Invalid schedule status");
+    const duplicate = this.database.prepare("SELECT id FROM schedule_events WHERE promo_generation_id = ? AND platform = ? AND scheduled_at = ? AND status != 'CANCELLED' AND id != ?").get(current.promoGenerationId, platform, scheduledAt, input.id) as { id: string } | undefined;
+    if (duplicate) throw new Error("This approved promo content is already scheduled for that platform and time");
+    const now = new Date().toISOString();
+    this.database.prepare("UPDATE schedule_events SET platform = ?, scheduled_at = ?, timezone = ?, status = ?, updated_at = ? WHERE id = ?").run(platform, scheduledAt, timezone, status, now, input.id);
+    return this.getScheduleEvent(input.id)!;
+  }
+
+  cancelScheduleEvent(id: string): ScheduleEvent {
+    return this.updateScheduleEvent({ id, status: "CANCELLED" });
+  }
+
+  sendScheduleEventToPublishingQueue(id: string, actor = "local-user"): QueueScheduleEventResult {
+    const event = this.getScheduleEvent(id);
+    if (!event) throw new Error("Schedule event not found");
+    if (event.status !== "READY") throw new Error("Only READY schedule events can be sent to the Publishing Queue");
+    if (event.publishingQueueId) throw new Error("This schedule event is already linked to the Publishing Queue");
+    if (!supportedScheduledPublishingPlatforms.has(event.platform)) throw new Error(`${event.platform} is not supported by the Publishing Queue yet`);
+
+    const promo = this.getApprovedPromoGenerationForScheduling(event.promoGenerationId);
+    if (!promo.campaignPackItemId) throw new Error("This approved promo content has no approved caption source for the Publishing Queue");
+    const caption = this.database.prepare("SELECT release_id AS releaseId, status, kind FROM campaign_pack_items WHERE id = ?").get(promo.campaignPackItemId) as { releaseId: string; status: DraftStatus; kind: CampaignPackKind } | undefined;
+    if (!caption || caption.releaseId !== event.releaseId || caption.kind !== "caption" || caption.status !== "approved") throw new Error("This approved promo content has no approved caption source for the Publishing Queue");
+
+    const now = new Date().toISOString();
+    const queueId = randomUUID();
+    this.database.exec("BEGIN IMMEDIATE");
+    try {
+      const current = this.getScheduleEvent(id);
+      if (!current || current.publishingQueueId) throw new Error("This schedule event is already linked to the Publishing Queue");
+      this.database.prepare(`INSERT INTO publishing_queue(id,release_id,campaign_pack_item_id,media_generation_id,platform,caption,scheduled_at,status,created_at,updated_at) SELECT ?, ?, c.id, NULL, ?, c.content, ?, 'draft', ?, ? FROM campaign_pack_items c WHERE c.id = ?`).run(queueId, event.releaseId, event.platform, event.scheduledAt, now, now, promo.campaignPackItemId);
+      this.database.prepare("UPDATE schedule_events SET publishing_queue_id = ?, queued_at = ?, queued_by = ?, updated_at = ? WHERE id = ?").run(queueId, now, actor, now, id);
+      this.database.prepare("INSERT INTO events (entity_type, entity_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)").run("schedule_event", id, "schedule_event.sent_to_publishing_queue", JSON.stringify({ publishingQueueId: queueId, actor }), now);
+      this.database.exec("COMMIT");
+    } catch (error) {
+      this.database.exec("ROLLBACK");
+      throw error;
+    }
+    return { scheduleEvent: this.getScheduleEvent(id)!, publishingQueueItem: this.getPublishingQueueItem(queueId)! };
+  }
+
+  listScheduleEvents(input: { releaseId?: string | null; from?: string | null; to?: string | null } = {}): ScheduleEvent[] {
+    const params: string[] = [];
+    const where: string[] = [];
+    if (input.releaseId) { where.push("se.release_id = ?"); params.push(input.releaseId); }
+    if (input.from) { where.push("se.scheduled_at >= ?"); params.push(normalizeScheduleInstant(input.from)); }
+    if (input.to) { where.push("se.scheduled_at <= ?"); params.push(normalizeScheduleInstant(input.to)); }
+    const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    return this.database.prepare(this.scheduleEventSelectSql(clause)).all(...params) as unknown as ScheduleEvent[];
+  }
+
+  private getScheduleEvent(id: string): ScheduleEvent | null {
+    return (this.database.prepare(this.scheduleEventSelectSql("WHERE se.id = ?")).get(id) as ScheduleEvent | undefined) ?? null;
+  }
+
+  private getApprovedPromoGenerationForScheduling(id: string): PromoGeneration {
+    const promo = this.getPromoGenerationById(id);
+    if (!promo) throw new Error("Promo generation not found");
+    if (promo.status !== "SUCCESS" || promo.reviewStatus !== "APPROVED") throw new Error("Only APPROVED promo content can be scheduled");
+    return promo;
+  }
+
+  private normalizeSchedulePlatform(platform: CampaignChannel): CampaignChannel {
+    if (!scheduleEventPlatforms.has(platform)) throw new Error("Invalid schedule platform");
+    return platform;
+  }
+
+  private scheduleEventSelectSql(clause: string): string {
+    return `SELECT se.id, se.release_id AS releaseId, r.title AS releaseTitle, se.release_plan_id AS releasePlanId, se.campaign_item_id AS campaignItemId, ci.title AS campaignItemTitle, se.promo_generation_id AS promoGenerationId, se.platform, se.scheduled_at AS scheduledAt, se.timezone, se.status, se.publishing_queue_id AS publishingQueueId, se.queued_at AS queuedAt, se.queued_by AS queuedBy, se.created_at AS createdAt, se.updated_at AS updatedAt FROM schedule_events se JOIN releases r ON r.id = se.release_id JOIN campaign_items ci ON ci.id = se.campaign_item_id ${clause} ORDER BY se.scheduled_at ASC, se.created_at ASC, se.id ASC`;
+  }
+
+  private assertReleasePlanMutable(releasePlanId: string): void {
+    const plan = this.getReleasePlan(releasePlanId);
+    if (!plan) throw new Error("Release plan not found");
+    if (immutableReleasePlanStatuses.has(plan.status)) throw new Error("Approved release plans are immutable; create a new draft revision before editing.");
+  }
+
+  private listCampaignItems(releasePlanId: string): CampaignItem[] {
+    const rows = this.database.prepare(`SELECT id, release_plan_id AS releasePlanId, title, purpose, content_type AS contentType, target_platforms_json AS targetPlatforms, planned_date AS plannedDate, planned_time AS plannedTime, cta, notes, asset_requirements_json AS assetRequirements, copy_requirements_json AS copyRequirements, status, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt FROM campaign_items WHERE release_plan_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC`).all(releasePlanId) as unknown as Array<Omit<CampaignItem, "targetPlatforms" | "assetRequirements" | "copyRequirements"> & { targetPlatforms: string; assetRequirements: string; copyRequirements: string }>;
+    return rows.map((row) => ({ ...row, targetPlatforms: parseCampaignPlatforms(row.targetPlatforms), assetRequirements: parseStringArray(row.assetRequirements), copyRequirements: parseStringArray(row.copyRequirements) }));
+  }
+
+  private getCampaignItem(id: string): CampaignItem | null {
+    const row = this.database.prepare(`SELECT id, release_plan_id AS releasePlanId, title, purpose, content_type AS contentType, target_platforms_json AS targetPlatforms, planned_date AS plannedDate, planned_time AS plannedTime, cta, notes, asset_requirements_json AS assetRequirements, copy_requirements_json AS copyRequirements, status, sort_order AS sortOrder, created_at AS createdAt, updated_at AS updatedAt FROM campaign_items WHERE id = ?`).get(id) as (Omit<CampaignItem, "targetPlatforms" | "assetRequirements" | "copyRequirements"> & { targetPlatforms: string; assetRequirements: string; copyRequirements: string }) | undefined;
+    return row ? { ...row, targetPlatforms: parseCampaignPlatforms(row.targetPlatforms), assetRequirements: parseStringArray(row.assetRequirements), copyRequirements: parseStringArray(row.copyRequirements) } : null;
+  }
+
+  private nextCampaignItemSortOrder(releasePlanId: string): number {
+    const row = this.database.prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS nextSortOrder FROM campaign_items WHERE release_plan_id = ?").get(releasePlanId) as { nextSortOrder: number };
+    return row.nextSortOrder;
+  }
+
+  private insertApprovalRecord(input: RecordApprovalActionInput, createdAt: string): ApprovalRecord {
+    if (!approvalEntityTypes.has(input.entityType)) throw new Error("Invalid approval entity type");
+    if (!approvalActions.has(input.action)) throw new Error("Invalid approval action");
+    if (input.entityType === "release_plan" && !this.getReleasePlan(input.entityId)) throw new Error("Release plan not found");
+    const actor = input.actor?.trim() || "local-user";
+    const reason = input.reason?.trim() ?? "";
+    const id = randomUUID();
+    this.database.prepare(`INSERT INTO approval_records (id, entity_type, entity_id, action, actor, reason, previous_status, new_status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(id, input.entityType, input.entityId, input.action, actor, reason, input.previousStatus ?? null, input.newStatus ?? null, createdAt);
+    return { id, entityType: input.entityType, entityId: input.entityId, action: input.action, actor, reason, previousStatus: input.previousStatus ?? null, newStatus: input.newStatus ?? null, createdAt };
+  }
+
+  storePostAnalytics(input:{publishingQueueItemId:string;releaseId:string;externalPostId:string;platform:string;verified:boolean;verifiedAt:string|null;verificationError:string|null;views:number|null;reach:number|null;impressions:number|null;likes:number|null;comments:number|null;shares:number|null;clicks:number|null}):PostPublishSnapshot{const now=new Date().toISOString();const row=this.database.prepare("INSERT INTO post_publish_analytics (publishing_queue_item_id,release_id,external_post_id,platform,verified,verified_at,verification_error,views,reach,impressions,likes,comments,shares,clicks,captured_at,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(input.publishingQueueItemId,input.releaseId,input.externalPostId,input.platform,input.verified?1:0,input.verifiedAt,input.verificationError,input.views,input.reach,input.impressions,input.likes,input.comments,input.shares,input.clicks,now,now);const raw=this.database.prepare("SELECT id,publishing_queue_item_id AS publishingQueueItemId,release_id AS releaseId,external_post_id AS externalPostId,platform,verified,verified_at AS verifiedAt,verification_error AS verificationError,views,reach,impressions,likes,comments,shares,clicks,captured_at AS capturedAt,created_at AS createdAt FROM post_publish_analytics WHERE id=?").get(row.lastInsertRowid) as Record<string,unknown>;return{...(raw as unknown as PostPublishSnapshot),verified:Boolean(raw.verified)};}
+  getAnalyticsSnapshots(itemId:string):PostPublishSnapshot[]{const rows=this.database.prepare("SELECT id,publishing_queue_item_id AS publishingQueueItemId,release_id AS releaseId,external_post_id AS externalPostId,platform,verified,verified_at AS verifiedAt,verification_error AS verificationError,views,reach,impressions,likes,comments,shares,clicks,captured_at AS capturedAt,created_at AS createdAt FROM post_publish_analytics WHERE publishing_queue_item_id=? ORDER BY id DESC").all(itemId) as Array<Record<string,unknown>>;return rows.map((row)=>({...row as unknown as PostPublishSnapshot,verified:Boolean(row.verified)}));}
+  getReleaseAnalyticsSummary(releaseId:string):ReleaseAnalyticsSummary{const rows=this.database.prepare("SELECT platform,COUNT(*) AS postCount,AVG(reach) AS avgReach,AVG(impressions) AS avgImpressions,AVG(likes) AS avgLikes,AVG(comments) AS avgComments,AVG(shares) AS avgShares,SUM(reach) AS totalReach,SUM(impressions) AS totalImpressions,SUM(likes) AS totalLikes,SUM(comments) AS totalComments,SUM(shares) AS totalShares FROM post_publish_analytics WHERE release_id=? GROUP BY platform").all(releaseId) as Array<Record<string,unknown>>;const latestRow=this.database.prepare("SELECT MAX(captured_at) AS recentSnapshotAt FROM post_publish_analytics WHERE release_id=?").get(releaseId) as {recentSnapshotAt:string|null}|undefined;return{releaseId,totalSnapshots:rows.reduce((sum,r)=>sum+Number(r.postCount??0),0),platforms:rows.map((r)=>({platform:r.platform as CampaignChannel,postCount:Number(r.postCount??0),avgReach:r.avgReach!=null?Math.round(Number(r.avgReach)):null,avgImpressions:r.avgImpressions!=null?Math.round(Number(r.avgImpressions)):null,avgLikes:r.avgLikes!=null?Math.round(Number(r.avgLikes)):null,avgComments:r.avgComments!=null?Math.round(Number(r.avgComments)):null,avgShares:r.avgShares!=null?Math.round(Number(r.avgShares)):null,totalReach:Number(r.totalReach??0),totalImpressions:Number(r.totalImpressions??0),totalLikes:Number(r.totalLikes??0),totalComments:Number(r.totalComments??0),totalShares:Number(r.totalShares??0)})),recentSnapshotAt:latestRow?.recentSnapshotAt??null};}
 
   close(): void { this.database.close(); }
 

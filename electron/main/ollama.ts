@@ -2,6 +2,61 @@ import type { OllamaModel } from "../shared/contracts.js";
 import type { CampaignChannel, CampaignPackKind, GenerateCampaignDraftInput, GenerateCampaignPackInput, GeneratedCampaignDraft } from "../shared/contracts.js";
 import { integrationHttpError, resilientFetch } from "./integration-resilience.js";
 
+const CANONICAL_ARTIST_NAMES = new Set(["The Arkadiusz", "Arkadelic", "AR-TEK", "Echoes of Arcadia"]);
+const CANONICAL_LABEL_NAMES = new Set(["AI Studio Manager"]);
+
+function buildCanonicalProtection(artistName: string, releaseTitle: string, labelName?: string): string {
+  const parts: string[] = [];
+  if (CANONICAL_ARTIST_NAMES.has(artistName)) {
+    parts.push(`Artist name "${artistName}" is a canonical proper noun. Use it exactly as written. Do not translate, respell, transliterate, abbreviate, normalize or stylize it.`);
+  }
+  if (labelName && CANONICAL_LABEL_NAMES.has(labelName)) {
+    parts.push(`Label name "${labelName}" is a canonical proper noun. Use it exactly as written.`);
+  }
+  if (releaseTitle) {
+    parts.push(`Release title "${releaseTitle}" is a canonical proper noun. Use it exactly as written.`);
+  }
+  if (parts.length === 0) return "";
+  return "CRITICAL CANONICAL NAME PROTECTION:\n" + parts.join("\n") + "\n";
+}
+
+function correctCanonicalVariants(output: string, artistName: string, releaseTitle: string, labelName?: string): string {
+  let corrected = output;
+  const artistVariants = new Map<string, string>([
+    ["Arkadelik", "Arkadelic"],
+    ["Arkadelick", "Arkadelic"],
+    ["Arkadellic", "Arkadelic"],
+    ["ARKADELIC", "Arkadelic"],
+    ["arkadelic", "Arkadelic"],
+    ["The Arkadius", "The Arkadiusz"],
+    ["The Arkadius", "The Arkadiusz"],
+    ["Arkadius", "The Arkadiusz"],
+    ["AR-Tek", "AR-TEK"],
+    ["Ar-Tek", "AR-TEK"],
+    ["Artek", "AR-TEK"],
+    ["Echoes Of Arcadia", "Echoes of Arcadia"],
+    ["Echoes of Arcadias", "Echoes of Arcadia"],
+  ]);
+  for (const [wrong, correct] of artistVariants) {
+    if (wrong !== correct) {
+      const regex = new RegExp(`\\b${wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
+      corrected = corrected.replace(regex, correct);
+    }
+  }
+  if (labelName && CANONICAL_LABEL_NAMES.has(labelName)) {
+    const labelVariants = new Map<string, string>([
+      ["AI Studio", "AI Studio Manager"],
+      ["Ai Studio Manager", "AI Studio Manager"],
+      ["ai studio manager", "AI Studio Manager"],
+    ]);
+    for (const [wrong, correct] of labelVariants) {
+      const regex = new RegExp(`\\b${wrong.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, "gi");
+      corrected = corrected.replace(regex, correct);
+    }
+  }
+  return corrected;
+}
+
 interface OllamaTagsResponse {
   models?: Array<{
     name?: string;
@@ -32,6 +87,9 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
   const required = [input.model, input.artistName, input.title, input.primaryGenre];
   if (required.some((value) => !value.trim())) throw new Error("Model, artist, title and genre are required");
 
+  const canonicalProtection = buildCanonicalProtection(input.artistName, input.title);
+  const systemPrompt = `You are a precise music promotion copywriter. Write in ${languageNames[input.language]}. Return only the finished ${input.channel} copy, without headings, analysis, markdown fences or invented links, quotes, achievements, events or collaborations. Preserve all supplied facts exactly. Match the artist voice. Keep the result platform-appropriate and concise.${canonicalProtection ? "\n\n" + canonicalProtection : ""}`;
+
   const response = await resilientFetch("http://127.0.0.1:11434/api/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -47,10 +105,7 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
         num_predict: input.model.toLowerCase().startsWith("deepseek-r1") ? 900 : 400
       },
       messages: [
-        {
-          role: "system",
-          content: `You are a precise music promotion copywriter. Write in ${languageNames[input.language]}. Return only the finished ${input.channel} copy, without headings, analysis, markdown fences or invented links, quotes, achievements, events or collaborations. Preserve all supplied facts exactly. Match the artist voice. Keep the result platform-appropriate and concise.`
-        },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
           content: [
@@ -75,12 +130,13 @@ export async function generateCampaignDraft(input: GenerateCampaignDraftInput): 
     done_reason?: string;
     eval_count?: number;
   };
-  const content = stripThinking(data.message?.content ?? "");
+  let content = stripThinking(data.message?.content ?? "");
   if (!content) {
     const reasoningTokens = data.message?.thinking?.trim().length ?? 0;
     if (reasoningTokens > 0) throw new Error("DeepSeek finished its reasoning budget before producing the final copy. Please retry once with the warmed model.");
     throw new Error(data.error || `Ollama returned an empty response${data.done_reason ? ` (${data.done_reason})` : ""}`);
   }
+  content = correctCanonicalVariants(content, input.artistName, input.title);
   return { content, model: input.model, language: input.language, channel: input.channel, generatedAt: new Date().toISOString() };
 }
 
@@ -111,10 +167,14 @@ export async function runPlanningAgent(model: string, task: string, releaseTitle
 
 export interface GeneratedPackItem { kind: CampaignPackKind; channel: CampaignChannel | null; content: string; }
 export async function generateCampaignPackContent(input: GenerateCampaignPackInput): Promise<GeneratedPackItem[]> {
-  const response = await resilientFetch("http://127.0.0.1:11434/api/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:input.model, stream:false, think:false, format:"json", keep_alive:"15m", options:{temperature:.5,top_p:.9,num_ctx:6144,num_predict:2600}, messages:[{role:"system",content:`You create factual music promotion packs in ${languageNames[input.language]}. Return only valid JSON. Never invent links, achievements, quotes, collaborators or events. Image and visualizer prompts must describe original artwork and must not imitate a living artist.`},{role:"user",content:[`Artist: ${input.artistName}`,`Voice: ${input.artistVoice}`,`Track: ${input.title}`,`Genre: ${input.primaryGenre}`,`Story: ${input.story||"No story supplied"}`,`Release date: ${input.releaseDate||"not announced"}`,`Return this exact JSON object with string values:`,JSON.stringify({instagram:"Instagram caption with 4-7 hashtags",facebook:"Facebook post",tiktok:"TikTok caption with hook and hashtags",soundcloud:"SoundCloud description",youtube:"YouTube description",videoHook:"Spoken/on-screen hook under 12 words",videoScript:"15-30 second vertical video script with shots and text",imagePrompt:"Detailed square campaign artwork generation prompt; no embedded text",visualizerPrompt:"Detailed looping music visualizer prompt; no embedded text"})].join("\n")}]} ) }, {service:"Ollama",timeoutMs:300_000,retries:0});
+  const canonicalProtection = buildCanonicalProtection(input.artistName, input.title);
+  const systemPrompt = `You create factual music promotion packs in ${languageNames[input.language]}. Return only valid JSON. Never invent links, achievements, quotes, collaborators or events. Image and visualizer prompts must describe original artwork and must not imitate a living artist.${canonicalProtection ? "\n\n" + canonicalProtection : ""}`;
+
+  const response = await resilientFetch("http://127.0.0.1:11434/api/chat", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ model:input.model, stream:false, think:false, format:"json", keep_alive:"15m", options:{temperature:.5,top_p:.9,num_ctx:6144,num_predict:2600}, messages:[{role:"system",content:systemPrompt},{role:"user",content:[`Artist: ${input.artistName}`,`Voice: ${input.artistVoice}`,`Track: ${input.title}`,`Genre: ${input.primaryGenre}`,`Story: ${input.story||"No story supplied"}`,`Release date: ${input.releaseDate||"not announced"}`,`Return this exact JSON object with string values:`,JSON.stringify({instagram:"Instagram caption with 4-7 hashtags",facebook:"Facebook post",tiktok:"TikTok caption with hook and hashtags",soundcloud:"SoundCloud description",youtube:"YouTube description",videoHook:"Spoken/on-screen hook under 12 words",videoScript:"15-30 second vertical video script with shots and text",imagePrompt:"Detailed square campaign artwork generation prompt; no embedded text",visualizerPrompt:"Detailed looping music visualizer prompt; no embedded text"})].join("\n")}]} ) }, {service:"Ollama",timeoutMs:300_000,retries:0});
   if (!response.ok) throw integrationHttpError("Ollama", response.status, (await response.text()).slice(0, 300));
   const data=await response.json() as {message?:{content?:string};error?:string}; const raw=stripThinking(data.message?.content??"").replace(/^```json\s*|\s*```$/g,""); if(!raw) throw new Error(data.error||"Ollama returned an empty campaign pack");
   let value:Record<string,unknown>; try{value=JSON.parse(raw) as Record<string,unknown>;}catch{throw new Error("The local model returned invalid campaign pack JSON. Retry with a warmed model.");}
   const specs:Array<[string,CampaignPackKind,CampaignChannel|null]>=[["instagram","caption","Instagram"],["facebook","caption","Facebook"],["tiktok","caption","TikTok"],["soundcloud","caption","SoundCloud"],["youtube","caption","YouTube"],["videoHook","video-hook","TikTok"],["videoScript","video-script","TikTok"],["imagePrompt","image-prompt",null],["visualizerPrompt","visualizer-prompt","YouTube"]];
-  return specs.map(([key,kind,channel])=>({kind,channel,content:typeof value[key]==="string"?value[key].trim():""})).filter((item)=>item.content);
+  const items = specs.map(([key,kind,channel])=>({kind,channel,content:typeof value[key]==="string"?value[key].trim():""})).filter((item)=>item.content);
+  return items.map(item => ({ ...item, content: correctCanonicalVariants(item.content, input.artistName, input.title) }));
 }

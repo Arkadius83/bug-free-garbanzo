@@ -1,0 +1,84 @@
+.ppa-page { padding: 20px; }
+.ppa-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; margin-bottom: 20px; }
+.ppa-header h1 { margin: 7px 0; font-size: 16px; }
+.ppa-header p { margin: 0; color: #737b8d; font-size: 10px; }
+.ppa-filters { display: flex; gap: 10px; align-items: flex-end; }
+.ppa-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 9px; color: #737b8d; text-transform: uppercase; letter-spacing: 0.5px; }
+.ppa-filters select { background: #151a27; border: 1px solid #2c3142; border-radius: 5px; color: #e0e4f0; padding: 6px 8px; font-size: 10px; }
+.ppa-refresh-btn { margin-top: auto; padding: 6px 12px; border: 1px solid #8f4eff; border-radius: 5px; background: #1a1040; color: #c9a0ff; font-size: 10px; cursor: pointer; white-space: nowrap; }
+.ppa-refresh-btn:hover { background: #2a1860; color: #e0d0ff; }
+.ppa-refresh-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.ppa-batch-progress { margin-bottom: 15px; }
+.ppa-progress-bar { height: 6px; border-radius: 3px; background: #1e2234; overflow: hidden; margin-bottom: 6px; }
+.ppa-progress-bar i { display: block; height: 100%; background: linear-gradient(90deg, #8f4eff, #55d7a0); border-radius: 3px; transition: width 0.3s ease; }
+.ppa-progress-stats { display: flex; gap: 12px; font-size: 9px; color: #737b8d; }
+.ppa-stat-ok { color: #55d7a0; }
+.ppa-stat-fail { color: #ff766f; }
+.ppa-message { padding: 10px; border-radius: 6px; background: #111624; color: #a0b0d0; font-size: 10px; margin-bottom: 15px; }
+.ppa-empty { padding: 40px; text-align: center; color: #70798a; }
+.ppa-empty p { margin: 0 0 6px; }
+.ppa-empty small { color: #555d70; }
+.ppa-layout { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+.ppa-post-list h3 { margin: 0 0 12px; font-size: 11px; color: #737b8d; text-transform: uppercase; letter-spacing: 0.5px; }
+.ppa-list { display: flex; flex-direction: column; gap: 6px; max-height: 600px; overflow-y: auto; }
+.ppa-post-card { padding: 10px 12px; border: 1px solid #292e40; border-radius: 6px; background: #0e121b; cursor: pointer; transition: border-color 0.15s; }
+.ppa-post-card:hover { border-color: #3a4060; }
+.ppa-post-card.selected { border-color: #8f4eff; background: #12152290; }
+.ppa-post-header { display: flex; gap: 8px; align-items: center; }
+.ppa-post-header strong { font-size: 9px; color: #8f4eff; text-transform: uppercase; }
+.ppa-post-title { font-size: 11px; color: #e0e4f0; font-weight: 500; }
+.ppa-post-meta { display: flex; justify-content: space-between; margin-top: 4px; font-size: 9px; color: #6f7889; }
+.ppa-post-id { margin-top: 3px; }
+.ppa-post-id small { color: #555d70; font-size: 8px; }
+.ppa-post-actions { display: flex; gap: 6px; margin-top: 8px; }
+.ppa-post-actions button { padding: 4px 8px; border: 1px solid #383e51; border-radius: 4px; background: #151a27; color: #aeb4c0; font-size: 8px; cursor: pointer; }
+.ppa-post-actions button:hover { border-color: #8f4eff; color: #e0e4f0; }
+.ppa-post-actions button:disabled { opacity: 0.4; cursor: not-allowed; }
+.ppa-detail h3 { margin: 0 0 12px; font-size: 11px; color: #737b8d; text-transform: uppercase; letter-spacing: 0.5px; }
+.ppa-loading { padding: 30px; text-align: center; color: #70798a; font-size: 10px; }
+.ppa-verification { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; padding: 10px; border: 1px solid #292e40; border-radius: 6px; background: #0e121b; }
+.ppa-status { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 9px; font-weight: 600; text-transform: uppercase; }
+.ppa-status.verified { background: #1a2e1a; color: #55d7a0; border: 1px solid #2a4a2a; }
+.ppa-status.failed { background: #2e1a1a; color: #ff766f; border: 1px solid #4a2a2a; }
+.ppa-error { color: #ff766f; }
+.ppa-metrics-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 20px; }
+.ppa-metric-card { display: flex; flex-direction: column; align-items: center; padding: 12px 8px; border: 1px solid #2c3142; border-radius: 6px; background: #0e121b; }
+.ppa-metric-label { font-size: 8px; color: #737b8d; text-transform: uppercase; letter-spacing: 0.5px; }
+.ppa-metric-value { margin-top: 4px; font-size: 16px; font-weight: 600; color: #e0e4f0; }
+.ppa-history { overflow-x: auto; }
+.ppa-history table { width: 100%; border-collapse: collapse; font-size: 9px; }
+.ppa-history th { padding: 6px 8px; text-align: left; color: #737b8d; border-bottom: 1px solid #292e40; font-weight: 500; text-transform: uppercase; font-size: 8px; }
+.ppa-history td { padding: 6px 8px; border-bottom: 1px solid #1e2234; color: #aeb4c0; }
+.ppa-status-mini { padding: 1px 5px; border-radius: 3px; font-size: 8px; }
+.ppa-status-mini.verified { background: #1a2e1a; color: #55d7a0; }
+.ppa-status-mini.failed { background: #2e1a1a; color: #ff766f; }
+.ppa-empty-detail { padding: 40px; text-align: center; color: #70798a; }
+.ppa-empty-detail p { margin: 0 0 6px; }
+.ppa-empty-detail small { color: #555d70; }
+
+@media (max-width: 900px) {
+  .ppa-layout { grid-template-columns: 1fr; }
+  .ppa-metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  .ppa-header { flex-direction: column; }
+}
+
+.ppa-compare { margin-top: 20px; }
+.ppa-compare-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+.ppa-compare-header h3 { margin: 0; font-size: 11px; color: #737b8d; text-transform: uppercase; letter-spacing: 0.5px; }
+.ppa-compare-header p { margin: 4px 0 0; color: #555d70; font-size: 9px; }
+.ppa-compare-toggle { padding: 6px 12px; border: 1px solid #383e51; border-radius: 5px; background: #151a27; color: #aeb4c0; font-size: 10px; cursor: pointer; white-space: nowrap; }
+.ppa-compare-toggle:hover { border-color: #8f4eff; color: #e0e4f0; }
+.ppa-compare-toggle.active { border-color: #8f4eff; background: #1a1040; color: #c9a0ff; }
+.ppa-compare-selector { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.ppa-compare-check { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid #292e40; border-radius: 5px; background: #0e121b; cursor: pointer; font-size: 10px; color: #aeb4c0; }
+.ppa-compare-check:has(input:checked) { border-color: #8f4eff; background: #1a1040; }
+.ppa-compare-check input { accent-color: #8f4eff; }
+.ppa-compare-check span { font-size: 10px; }
+.ppa-compare-table-wrap { overflow-x: auto; }
+.ppa-compare-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+.ppa-compare-table th { padding: 6px 8px; text-align: center; color: #737b8d; border-bottom: 1px solid #292e40; font-weight: 500; text-transform: uppercase; font-size: 8px; white-space: nowrap; }
+.ppa-compare-table td { padding: 6px 8px; border-bottom: 1px solid #1e2234; color: #aeb4c0; text-align: center; }
+.ppa-compare-table td:first-child { text-align: left; }
+.ppa-compare-release-name { font-weight: 600; color: #e0e4f0; max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ppa-compare-hint { padding: 12px; text-align: center; color: #737b8d; font-size: 10px; }
+.ppa-compare-empty { padding: 20px; text-align: center; color: #70798a; font-size: 10px; }

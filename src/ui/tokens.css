@@ -1,0 +1,35 @@
+:root {
+  --ui-surface-base: #070913;
+  --ui-surface-raised: #0b1322;
+  --ui-surface-hover: #111d31;
+  --ui-surface-selected: #151b38;
+  --ui-text-primary: #f3f7ff;
+  --ui-text-secondary: #a4b0c5;
+  --ui-text-muted: #75839a;
+  --ui-line-subtle: #263957;
+  --ui-line-cyan: #45ddec;
+  --ui-line-purple: #a46aff;
+  --ui-line-danger: #ff6278;
+  --ui-accent-cyan: #52e4e1;
+  --ui-accent-purple: #a66dff;
+  --ui-accent-green: #63e4b4;
+  --ui-accent-amber: #efbb70;
+  --ui-radius-control: 6px;
+  --ui-radius-panel: 8px;
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 24px;
+  --ui-glow-none: none;
+  --ui-glow-subtle: 0 0 14px rgb(82 228 225 / 12%);
+  --ui-glow-active: 0 0 18px rgb(166 109 255 / 24%);
+  --ui-focus-ring: 0 0 0 3px rgb(69 221 236 / 18%);
+  --ui-overlay: rgb(2 6 15 / 72%);
+
+  /* Semantic aliases for feature CSS modules */
+  --border: var(--ui-line-subtle);
+  --panel-soft: var(--ui-surface-raised);
+  --muted: var(--ui-text-muted);
+  --text: var(--ui-text-primary);
+}

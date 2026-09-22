@@ -3,7 +3,12 @@ import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
-import type { AddContactInteractionInput, AiSettings, AssetKind, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, PublishingStatus, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../shared/contracts.js";
+import type { AddContactInteractionInput, AiSettings, AssetKind, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, EditPromoContentInput, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateMediaInput, GeneratePromoContentInput, AiHarnessRequest, ConversationRequest, PublishingStatus, RetryPromoGenerationInput, ReviewPublishingQueueItemInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, UpdateBrandProfileInput, UpdatePromoReviewInput, UpdateReleaseInput, UpdateScheduleEventInput, CreateScheduleEventInput, UpdatePublishingQueueContentInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../shared/contracts.js";
+import { defaultInterfacePreferences, normalizeInterfacePreferences } from "../shared/interface-preferences.js";
+import type { HarnessExecutionApprovalRequest, HarnessExecutionRequest } from "../shared/harness-execution.js";
+import type { ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreateReleasePlanInput, RecordApprovalActionInput, ReorderCampaignItemsInput, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateCampaignItemInput, UpdateReleasePlanInput } from "../shared/contracts.js";
+
+import { generateAndPersistAiReleasePlan } from "./release-plan-generation-service.js";
 import { StudioDatabase } from "./database/database.js";
 import { analyzeAudioFile } from "./audio-analysis.js";
 import { SoundCloudClient } from "./soundcloud.js";
@@ -12,6 +17,30 @@ import { MediaGenerationClient } from "./media-generation.js";
 import { LocalServicesManager } from "./local-services.js";
 import { MetaClient } from "./meta.js";
 import { MediaBridgeClient } from "./media-bridge.js";
+import { YouTubeClient } from "./youtube.js";
+import { YouTubeDataService } from "./youtube-data.js";
+import { YouTubeAnalyticsService } from "./youtube-analytics.js";
+import { generatePromoContent } from "./promo-generation.js";
+import { runAiHarnessPlanOnly } from "./ai-harness.js";
+import { createAiHarnessProviderRouter } from "./harness-provider-router.js";
+import { DEFAULT_APPROVAL_TTL_MS, createHarnessExecutionReview, createHarnessExecutorRegistry, createPersistentHarnessExecutionApproval, executePersistentApprovedHarnessTasks, readHarnessAuditLog } from "./harness-execution.js";
+import { ConversationRuntimeError, humanizeConversationError, runConversation } from "./conversation-runtime.js";
+
+ipcMain.handle("studio:create-release-plan", (_event, input: CreateReleasePlanInput) => studioDatabase.createReleasePlan(input));
+ipcMain.handle("studio:get-release-plan", (_event, id: string) => studioDatabase.getReleasePlan(id));
+ipcMain.handle("studio:list-release-plans", (_event, releaseId: string) => studioDatabase.listReleasePlans(releaseId));
+ipcMain.handle("studio:update-release-plan", (_event, input: UpdateReleasePlanInput) => studioDatabase.updateReleasePlan(input));
+ipcMain.handle("studio:change-release-plan-status", (_event, input: ChangeReleasePlanStatusInput) => studioDatabase.changeReleasePlanStatus(input));
+ipcMain.handle("studio:get-current-release-plan", (_event, releaseId: string) => studioDatabase.getCurrentReleasePlan(releaseId));
+ipcMain.handle("studio:approve-release-plan", (_event, input: ApproveReleasePlanInput) => studioDatabase.approveReleasePlan(input));
+ipcMain.handle("studio:create-campaign-item", (_event, input: CreateCampaignItemInput) => studioDatabase.createCampaignItem(input));
+ipcMain.handle("studio:update-campaign-item", (_event, input: UpdateCampaignItemInput) => studioDatabase.updateCampaignItem(input));
+ipcMain.handle("studio:delete-campaign-item", (_event, id: string) => studioDatabase.deleteCampaignItem(id));
+ipcMain.handle("studio:reorder-campaign-items", (_event, input: ReorderCampaignItemsInput) => studioDatabase.reorderCampaignItems(input));
+ipcMain.handle("studio:record-approval-action", (_event, input: RecordApprovalActionInput) => studioDatabase.recordApprovalAction(input));
+ipcMain.handle("studio:list-approval-records", (_event, entityType: "release_plan", entityId: string) => studioDatabase.listApprovalRecords(entityType, entityId));
+ipcMain.handle("studio:generate-release-plan", (_event, input: GenerateReleasePlanInput) => generateAndPersistAiReleasePlan(studioDatabase, conversationProviderRouter, input, false));
+ipcMain.handle("studio:regenerate-release-plan", (_event, input: RegenerateReleasePlanInput) => generateAndPersistAiReleasePlan(studioDatabase, conversationProviderRouter, input, true));
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 protocol.registerSchemesAsPrivileged([{ scheme: "studio-media", privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
@@ -22,6 +51,11 @@ let mediaGenerationClient: MediaGenerationClient;
 let localServicesManager: LocalServicesManager;
 let metaClient: MetaClient;
 let mediaBridgeClient: MediaBridgeClient;
+let youTubeClient: YouTubeClient;
+let youTubeDataService: YouTubeDataService;
+let youTubeAnalyticsService: YouTubeAnalyticsService;
+const conversationAbortControllers = new Map<string, AbortController>();
+const conversationProviderRouter = createAiHarnessProviderRouter();
 if (!app.requestSingleInstanceLock()) app.quit();
 
 function soundCloudCallbackFromArgs(args: string[]): string | null {
@@ -93,6 +127,38 @@ ipcMain.handle("studio:get-system-status", async (): Promise<SystemStatus> => {
   }
 });
 
+ipcMain.handle("studio:send-conversation-message", async (event, input: ConversationRequest) => {
+  const controller = new AbortController();
+  conversationAbortControllers.set(input.requestId, controller);
+  try {
+    return await runConversation(input, {
+      signal: controller.signal,
+      onChunk: (chunk) => event.sender.send("studio:conversation-chunk", chunk),
+      providerRouter: conversationProviderRouter
+    });
+  } catch (error) {
+    if (error instanceof ConversationRuntimeError) throw new Error(error.message);
+    throw new Error(humanizeConversationError(error));
+  } finally {
+    conversationAbortControllers.delete(input.requestId);
+  }
+});
+ipcMain.handle("studio:cancel-conversation", (_event, requestId: string) => {
+  const controller = conversationAbortControllers.get(requestId);
+  if (controller) controller.abort();
+  conversationAbortControllers.delete(requestId);
+});
+ipcMain.handle("studio:run-ai-harness-plan", (_event, input: AiHarnessRequest) => runAiHarnessPlanOnly(input));
+const projectRoot = () => app.isPackaged ? app.getPath("userData") : path.resolve(currentDirectory, "../..");
+const harnessGovernanceDirectory = () => path.join(app.getPath("userData"), "harness-governance");
+const harnessWorkspaceRoot = () => path.join(projectRoot(), ".runtime", "harness-smoke-test");
+const harnessApprovalStorePath = () => path.join(harnessGovernanceDirectory(), "approvals.json");
+const harnessAuditLogPath = () => path.join(harnessGovernanceDirectory(), "audit.jsonl");
+ipcMain.handle("studio:get-harness-execution-context", () => ({ executors: createHarnessExecutorRegistry(), workspace: { root: harnessWorkspaceRoot() }, approvalTtlMs: DEFAULT_APPROVAL_TTL_MS }));
+ipcMain.handle("studio:review-harness-execution", (_event, input: HarnessExecutionApprovalRequest) => createHarnessExecutionReview(input, { allowedWorkspaceRoot: harnessWorkspaceRoot() }));
+ipcMain.handle("studio:create-harness-execution-approval", (_event, input: HarnessExecutionApprovalRequest) => createPersistentHarnessExecutionApproval(input, { allowedWorkspaceRoot: harnessWorkspaceRoot(), approvalStorePath: harnessApprovalStorePath() }));
+ipcMain.handle("studio:execute-harness-tasks", (_event, input: HarnessExecutionRequest) => executePersistentApprovedHarnessTasks(input, { allowedWorkspaceRoot: harnessWorkspaceRoot(), approvalStorePath: harnessApprovalStorePath(), auditLogPath: harnessAuditLogPath() }));
+ipcMain.handle("studio:list-harness-execution-audit", () => readHarnessAuditLog(harnessAuditLogPath()));
 ipcMain.handle("studio:get-database-health", () => studioDatabase.health());
 ipcMain.handle("studio:list-releases", () => studioDatabase.listReleases());
 ipcMain.handle("studio:create-release-draft", (_event, input: CreateReleaseDraftInput) => studioDatabase.createReleaseDraft(input));
@@ -108,14 +174,21 @@ ipcMain.handle("studio:save-ai-settings", (_event, settings: AiSettings): AiSett
   studioDatabase.setSetting("ai.settings", safe);
   return safe;
 });
+ipcMain.handle("studio:get-interface-preferences", () => normalizeInterfacePreferences(studioDatabase.getSetting("interface.preferences", defaultInterfacePreferences)));
+ipcMain.handle("studio:save-interface-preferences", (_event, value: unknown) => {
+  const safe = normalizeInterfacePreferences(value);
+  studioDatabase.setSetting("interface.preferences", safe);
+  return safe;
+});
 ipcMain.handle("studio:generate-campaign-draft", (_event, input: GenerateCampaignDraftInput) => generateCampaignDraft(input));
 ipcMain.handle("studio:list-drafts", (_event, releaseId?: string | null) => studioDatabase.listDrafts(releaseId));
 ipcMain.handle("studio:save-generated-draft", (_event, input: SaveGeneratedDraftInput) => studioDatabase.saveGeneratedDraft(input));
 ipcMain.handle("studio:update-draft-status", (_event, draftId: string, status: DraftStatus) => studioDatabase.updateDraftStatus(draftId, status));
+ipcMain.handle("studio:delete-draft", (_event, draftId: string) => studioDatabase.deleteDraft(draftId));
 ipcMain.handle("studio:list-assets", (_event, releaseId: string) => studioDatabase.listAssets(releaseId));
 ipcMain.handle("studio:detach-asset", (_event, assetId: string) => studioDatabase.detachAsset(assetId));
 ipcMain.handle("studio:get-audio-analysis", (_event, assetId: string) => studioDatabase.getAudioAnalysis(assetId));
-ipcMain.handle("studio:get-asset-playback-url", (_event, assetId: string) => { const asset=studioDatabase.getAssetForAnalysis(assetId); if(!asset||asset.kind!=="audio")throw new Error("Audio asset not found"); return `studio-media://asset/${encodeURIComponent(assetId)}`; });
+ipcMain.handle("studio:get-asset-playback-url", (_event, assetId: string) => { const asset=studioDatabase.getAssetForAnalysis(assetId); if(!asset||!["audio","cover"].includes(asset.kind))throw new Error("Audio or cover asset not found"); return `studio-media://asset/${encodeURIComponent(assetId)}`; });
 ipcMain.handle("studio:get-release-readiness", (_event, releaseId: string) => studioDatabase.getReleaseReadiness(releaseId));
 ipcMain.handle("studio:list-tasks", (_event, releaseId?: string | null) => studioDatabase.listTasks(releaseId));
 ipcMain.handle("studio:create-task", (_event, input: CreateTaskInput) => studioDatabase.createTask(input));
@@ -150,11 +223,15 @@ ipcMain.handle("studio:get-catalog-match-suggestions", () => studioDatabase.getC
 ipcMain.handle("studio:generate-campaign-pack", async (_event, input:GenerateCampaignPackInput) => studioDatabase.saveCampaignPackItems(input.releaseId, input.language, input.model, await generateCampaignPackContent(input)));
 ipcMain.handle("studio:list-campaign-pack-items", (_event, releaseId:string) => studioDatabase.listCampaignPackItems(releaseId));
 ipcMain.handle("studio:update-campaign-pack-item-status", (_event,itemId:string,status:DraftStatus)=>studioDatabase.updateCampaignPackItemStatus(itemId,status));
+ipcMain.handle("studio:delete-campaign-pack-item", (_event,itemId:string)=>studioDatabase.deleteCampaignPackItem(itemId));
+ipcMain.handle("studio:get-campaign-pack-item-dependency-status", (_event,itemId:string)=>studioDatabase.getCampaignPackItemDependencyStatus(itemId));
+ipcMain.handle("studio:cleanup-stale-media-generations", (_event,releaseId:string)=>studioDatabase.cleanupStaleMediaGenerations(releaseId));
 ipcMain.handle("studio:get-media-generation-settings",()=>mediaGenerationClient.status());
 ipcMain.handle("studio:save-media-generation-credentials",(_event,openAiKey:string,klingKey:string)=>mediaGenerationClient.saveCredentials(openAiKey,klingKey));
 ipcMain.handle("studio:test-comfy-ui",(_event,url:string)=>mediaGenerationClient.testComfyUi(url));
 ipcMain.handle("studio:save-comfy-ui-settings",(_event,url:string,checkpoint:string)=>mediaGenerationClient.saveComfyUiSettings(url,checkpoint));
 ipcMain.handle("studio:get-local-service-status",()=>localServicesManager.status());
+ipcMain.handle("studio:get-kling-cli-status",()=>({ available:false, version:null, account:null, error:"Kling CLI not consolidated — UI disabled" }));
 ipcMain.handle("studio:set-local-services-auto-start",(_event,enabled:boolean)=>localServicesManager.setAutoStart(Boolean(enabled)));
 ipcMain.handle("studio:start-local-service",(_event,service:"ollama"|"comfyui")=>localServicesManager.start(service));
 ipcMain.handle("studio:stop-local-service",(_event,service:"ollama"|"comfyui")=>localServicesManager.stop(service));
@@ -165,6 +242,7 @@ ipcMain.handle("studio:update-media-generation-status",(_event,id:string,status:
 ipcMain.handle("studio:list-publishing-queue",()=>studioDatabase.listPublishingQueue());
 ipcMain.handle("studio:create-publishing-queue-item",(_event,input:CreatePublishingQueueInput)=>studioDatabase.createPublishingQueueItem(input));
 ipcMain.handle("studio:update-publishing-queue-status",(_event,id:string,status:PublishingStatus)=>studioDatabase.updatePublishingQueueStatus(id,status));
+ipcMain.handle("studio:begin-publishing",(_event,id:string)=>studioDatabase.beginPublishing(id));
 ipcMain.handle("studio:export-publishing-pack",async(event,id:string)=>{const data=studioDatabase.getPublishingExportData(id);if(!["approved","scheduled","published"].includes(data.item.status))throw new Error("Approve the post before exporting its publishing pack");if(data.item.rightsBlocked&&["SoundCloud","YouTube"].includes(data.item.platform))throw new Error("Bootleg rights are not cleared: official publishing export is blocked");const owner=BrowserWindow.fromWebContents(event.sender)??undefined;const result=owner?await dialog.showOpenDialog(owner,{properties:["openDirectory","createDirectory"]}):await dialog.showOpenDialog({properties:["openDirectory","createDirectory"]});if(result.canceled||!result.filePaths[0])return null;const safeName=`${data.item.releaseTitle}-${data.item.platform}`.replace(/[^a-z0-9_-]+/gi,"-").replace(/^-|-$/g,"").slice(0,80)||"publishing-pack";const directory=path.join(result.filePaths[0],`${safeName}-${data.item.id.slice(0,8)}`);await mkdir(directory,{recursive:true});await writeFile(path.join(directory,"caption.txt"),data.item.caption,"utf8");await writeFile(path.join(directory,"publishing.json"),JSON.stringify({release:data.item.releaseTitle,platform:data.item.platform,scheduledAt:data.item.scheduledAt,status:data.item.status,rightsBlocked:data.item.rightsBlocked,exportedAt:new Date().toISOString()},null,2),"utf8");if(data.mediaPath){const extension=path.extname(data.mediaPath)|| (data.item.mediaType==="video"?".mp4":".png");await copyFile(data.mediaPath,path.join(directory,`media${extension}`));}studioDatabase.markPublishingPackExported(id);return directory;});
 ipcMain.handle("studio:list-brand-profiles",()=>studioDatabase.listBrandProfiles());
 ipcMain.handle("studio:update-brand-profile",(_event,input:UpdateBrandProfileInput)=>studioDatabase.updateBrandProfile(input));
@@ -178,7 +256,51 @@ ipcMain.handle("studio:begin-meta-connect",()=>metaClient.beginConnect());
 ipcMain.handle("studio:disconnect-meta",()=>metaClient.disconnect());
 ipcMain.handle("studio:get-media-bridge-status",()=>mediaBridgeClient.status());
 ipcMain.handle("studio:save-media-bridge-settings",(_event,accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string)=>mediaBridgeClient.saveSettings(accountId,bucket,accessKeyId,secretAccessKey));
+ipcMain.handle("studio:get-youtube-connection",()=>youTubeClient.status());
+ipcMain.handle("studio:save-youtube-credentials",(_event,clientId:string,clientSecret:string)=>youTubeClient.saveCredentials(clientId,clientSecret));
+ipcMain.handle("studio:begin-youtube-connect",()=>youTubeClient.beginConnect());
+ipcMain.handle("studio:disconnect-youtube",()=>youTubeClient.disconnect());
+ipcMain.handle("studio:get-youtube-channel-data",()=>youTubeDataService.getChannelData());
+ipcMain.handle("studio:sync-youtube-channel-data",()=>youTubeDataService.syncChannelData());
+ipcMain.handle("studio:get-youtube-analytics",( _event, range: import("../shared/contracts.js").YouTubeAnalyticsRange)=>youTubeAnalyticsService.getAnalytics(range));
+ipcMain.handle("studio:sync-youtube-analytics",( _event, range: import("../shared/contracts.js").YouTubeAnalyticsRange)=>youTubeAnalyticsService.syncAnalytics(range));
+ipcMain.handle("studio:generate-promo-content", async (_event, input: GeneratePromoContentInput) => {
+  const releases = studioDatabase.listReleases();
+  const releaseMap = new Map(releases.map((r) => [r.id, r]));
+  return generatePromoContent(input, { database: studioDatabase, getReleaseSummary: (releaseId) => releaseMap.get(releaseId) });
+});
+ipcMain.handle("studio:list-promo-generations", (_event, releasePlanId: string) => studioDatabase.listPromoGenerations(releasePlanId));
+ipcMain.handle("studio:delete-promo-generation", (_event, promoGenerationId: string) => studioDatabase.deletePromoGeneration(promoGenerationId));
+ipcMain.handle("studio:retry-promo-generation", async (_event, input: RetryPromoGenerationInput) => {
+  const existing = studioDatabase.getPromoGenerationById(input.promoGenerationId);
+  if (!existing) throw new Error("Promo generation not found");
+  const plan = studioDatabase.getReleasePlan(existing.releasePlanId);
+  if (!plan) throw new Error("Release plan not found");
+  const releases = studioDatabase.listReleases();
+  const release = releases.find((r) => r.id === plan.releaseId);
+  if (!release) throw new Error("Release not found");
+  const item = plan.campaignItems.find((ci) => ci.id === existing.campaignItemId);
+  if (!item) throw new Error("Campaign item not found");
+  const channel = item.targetPlatforms[0] ?? "Instagram";
+  const draftInput = { model: (input as unknown as { model: string }).model ?? existing.model, language: ((input as unknown as { language: ContentLanguage }).language ?? "en") as ContentLanguage, channel: channel as import("../shared/contracts.js").CampaignChannel, artistId: release.artistId, artistName: release.artistName, artistVoice: "", title: release.title, primaryGenre: release.primaryGenre, story: release.story, releaseDate: release.releaseDate } as GenerateCampaignDraftInput;
+  const result = await generateCampaignDraft(draftInput);
+  const packItem = studioDatabase.saveCampaignPackItems(plan.releaseId, ((input as unknown as { language: ContentLanguage }).language ?? "en") as ContentLanguage, (input as unknown as { model: string }).model ?? existing.model, [{ kind: existing.contentType as "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt", channel: channel as import("../shared/contracts.js").CampaignChannel, content: result.content }]);
+  return studioDatabase.retryPromoGeneration({ promoGenerationId: input.promoGenerationId, generatedContent: result.content, campaignPackItemId: packItem[0]?.id ?? null, model: (input as unknown as { model: string }).model ?? existing.model });
+});
+ipcMain.handle("studio:update-promo-review", (_event, input: UpdatePromoReviewInput) => studioDatabase.updatePromoGenerationReview({ promoGenerationId: input.promoGenerationId, reviewStatus: input.reviewStatus, reviewActor: "local-user", reviewReason: (input as unknown as { reason?: string }).reason }));
+ipcMain.handle("studio:edit-promo-content", (_event, input: EditPromoContentInput) => studioDatabase.editPromoGenerationContent({ promoGenerationId: input.promoGenerationId, editedContent: input.editedContent }));
+ipcMain.handle("studio:create-schedule-event", (_event, input: CreateScheduleEventInput) => studioDatabase.createScheduleEvent(input));
+ipcMain.handle("studio:update-schedule-event", (_event, input: UpdateScheduleEventInput) => studioDatabase.updateScheduleEvent(input));
+ipcMain.handle("studio:cancel-schedule-event", (_event, id: string) => studioDatabase.cancelScheduleEvent(id));
+ipcMain.handle("studio:list-schedule-events", (_event, input?: { releaseId?: string | null; from?: string | null; to?: string | null }) => studioDatabase.listScheduleEvents(input));
+ipcMain.handle("studio:send-schedule-event-to-publishing-queue", (_event, id: string) => studioDatabase.sendScheduleEventToPublishingQueue(id));
+ipcMain.handle("studio:review-publishing-queue-item", (_event, input: ReviewPublishingQueueItemInput) => studioDatabase.reviewPublishingQueueItem(input));
+ipcMain.handle("studio:update-publishing-queue-content", (_event, input: UpdatePublishingQueueContentInput) => studioDatabase.updatePublishingQueueContent(input));
 ipcMain.handle("studio:publish-meta-queue-item",async(_event,id:string,destinationId:string)=>{const data=studioDatabase.getPublishingExportData(id);if(!["approved","scheduled","failed"].includes(data.item.status))throw new Error("Approve or schedule the post before publishing");if(!["Facebook","Instagram"].includes(data.item.platform))throw new Error("This queue item is not a Meta post");const destination=(await metaClient.status()).destinations.find((item)=>item.id===destinationId);if(!destination||destination.platform!==data.item.platform)throw new Error(`Select a connected ${data.item.platform} destination`);try{if(data.item.platform==="Instagram"){if(!data.mediaPath||data.item.mediaType!=="image")throw new Error("Instagram Feed publishing requires an approved PNG or JPEG image");const staged=await mediaBridgeClient.stage(data.mediaPath,data.mimeType);try{const remoteId=await metaClient.publishInstagram(destinationId,data.item.caption,staged.url);return studioDatabase.markPublishingSucceeded(id,destinationId,remoteId);}finally{await mediaBridgeClient.remove(staged.key).catch((error)=>console.warn("Could not remove temporary R2 object",error));}}if(data.item.mediaType==="video")throw new Error("Facebook video upload is not included in Meta Publishing V1; export the pack manually");const remoteId=await metaClient.publishFacebook(destinationId,data.item.caption,data.mediaPath,data.mimeType);return studioDatabase.markPublishingSucceeded(id,destinationId,remoteId);}catch(error){const message=error instanceof Error?error.message:"Meta publishing failed";studioDatabase.markPublishingFailed(id,message);throw error;}});
+ipcMain.handle("studio:verify-published-post",async(_event,itemId:string)=>{const item=studioDatabase.getPublishingQueueItem(itemId);if(!item)throw new Error("Publishing queue item not found");if(item.status!=="published")throw new Error("Only published items can be verified");if(!item.remotePostId)throw new Error("No external post ID stored for this item");if(!item.destinationId)throw new Error("No destination ID stored for this item");const verification=await metaClient.verifyPost(item.destinationId,item.remotePostId);return studioDatabase.storePostAnalytics({publishingQueueItemId:item.id,releaseId:item.releaseId,externalPostId:item.remotePostId,platform:item.platform,verified:verification.verified,verifiedAt:verification.verified?new Date().toISOString():null,verificationError:verification.error??null,views:null,reach:null,impressions:null,likes:null,comments:null,shares:null,clicks:null});});
+ipcMain.handle("studio:fetch-post-analytics",async(_event,itemId:string)=>{const item=studioDatabase.getPublishingQueueItem(itemId);if(!item)throw new Error("Publishing queue item not found");if(item.status!=="published")throw new Error("Only published items can have analytics fetched");if(!item.remotePostId)throw new Error("No external post ID stored for this item");if(!item.destinationId)throw new Error("No destination ID stored for this item");const verification=await metaClient.verifyPost(item.destinationId,item.remotePostId);const insights=await metaClient.getPostInsights(item.destinationId,item.remotePostId,item.platform);return studioDatabase.storePostAnalytics({publishingQueueItemId:item.id,releaseId:item.releaseId,externalPostId:item.remotePostId,platform:item.platform,verified:verification.verified,verifiedAt:verification.verified?new Date().toISOString():null,verificationError:verification.error??null,views:insights.views,reach:insights.reach,impressions:insights.impressions,likes:insights.likes,comments:insights.comments,shares:insights.shares,clicks:insights.clicks});});
+ipcMain.handle("studio:get-analytics-snapshots",(_event,itemId:string)=>studioDatabase.getAnalyticsSnapshots(itemId));
+ipcMain.handle("studio:get-release-analytics-summary",(_event,releaseId:string)=>studioDatabase.getReleaseAnalyticsSummary(releaseId));
 ipcMain.handle("studio:generate-media",async(_event,input:GenerateMediaInput)=>{const item=studioDatabase.getCampaignPackItemForGeneration(input.campaignPackItemId);if(!item)throw new Error("Campaign prompt not found");if(item.status!=="approved")throw new Error("Approve the prompt before starting generation");if(input.mediaType==="image"&&item.kind!=="image-prompt")throw new Error("Select an approved image prompt");if(input.mediaType==="video"&&item.kind!=="visualizer-prompt"&&item.kind!=="video-script")throw new Error("Select an approved visualizer or video script");const brand=studioDatabase.getBrandProfileForRelease(item.releaseId);if(!brand)throw new Error("Brand profile not found");const aspectRatio=input.aspectRatio??brand.defaultAspectRatio;const enhancedPrompt=`${item.content}\n\nBRAND DIRECTION: ${brand.visualDirection}. PALETTE: ${brand.palette}. COMPOSITION: ${brand.requiredElements}. LAYOUT/TYPOGRAPHY SPACE: ${brand.typography}. FORBIDDEN: ${brand.forbiddenElements}. Output aspect ratio ${aspectRatio}. No rendered text unless explicitly requested.`;let row=studioDatabase.createMediaGeneration(item,input.provider,input.mediaType);row=studioDatabase.updateMediaGeneration(row.id,{status:"generating",metadata:{aspectRatio,brandArtistId:brand.artistId,enhancedPrompt}});try{if(input.provider==="comfyui"){const service=await localServicesManager.start("comfyui");if(!service.comfyUi.running)throw new Error(service.comfyUi.error??"ComfyUI did not become ready within 60 seconds");}const result=await mediaGenerationClient.generate(input.provider,input.mediaType,enhancedPrompt,{aspectRatio,negativePrompt:brand.negativePrompt});if(result.bytes||result.remoteUrl){const saved=await mediaGenerationClient.saveRemoteResult(row.id,result,input.mediaType);return studioDatabase.updateMediaGeneration(row.id,{status:"ready",providerTaskId:result.providerTaskId,localPath:saved.localPath,mimeType:saved.mimeType,metadata:{...row.metadata,...saved.metadata}});}return studioDatabase.updateMediaGeneration(row.id,{status:"generating",providerTaskId:result.providerTaskId,metadata:{...row.metadata,...result.metadata}});}catch(error){studioDatabase.updateMediaGeneration(row.id,{status:"failed",error:error instanceof Error?error.message:"Generation failed",metadata:row.metadata});throw error;}});
 ipcMain.handle("studio:refresh-media-generation",async(_event,id:string)=>{const row=studioDatabase.getMediaGeneration(id);if(!row)throw new Error("Media generation not found");if(!row.providerTaskId||!["kling","comfyui"].includes(row.provider))return row;try{const result=row.provider==="comfyui"?await mediaGenerationClient.refreshComfyUi(row.providerTaskId):await mediaGenerationClient.refreshKling(row.providerTaskId,row.mediaType);if(!result)return row;const saved=await mediaGenerationClient.saveRemoteResult(row.id,result,row.mediaType);return studioDatabase.updateMediaGeneration(row.id,{status:"ready",localPath:saved.localPath,mimeType:saved.mimeType,metadata:{...row.metadata,...saved.metadata}});}catch(error){return studioDatabase.updateMediaGeneration(row.id,{status:"failed",error:error instanceof Error?error.message:`${row.provider} generation failed`,metadata:row.metadata});}});
 ipcMain.handle("studio:analyze-audio", async (_event, assetId: string) => {
@@ -232,8 +354,25 @@ void app.whenReady().then(async () => {
   localServicesManager = new LocalServicesManager(app.getPath("userData"));
   metaClient = new MetaClient(app.getPath("userData"));
   mediaBridgeClient = new MediaBridgeClient(app.getPath("userData"));
+  youTubeClient = new YouTubeClient(app.getPath("userData"));
+  youTubeDataService = new YouTubeDataService(app.getPath("userData"));
+  youTubeAnalyticsService = new YouTubeAnalyticsService(app.getPath("userData"), () => youTubeClient.getAnalyticsAccessToken(), () => youTubeDataService.getChannelData());
   await localServicesManager.startConfigured();
-  protocol.handle("studio-media", (request) => { const url=new URL(request.url),id=decodeURIComponent(url.pathname.slice(1));if(url.hostname==="asset"){const asset=studioDatabase.getAssetForAnalysis(id);if(!asset||asset.kind!=="audio")return new Response("Not found",{status:404});return net.fetch(pathToFileURL(asset.filePath).toString(),{headers:request.headers});}if(url.hostname==="generation"){const media=studioDatabase.getMediaGenerationFile(id);if(!media)return new Response("Not found",{status:404});return net.fetch(pathToFileURL(media.filePath).toString(),{headers:request.headers});}return new Response("Not found",{status:404});});
+  protocol.handle("studio-media", (request) => {
+      const url=new URL(request.url),id=decodeURIComponent(url.pathname.slice(1));
+      if(url.hostname==="asset"){
+        const asset=studioDatabase.getAssetForAnalysis(id);
+        if(!asset) return new Response("Not found",{status:404});
+        const mimeType = inferMimeType(asset.filePath) ?? "application/octet-stream";
+        return net.fetch(pathToFileURL(asset.filePath).toString()).then(async (r) => {
+          const h = new Headers(r.headers);
+          h.set("Access-Control-Allow-Origin", "*");
+          if(!h.has("Content-Type")) h.set("Content-Type", mimeType);
+          if(!h.has("Content-Length")) { try { h.set("Content-Length", String((await stat(asset.filePath)).size)); } catch { /* ignore */ } }
+          return new Response(r.body, { status: r.status, statusText: r.statusText, headers: h });
+        });
+      }
+      if(url.hostname==="generation"){const media=studioDatabase.getMediaGenerationFile(id);if(!media)return new Response("Not found",{status:404});return net.fetch(pathToFileURL(media.filePath).toString(),{headers:request.headers});}return new Response("Not found",{status:404});});
   if (process.platform === "win32" && !app.isPackaged) app.setAsDefaultProtocolClient("ai-studio-manager", process.execPath, [path.resolve(process.argv[1])]);
   else app.setAsDefaultProtocolClient("ai-studio-manager");
   createWindow();

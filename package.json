@@ -1,33 +1,40 @@
 {
-  "name": "ai-studio-manager",
-  "version": "0.1.0",
-  "private": true,
-  "description": "Local-first AI workspace for SONIC-ARK music promotion",
-  "main": "dist-electron/main/index.js",
-  "type": "module",
-  "scripts": {
-    "dev": "tsc -p electron/tsconfig.json && concurrently -k \"vite\" \"wait-on tcp:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
-    "build": "tsc -b && vite build && tsc -p electron/tsconfig.json",
-    "typecheck": "tsc -b --pretty false && tsc -p electron/tsconfig.json --pretty false",
-    "test": "tsc -p electron/tsconfig.json && node --test dist-electron/main/database/database.test.js dist-electron/main/database/workflow.integration.test.js dist-electron/main/database/workflow.negative.integration.test.js dist-electron/main/audio-analysis.test.js dist-electron/main/integration-resilience.test.js dist-electron/main/ollama-resilience.test.js dist-electron/main/local-services.resilience.test.js",
-    "test:e2e": "tsc -p electron/tsconfig.json && node --test dist-electron/main/database/workflow.integration.test.js dist-electron/main/database/workflow.negative.integration.test.js dist-electron/main/integration-resilience.test.js dist-electron/main/ollama-resilience.test.js dist-electron/main/local-services.resilience.test.js",
-    "preview": "vite preview",
-    "start": "electron ."
-  },
-  "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "react": "latest",
-    "react-dom": "latest"
-  },
-  "devDependencies": {
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
-    "concurrently": "latest",
-    "cross-env": "latest",
-    "electron": "latest",
-    "typescript": "latest",
-    "vite": "latest",
-    "wait-on": "latest"
-  }
+    "name":  "ai-studio-manager",
+    "version":  "0.1.0",
+    "private":  true,
+    "description":  "Local-first AI workspace for SONIC-ARK music promotion",
+    "main":  "dist-electron/main/index.js",
+    "type":  "module",
+    "scripts":  {
+                    "dev":  "tsc -p electron/tsconfig.json \u0026\u0026 concurrently -k \"vite\" \"wait-on tcp:5173 \u0026\u0026 cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+                    "build":  "tsc -b \u0026\u0026 vite build \u0026\u0026 tsc -p electron/tsconfig.json",
+                    "typecheck":  "tsc -b --pretty false \u0026\u0026 tsc -p electron/tsconfig.json --pretty false",
+                    "test":  "tsc -p electron/tsconfig.json \u0026\u0026 node --test dist-electron/main/database/database.test.js dist-electron/main/database/release-plan-domain.test.js dist-electron/main/database/content-deletion.test.js dist-electron/main/release-plan-ai-generation.test.js dist-electron/main/database/workflow.integration.test.js dist-electron/main/database/workflow.negative.integration.test.js dist-electron/main/audio-analysis.test.js dist-electron/main/integration-resilience.test.js dist-electron/main/ollama-resilience.test.js dist-electron/main/local-services.resilience.test.js dist-electron/main/ai-harness.test.js dist-electron/main/execution-readiness.test.js dist-electron/main/harness-execution.test.js dist-electron/main/conversation-runtime.test.js dist-electron/main/harness-provider-router.test.js dist-electron/main/provider-trace-view-model.test.js",
+                    "test:e2e":  "tsc -p electron/tsconfig.json \u0026\u0026 node --test dist-electron/main/database/workflow.integration.test.js dist-electron/main/database/workflow.negative.integration.test.js dist-electron/main/integration-resilience.test.js dist-electron/main/ollama-resilience.test.js dist-electron/main/local-services.resilience.test.js",
+                    "preview":  "vite preview",
+                    "start":  "electron .",
+                    "test:frontend":  "vitest run"
+                },
+    "dependencies":  {
+                         "@vitejs/plugin-react":  "latest",
+                         "react":  "latest",
+                         "react-dom":  "latest",
+                         "audiomotion-analyzer":  "^4.5.4"
+                     },
+    "devDependencies":  {
+                            "@types/node":  "latest",
+                            "@types/react":  "latest",
+                            "@types/react-dom":  "latest",
+                            "concurrently":  "latest",
+                            "cross-env":  "latest",
+                            "electron":  "latest",
+                            "typescript":  "latest",
+                            "vite":  "latest",
+                            "wait-on":  "latest",
+                            "vitest":  "^5.0.1",
+                            "jsdom":  "^30.0.1",
+                            "@testing-library/react":  "^16.3.3",
+                            "@testing-library/jest-dom":  "^7.0.1",
+                            "@testing-library/user-event":  "^14.6.7"
+                        }
 }

@@ -1,45 +1,69 @@
 import { useEffect, useMemo, useState } from "react";
-import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, BrandProfile, CampaignChannel, CampaignPackItem, CatalogMatchSuggestion, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, LocalServiceStatus, MediaAspectRatio, MediaBridgeStatus, MediaGenerationSettings, MediaGenerationSummary, MediaProvider, MetaConnection, PublishingQueueItem, PublishingStatus, ReleaseReadiness, ReleaseStatus, ReleaseSummary, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudContentType, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyConnection, SpotifyReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary } from "../electron/shared/contracts";
+import type { AiSettings, AssetKind, AssetSummary, AudioAnalysisSummary, ArtistAlias, BrandProfile, CampaignChannel, CampaignPackItem, CampaignPackItemDependencyStatus, CatalogMatchSuggestion, ContactChannel, ContactRelationshipStatus, ContactSummary, ContactType, DatabaseHealth, DraftStatus, DraftSummary, GeneratedCampaignDraft, KlingCliStatus, LocalServiceStatus, MediaAspectRatio, MediaBridgeStatus, MediaGenerationSettings, MediaGenerationSummary, MediaProvider, MetaConnection, MetaTestPublishResult, PublishingQueueItem, ReleaseReadiness, ReleaseStatus, ReleaseSummary, ScheduleEvent, SoundCloudCatalogStatus, SoundCloudConnection, SoundCloudContentType, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyConnection, SpotifyReleaseSummary, SystemStatus, TaskAssignee, TaskPriority, TaskStatus, TaskSummary, UpsertContactInput, YouTubeConnection, YouTubePrivacyStatus, YouTubeTestPublishResult, TikTokConnection, TikTokCreatorInfo, TikTokTestPublishResult, TikTokPublishMode, YouTubeChannelDataSnapshot, YouTubeAnalyticsRange, YouTubeAnalyticsSnapshot } from "../electron/shared/contracts";
 import { artists } from "./data/artists";
 import { AudioPlayer } from "./AudioPlayer";
-import { ContactsPage } from "./features/contacts/ContactsPage";
-import { AnalyticsPage } from "./features/analytics/AnalyticsPage";
-import { TasksPage } from "./features/tasks/TasksPage";
-import { CampaignPackPanel } from "./features/ai-studio/CampaignPackPanel";
-import { ReleaseSourcePanel } from "./features/releases/ReleaseSourcePanel";
-import { CampaignDraftPanel } from "./features/releases/CampaignDraftPanel";
-import { MetaPanel } from "./features/integrations/MetaPanel";
-import { MediaBridgePanel } from "./features/integrations/MediaBridgePanel";
-import { MediaProvidersPanel } from "./features/integrations/MediaProvidersPanel";
-import { SoundCloudPanel } from "./features/integrations/SoundCloudPanel";
-import { SpotifyPanel } from "./features/integrations/SpotifyPanel";
-import { useReleaseManager } from "./features/releases/useReleaseManager";
-import { useAiStudio } from "./features/ai-studio/useAiStudio";
-import { usePublishing } from "./features/publishing/usePublishing";
-import { useIntegrations } from "./features/integrations/useIntegrations";
+import { HarnessPlanPreview } from "./HarnessPlanPreview";
+import { ConversationWorkspace } from "./ConversationWorkspace";
+import { ReleasePlanPanel } from "./features/release-plan";
+import { ContentCalendar } from "./features/content-calendar/ContentCalendar";
+import { PostPublishAnalytics } from "./features/post-publish-analytics";
+import { Dashboard } from "./features/dashboard/Dashboard";
+import { BottomPlayer } from "./features/dashboard/BottomPlayer";
+import { SettingsPage } from "./features/settings";
+import { PublishingPage } from "./features/publishing";
+import { PackItemDeleteControls } from "./features/campaign-pack/PackItemDeleteControls";
+import { Button } from "./ui/Button";
+import { Tabs } from "./ui/Tabs";
+import { ReleaseFoundation } from "./features/releases/ReleaseFoundation";
+import { useInterfacePreferences } from "./ui/useInterfacePreferences";
+import { playInterfaceSound } from "./ui/interfaceSoundService";
+import studioManagerLogo from "./assets/ai-studio-manager-logo.png";
+import "./features/release-plan/release-plan.css";
 
-type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "analytics" | "contacts" | "integrations" | "settings";
+type AppView = "overview" | "releases" | "ai-studio" | "calendar" | "analytics" | "publishing" | "contacts" | "settings";
 
 const navigation: Array<{ id: AppView | "placeholder"; label: string; icon: string }> = [
   { id: "overview", label: "Overview", icon: "⌂" },
   { id: "releases", label: "Releases", icon: "♫" },
   { id: "ai-studio", label: "AI Studio", icon: "✦" },
-  { id: "calendar", label: "Tasks & Calendar", icon: "□" },
+  { id: "calendar", label: "Content Calendar", icon: "□" },
   { id: "analytics", label: "Analytics", icon: "⌁" },
+  { id: "publishing", label: "Publishing", icon: "↗" },
   { id: "contacts", label: "Contacts", icon: "◎" }
 ];
 
+const emptyContact:UpsertContactInput={name:"",contactType:"artist",relationshipStatus:"new",artistId:null,releaseId:null,organization:"",email:"",phone:"",website:"",socialHandle:"",preferredChannel:"email",consent:false,notes:"",nextFollowUpAt:null,createFollowUpTask:false};
 
 export function App() {
-  const { releases, setReleases, activeReleaseId, setActiveReleaseId, assets, setAssets, assetMessage, setAssetMessage, audioAnalyses, setAudioAnalyses, playbackUrls, setPlaybackUrls, analyzingAssetId, setAnalyzingAssetId, releaseReadiness, setReleaseReadiness, saveMessage, setSaveMessage, title, setTitle, story, setStory, releaseDate, setReleaseDate, primaryGenre, setPrimaryGenre, releaseStatus, setReleaseStatus } = useReleaseManager();
-  const { drafts, setDrafts, aiSettings, setAiSettings, generatedDraft, setGeneratedDraft, generationState, setGenerationState, generationMessage, setGenerationMessage, campaignPackItems, setCampaignPackItems, campaignPackBusy, setCampaignPackBusy, campaignPackMessage, setCampaignPackMessage, mediaGenerations, setMediaGenerations, mediaUrls, setMediaUrls, mediaBusy, setMediaBusy, mediaMessage, setMediaMessage } = useAiStudio();
-  const { publishingQueue, setPublishingQueue, publishingPlatform, setPublishingPlatform, publishingCaptionId, setPublishingCaptionId, publishingMediaId, setPublishingMediaId, publishingDate, setPublishingDate, publishingMessage, setPublishingMessage, metaDestinationByItem, setMetaDestinationByItem, metaQueueItemId, setMetaQueueItemId } = usePublishing();
-  const { soundCloud, setSoundCloud, soundCloudTracks, setSoundCloudTracks, soundCloudClientId, setSoundCloudClientId, soundCloudClientSecret, setSoundCloudClientSecret, soundCloudMessage, setSoundCloudMessage, soundCloudBusy, setSoundCloudBusy, catalogQuery, setCatalogQuery, catalogStatusFilter, setCatalogStatusFilter, catalogArtistFilter, setCatalogArtistFilter, catalogSort, setCatalogSort, selectedPerformanceTrackId, setSelectedPerformanceTrackId, trackPerformance, setTrackPerformance, spotify, setSpotify, spotifyClientId, setSpotifyClientId, spotifyArtistIds, setSpotifyArtistIds, spotifyReleases, setSpotifyReleases, spotifyMessage, setSpotifyMessage, spotifyBusy, setSpotifyBusy, catalogMatches, setCatalogMatches, mediaSettings, setMediaSettings, openAiKey, setOpenAiKey, klingKey, setKlingKey, comfyUiUrl, setComfyUiUrl, comfyUiCheckpoint, setComfyUiCheckpoint, localServices, setLocalServices, localServiceBusy, setLocalServiceBusy, meta, setMeta, metaAppId, setMetaAppId, metaAppSecret, setMetaAppSecret, metaConfigurationId, setMetaConfigurationId, metaBusy, setMetaBusy, metaMessage, setMetaMessage, mediaBridge, setMediaBridge, r2AccountId, setR2AccountId, r2Bucket, setR2Bucket, r2AccessKeyId, setR2AccessKeyId, r2SecretAccessKey, setR2SecretAccessKey, bridgeBusy, setBridgeBusy, bridgeMessage, setBridgeMessage } = useIntegrations();
+  useInterfacePreferences();
   const [activeView, setActiveView] = useState<AppView>("overview");
+  const [releaseWorkspaceTab, setReleaseWorkspaceTab] = useState("foundation");
   const [selectedArtist, setSelectedArtist] = useState<ArtistAlias>("the-arkadiusz");
+  const [developerModeEnabled, setDeveloperModeEnabled] = useState(true);
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [database, setDatabase] = useState<DatabaseHealth | null>(null);
+  const [releases, setReleases] = useState<ReleaseSummary[]>([]);
+  const [drafts, setDrafts] = useState<DraftSummary[]>([]);
+  const [draftDeleteMessage, setDraftDeleteMessage] = useState("");
+  const [activeReleaseId, setActiveReleaseId] = useState<string | null>(null);
+  const [assets, setAssets] = useState<AssetSummary[]>([]);
+  const [assetMessage, setAssetMessage] = useState("");
+  const [audioAnalyses, setAudioAnalyses] = useState<Record<string, AudioAnalysisSummary>>({});
+  const [playbackUrls, setPlaybackUrls] = useState<Record<string, string>>({});
+  const [analyzingAssetId, setAnalyzingAssetId] = useState<string | null>(null);
+  const [releaseReadiness, setReleaseReadiness] = useState<ReleaseReadiness | null>(null);
+  const [saveMessage, setSaveMessage] = useState("");
+  const [releaseSaveFailed, setReleaseSaveFailed] = useState(false);
   const [bridgeError, setBridgeError] = useState("");
+  const [aiSettings, setAiSettings] = useState<AiSettings>({ model: null, language: "en", channel: "Instagram" });
+  const [generatedDraft, setGeneratedDraft] = useState<GeneratedCampaignDraft | null>(null);
+  const [generationState, setGenerationState] = useState<"idle" | "generating" | "error">("idle");
+  const [generationMessage, setGenerationMessage] = useState("");
+  const [title, setTitle] = useState("Different Perspective");
+  const [story, setStory] = useState("Seeing beyond ego reveals another perspective.");
+  const [releaseDate, setReleaseDate] = useState("");
+  const [primaryGenre, setPrimaryGenre] = useState("Full-On Psytrance");
+  const [releaseStatus, setReleaseStatus] = useState<ReleaseStatus>("draft");
   const [tasks, setTasks] = useState<TaskSummary[]>([]);
   const [taskTitle, setTaskTitle] = useState("");
   const [taskDueAt, setTaskDueAt] = useState("");
@@ -47,7 +71,45 @@ export function App() {
   const [taskAssignee, setTaskAssignee] = useState<TaskAssignee>("human");
   const [taskMessage, setTaskMessage] = useState("");
   const [runningTaskId, setRunningTaskId] = useState<string | null>(null);
+  const [soundCloud, setSoundCloud] = useState<SoundCloudConnection | null>(null);
+  const [soundCloudTracks, setSoundCloudTracks] = useState<SoundCloudTrackSummary[]>([]);
+  const [soundCloudClientId, setSoundCloudClientId] = useState("");
+  const [soundCloudClientSecret, setSoundCloudClientSecret] = useState("");
+  const [soundCloudMessage, setSoundCloudMessage] = useState("");
+  const [soundCloudBusy, setSoundCloudBusy] = useState(false);
+  const [catalogQuery, setCatalogQuery] = useState("");
+  const [catalogStatusFilter, setCatalogStatusFilter] = useState<SoundCloudCatalogStatus | "all">("all");
+  const [catalogArtistFilter, setCatalogArtistFilter] = useState<ArtistAlias | "all" | "unassigned">("all");
+  const [catalogSort, setCatalogSort] = useState<"newest" | "plays" | "likes" | "engagement">("engagement");
+  const [selectedPerformanceTrackId, setSelectedPerformanceTrackId] = useState<number | null>(null);
+  const [trackPerformance, setTrackPerformance] = useState<SoundCloudTrackPerformance | null>(null);
+  const [spotify, setSpotify] = useState<SpotifyConnection | null>(null);
+  const [spotifyClientId, setSpotifyClientId] = useState("");
+  const [spotifyArtistIds, setSpotifyArtistIds] = useState<Record<ArtistAlias, string>>({ "the-arkadiusz": "", arkadelic: "", "ar-tek": "", "echoes-of-arcadia": "" });
+  const [spotifyReleases, setSpotifyReleases] = useState<SpotifyReleaseSummary[]>([]);
+  const [spotifyMessage, setSpotifyMessage] = useState("");
+  const [spotifyBusy, setSpotifyBusy] = useState(false);
+  const [catalogMatches, setCatalogMatches] = useState<CatalogMatchSuggestion[]>([]);
+  const [campaignPackItems, setCampaignPackItems] = useState<CampaignPackItem[]>([]);
+  const [campaignPackBusy, setCampaignPackBusy] = useState(false);
+  const [campaignPackMessage, setCampaignPackMessage] = useState("");
+  const [packDependencyStatuses, setPackDependencyStatuses] = useState<Record<string, CampaignPackItemDependencyStatus>>({});
+  const [mediaSettings,setMediaSettings]=useState<MediaGenerationSettings>({openAiConfigured:false,klingConfigured:false,klingCliConfigured:false,klingCliVersion:null,comfyUiUrl:"http://127.0.0.1:8188",comfyUiAvailable:false,comfyUiCheckpoints:[],comfyUiCheckpoint:null,comfyUiError:null});
+  const [klingCliStatus,setKlingCliStatus]=useState<KlingCliStatus|null>(null);
+   const [openAiKey,setOpenAiKey]=useState("");
+  const [comfyUiUrl,setComfyUiUrl]=useState("http://127.0.0.1:8188"); const [comfyUiCheckpoint,setComfyUiCheckpoint]=useState("");
+  const [mediaGenerations,setMediaGenerations]=useState<MediaGenerationSummary[]>([]); const [mediaUrls,setMediaUrls]=useState<Record<string,string>>({});
+  const [mediaBusy,setMediaBusy]=useState<string|null>(null); const [mediaMessage,setMediaMessage]=useState("");
+  const [localServices,setLocalServices]=useState<LocalServiceStatus|null>(null); const [localServiceBusy,setLocalServiceBusy]=useState(false);
+  const [publishingQueue,setPublishingQueue]=useState<PublishingQueueItem[]>([]);const [dashboardEvents,setDashboardEvents]=useState<ScheduleEvent[]>([]);const [publishingMessage,setPublishingMessage]=useState("");const [publishingEditId,setPublishingEditId]=useState<string|null>(null);const [publishingEditCaption,setPublishingEditCaption]=useState("");const [publishingEditDate,setPublishingEditDate]=useState("");const [publishingReviewReason,setPublishingReviewReason]=useState("");
   const [brandProfiles,setBrandProfiles]=useState<BrandProfile[]>([]);const [brandDraft,setBrandDraft]=useState<BrandProfile|null>(null);const [brandMessage,setBrandMessage]=useState("");const [imageAspect,setImageAspect]=useState<"default"|MediaAspectRatio>("default");
+  const [analyticsArtist,setAnalyticsArtist]=useState<ArtistAlias|"all">("all");const [analyticsPeriod,setAnalyticsPeriod]=useState<7|30|90>(30);const [analyticsReadiness,setAnalyticsReadiness]=useState<Record<string,ReleaseReadiness>>({});const [analyticsPerformance,setAnalyticsPerformance]=useState<Record<number,SoundCloudTrackPerformance>>({});const [analyticsMessage,setAnalyticsMessage]=useState("");
+  const [contacts,setContacts]=useState<ContactSummary[]>([]);const [contactDraft,setContactDraft]=useState<UpsertContactInput>(emptyContact);const [contactQuery,setContactQuery]=useState("");const [contactStatusFilter,setContactStatusFilter]=useState<ContactRelationshipStatus|"all">("all");const [contactMessage,setContactMessage]=useState("");const [interactionSummary,setInteractionSummary]=useState("");const [interactionChannel,setInteractionChannel]=useState<ContactChannel|"meeting">("email");const [interactionDirection,setInteractionDirection]=useState<"outbound"|"inbound"|"note">("note");
+  const [meta,setMeta]=useState<MetaConnection|null>(null);const [metaAppId,setMetaAppId]=useState("");const [metaAppSecret,setMetaAppSecret]=useState("");const [metaConfigurationId,setMetaConfigurationId]=useState("");const [metaBusy,setMetaBusy]=useState(false);const [metaMessage,setMetaMessage]=useState("");const [metaDestinationByItem,setMetaDestinationByItem]=useState<Record<string,string>>({});const [metaQueueItemId,setMetaQueueItemId]=useState("");
+  const [mediaBridge,setMediaBridge]=useState<MediaBridgeStatus|null>(null);const [r2AccountId,setR2AccountId]=useState("");const [r2Bucket,setR2Bucket]=useState("");const [r2AccessKeyId,setR2AccessKeyId]=useState("");const [r2SecretAccessKey,setR2SecretAccessKey]=useState("");const [bridgeBusy,setBridgeBusy]=useState(false);const [bridgeMessage,setBridgeMessage]=useState("");
+  const [youTube,setYouTube]=useState<YouTubeConnection|null>(null);const [youTubeClientId,setYouTubeClientId]=useState("");const [youTubeClientSecret,setYouTubeClientSecret]=useState("");const [youTubeBusy,setYouTubeBusy]=useState(false);const [youTubeMessage,setYouTubeMessage]=useState("");
+  const [youTubeChannelData,setYouTubeChannelData]=useState<YouTubeChannelDataSnapshot|null>(null);const [youTubeDataBusy,setYouTubeDataBusy]=useState(false);const [youTubeDataMessage,setYouTubeDataMessage]=useState("");const [youTubeAnalyticsRange,setYouTubeAnalyticsRange]=useState<YouTubeAnalyticsRange>("28d");const [youTubeAnalytics,setYouTubeAnalytics]=useState<YouTubeAnalyticsSnapshot|null>(null);const [youTubeAnalyticsBusy,setYouTubeAnalyticsBusy]=useState(false);const [youTubeAnalyticsMessage,setYouTubeAnalyticsMessage]=useState("");
+  const [tikTok,setTikTok]=useState<TikTokConnection|null>(null);const [tikTokClientKey,setTikTokClientKey]=useState("");const [tikTokClientSecret,setTikTokClientSecret]=useState("");const [tikTokBusy,setTikTokBusy]=useState(false);const [tikTokMessage,setTikTokMessage]=useState("");
   const artist = useMemo(() => artists.find((item) => item.id === selectedArtist) ?? artists[0], [selectedArtist]);
 
   useEffect(() => {
@@ -87,7 +149,7 @@ export function App() {
           const analyses = await Promise.all(initialAssets.filter((asset) => asset.kind === "audio").map(async (asset) => [asset.id, await window.studio!.getAudioAnalysis(asset.id)] as const));
           setAudioAnalyses(Object.fromEntries(analyses.filter((entry): entry is readonly [string, AudioAnalysisSummary] => entry[1] !== null)));
         }
-        const savedModelStillExists = system.ollama.models.some((model) => model.name === savedAiSettings.model);
+        const savedModelStillExists = savedAiSettings.model === null || system.ollama.models.some((model) => model.name === savedAiSettings.model);
         const preferredModel = system.ollama.models.find((model) => /^deepseek-r1(?::|$)/i.test(model.name)) ?? system.ollama.models[0];
         const resolvedSettings = savedModelStillExists || system.ollama.models.length === 0
           ? savedAiSettings
@@ -99,21 +161,29 @@ export function App() {
     })();
   }, []);
 
+  useEffect(() => { if ((activeView !== "overview" && activeView !== "analytics") || !window.studio) return; void window.studio.getYouTubeAnalytics(youTubeAnalyticsRange).then(setYouTubeAnalytics).catch(() => undefined); }, [activeView, youTubeAnalyticsRange]);
+
+  useEffect(() => {
+    if (activeView !== "overview" || !window.studio) return;
+    const assetPromise = activeReleaseId ? window.studio.listAssets(activeReleaseId) : Promise.resolve([] as AssetSummary[]);
+    void Promise.all([window.studio.listTasks(), window.studio.listPublishingQueue(), window.studio.listScheduleEvents(), window.studio.getMetaConnection(), window.studio.getSoundCloudConnection(), window.studio.getSpotifyConnection(), window.studio.getYouTubeConnection(), window.studio.getYouTubeChannelData(), window.studio.getYouTubeAnalytics(youTubeAnalyticsRange), assetPromise]).then(([savedTasks, queue, events, metaConnection, soundCloudConnection, spotifyConnection, youTubeConnection, youTubeData, analyticsSnapshot, releaseAssets]) => {
+      setTasks(savedTasks); setPublishingQueue(queue); setMeta(metaConnection); setSoundCloud(soundCloudConnection); setSpotify(spotifyConnection); setYouTube(youTubeConnection); setYouTubeChannelData(youTubeData); setYouTubeAnalytics(analyticsSnapshot);
+      setDashboardEvents(events);
+      setAssets(releaseAssets);
+    }).catch((error) => setBridgeError(error instanceof Error ? error.message : "Could not load dashboard operations."));
+  }, [activeView, activeReleaseId]);
   useEffect(() => {
     if (activeView !== "calendar"||!window.studio)return;const extras=activeReleaseId?Promise.all([window.studio.listCampaignPackItems(activeReleaseId),window.studio.listMediaGenerations(activeReleaseId)]):Promise.resolve([[],[]] as [CampaignPackItem[],MediaGenerationSummary[]]);void Promise.all([window.studio.listTasks(),window.studio.listPublishingQueue(),extras,window.studio.getMetaConnection()]).then(([savedTasks,queue,[pack,media],metaConnection])=>{setTasks(savedTasks);setPublishingQueue(queue);setCampaignPackItems(pack);setMediaGenerations(media);setMeta(metaConnection);}).catch((error) => setTaskMessage(error instanceof Error ? error.message : "Could not load tasks and publishing queue"));
   }, [activeView,activeReleaseId]);
   useEffect(()=>{if(activeView!=="settings"||!window.studio)return;void window.studio.listBrandProfiles().then((profiles)=>{setBrandProfiles(profiles);setBrandDraft((current)=>profiles.find((profile)=>profile.artistId===current?.artistId)??profiles[0]??null);}).catch((error)=>setBrandMessage(error instanceof Error?error.message:"Could not load brand profiles"));},[activeView]);
+  useEffect(()=>{if(activeView!=="analytics"||!window.studio)return;setAnalyticsMessage("Loading real catalog analytics...");void Promise.all([window.studio.listSoundCloudTracks(),window.studio.listSpotifyReleases(),window.studio.listPublishingQueue(),window.studio.listTasks()]).then(async([tracks,spotifyRows,queue,savedTasks])=>{setSoundCloudTracks(tracks);setSpotifyReleases(spotifyRows);setPublishingQueue(queue);setTasks(savedTasks);const [readiness,performance]=await Promise.all([Promise.all(releases.map(async(release)=>[release.id,await window.studio!.getReleaseReadiness(release.id)] as const)),Promise.all(tracks.map(async(track)=>[track.id,await window.studio!.getSoundCloudTrackPerformance(track.id)] as const))]);setAnalyticsReadiness(Object.fromEntries(readiness));setAnalyticsPerformance(Object.fromEntries(performance));setAnalyticsMessage("");}).catch((error)=>setAnalyticsMessage(error instanceof Error?error.message:"Could not load analytics"));},[activeView,releases]);
+  useEffect(()=>{if(activeView!=="contacts"||!window.studio)return;void window.studio.listContacts().then(setContacts).catch((error)=>setContactMessage(error instanceof Error?error.message:"Could not load contacts"));},[activeView]);
 
-  useEffect(() => { if (activeView === "ai-studio" && activeReleaseId && window.studio) void Promise.all([window.studio.listCampaignPackItems(activeReleaseId),window.studio.listMediaGenerations(activeReleaseId)]).then(([items,media])=>{setCampaignPackItems(items);setMediaGenerations(media);}).catch((error) => setCampaignPackMessage(error instanceof Error ? error.message : "Could not load campaign pack")); }, [activeView, activeReleaseId]);
+  useEffect(() => { if (activeView === "releases" && activeReleaseId && window.studio) void Promise.all([window.studio.listCampaignPackItems(activeReleaseId),window.studio.listMediaGenerations(activeReleaseId),window.studio.getMediaGenerationSettings(),window.studio.getKlingCliStatus()]).then(([items,media,mediaSettingsResult,klingCli])=>{setCampaignPackItems(items);setMediaGenerations(media);setMediaSettings(mediaSettingsResult);setKlingCliStatus(klingCli);return Promise.all(items.map(async (item)=>[item.id, await window.studio!.getCampaignPackItemDependencyStatus(item.id)] as const)).then((entries)=>setPackDependencyStatuses(Object.fromEntries(entries)));}).catch((error) => setCampaignPackMessage(error instanceof Error ? error.message : "Could not load campaign pack")); }, [activeView, activeReleaseId]);
   useEffect(()=>{if(!window.studio)return;void Promise.all(mediaGenerations.filter((item)=>["ready","approved","rejected"].includes(item.status)).map(async(item)=>[item.id,await window.studio!.getGeneratedMediaUrl(item.id)] as const)).then((entries)=>setMediaUrls(Object.fromEntries(entries))).catch(()=>undefined);},[mediaGenerations]);
   useEffect(()=>{if(!window.studio)return;const audioAssets=assets.filter((asset)=>asset.kind==="audio");void Promise.all(audioAssets.map(async(asset)=>[asset.id,await window.studio!.getAssetPlaybackUrl(asset.id)] as const)).then((entries)=>setPlaybackUrls(Object.fromEntries(entries))).catch((error)=>setAssetMessage(error instanceof Error?error.message:"Could not prepare audio preview"));},[assets]);
-  const pendingMediaKey=mediaGenerations.filter((item)=>item.status==="generating"&&["comfyui","kling"].includes(item.provider)).map((item)=>item.id).sort().join("|");
+  const pendingMediaKey=mediaGenerations.filter((item)=>item.status==="generating"&&["comfyui","kling-cli"].includes(item.provider)).map((item)=>item.id).sort().join("|");
   useEffect(()=>{if(!window.studio||!pendingMediaKey)return;let cancelled=false,busy=false;const poll=async()=>{if(busy||cancelled)return;busy=true;try{const ids=pendingMediaKey.split("|");const updates=await Promise.all(ids.map((id)=>window.studio!.refreshMediaGeneration(id)));if(cancelled)return;setMediaGenerations((current)=>current.map((item)=>updates.find((updated)=>updated.id===item.id)??item));}catch(error){if(!cancelled)setMediaMessage(error instanceof Error?error.message:"Could not refresh generated media");}finally{busy=false;}};void poll();const timer=window.setInterval(()=>void poll(),5000);return()=>{cancelled=true;window.clearInterval(timer);};},[pendingMediaKey]);
-
-  useEffect(() => {
-    if (activeView !== "integrations" || !window.studio) return;
-    void Promise.all([window.studio.getSoundCloudConnection(), window.studio.listSoundCloudTracks(), window.studio.getSpotifyConnection(), window.studio.getSpotifyArtistMappings(), window.studio.listSpotifyReleases(), window.studio.getCatalogMatchSuggestions(),window.studio.getMediaGenerationSettings(),window.studio.getLocalServiceStatus(),window.studio.getMetaConnection(),window.studio.getMediaBridgeStatus()]).then(([connection, tracks, spotifyConnection, mappings, savedSpotifyReleases, matches,media,services,metaConnection,bridge]) => { setSoundCloud(connection); setSoundCloudTracks(tracks); setSpotify(spotifyConnection); setSpotifyArtistIds((current) => ({ ...current, ...Object.fromEntries(mappings.map((mapping) => [mapping.artistId, mapping.spotifyArtistId])) })); setSpotifyReleases(savedSpotifyReleases); setCatalogMatches(matches);setMediaSettings(media);setComfyUiUrl(media.comfyUiUrl);setComfyUiCheckpoint(media.comfyUiCheckpoint??"");setLocalServices(services);setMeta(metaConnection);setMetaConfigurationId(metaConnection.configurationId??"");setMediaBridge(bridge);setR2AccountId(bridge.accountId??"");setR2Bucket(bridge.bucket??""); }).catch((error) => setSoundCloudMessage(error instanceof Error ? error.message : "Could not load integrations"));
-  }, [activeView]);
 
   async function updateAiSettings(next: AiSettings) {
     setAiSettings(next);
@@ -224,8 +294,27 @@ export function App() {
   async function acceptCatalogMatch(match: CatalogMatchSuggestion) { if (!window.studio) return; const source = soundCloudTracks.find((track) => track.id === match.soundCloudTrackId), target = spotifyReleases.find((release) => release.id === match.spotifyReleaseId); if (!source || !target || source.contentType === "bootleg") return; let created: ReleaseSummary | null = null; try { created = await window.studio.createReleaseDraft({ artistId: target.artistId, title: target.name, primaryGenre: source.genre || artists.find((artist) => artist.id === target.artistId)!.genres[0], story: `Unified catalog entry · SoundCloud: ${source.permalinkUrl} · Spotify: ${target.spotifyUrl}`, releaseDate: target.releaseDate }); const linkedSoundCloud = await window.studio.linkSoundCloudTrack(source.id, created.id); const linkedSpotify = await window.studio.linkSpotifyRelease(target.id, created.id); setReleases((current) => [created!, ...current]); setSoundCloudTracks((current) => current.map((track) => track.id === linkedSoundCloud.id ? linkedSoundCloud : track)); setSpotifyReleases((current) => current.map((release) => release.id === linkedSpotify.id ? linkedSpotify : release)); setCatalogMatches(await window.studio.getCatalogMatchSuggestions()); setSpotifyMessage(`Unified entry created: ${target.name}.`); } catch (error) { if (created) await window.studio.deleteRelease(created.id).catch(() => undefined); setSpotifyMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not accept match"); } }
   async function saveMetaCredentials(){if(!window.studio)return;setMetaBusy(true);try{const saved=await window.studio.saveMetaCredentials(metaAppId,metaAppSecret,metaConfigurationId);setMeta(saved);setMetaConfigurationId(saved.configurationId??"");setMetaAppSecret("");setMetaMessage("Meta credentials and Business Login configuration saved securely.");}catch(error){setMetaMessage(error instanceof Error?error.message:"Could not save Meta credentials");}finally{setMetaBusy(false);}}
   async function connectMeta(){if(!window.studio)return;setMetaBusy(true);setMetaMessage("Authorize Facebook Pages and Instagram accounts in the browser...");try{await window.studio.beginMetaConnect();for(let attempt=0;attempt<180;attempt++){await new Promise((resolve)=>window.setTimeout(resolve,1000));const connection=await window.studio.getMetaConnection();setMeta(connection);if(connection.connected){setMetaMessage(`Connected ${connection.destinations.length} Meta destinations.`);return;}if(connection.error)throw new Error(connection.error);}throw new Error("Meta authorization timed out");}catch(error){setMetaMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Meta connection failed");}finally{setMetaBusy(false);}}
-  async function disconnectMeta(){if(!window.studio)return;setMeta(await window.studio.disconnectMeta());setMetaMessage("Meta disconnected locally.");}
-  async function saveMediaBridge(){if(!window.studio)return;setBridgeBusy(true);setBridgeMessage("Testing encrypted Cloudflare R2 connection...");try{const saved=await window.studio.saveMediaBridgeSettings(r2AccountId,r2Bucket,r2AccessKeyId,r2SecretAccessKey);setMediaBridge(saved);setR2SecretAccessKey("");setBridgeMessage("Secure Media Bridge connected. Temporary Instagram delivery is ready.");}catch(error){setBridgeMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Could not configure the Media Bridge");}finally{setBridgeBusy(false);}}
+  async function disconnectMeta(){if(!window.studio)return;setMeta(await window.studio.disconnectMeta());setMetaMessage("Meta disconnected locally.");}  async function saveMediaBridge(){if(!window.studio)return;setBridgeBusy(true);setBridgeMessage("Testing encrypted Cloudflare R2 connection...");try{const saved=await window.studio.saveMediaBridgeSettings(r2AccountId,r2Bucket,r2AccessKeyId,r2SecretAccessKey);setMediaBridge(saved);setR2SecretAccessKey("");setBridgeMessage("Secure Media Bridge connected. Temporary Instagram delivery is ready.");}catch(error){setBridgeMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Could not configure the Media Bridge");}finally{setBridgeBusy(false);}}
+  async function saveYouTubeCredentials(){if(!window.studio)return;setYouTubeBusy(true);try{const saved=await window.studio.saveYouTubeCredentials(youTubeClientId,youTubeClientSecret);setYouTube(saved);setYouTubeClientSecret("");setYouTubeMessage("YouTube credentials saved securely.");}catch(error){setYouTubeMessage(error instanceof Error?error.message:"Could not save YouTube credentials");}finally{setYouTubeBusy(false);}}
+  async function connectYouTube(){if(!window.studio)return;setYouTubeBusy(true);setYouTubeMessage("Authorize YouTube channel in the browser...");try{await window.studio.beginYouTubeConnect();for(let attempt=0;attempt<180;attempt++){await new Promise((resolve)=>window.setTimeout(resolve,1000));const connection=await window.studio.getYouTubeConnection();setYouTube(connection);if(connection.connected){setYouTubeMessage(`Connected channel: ${connection.channelTitle}`);return;}if(connection.error)throw new Error(connection.error);}throw new Error("YouTube authorization timed out");}catch(error){setYouTubeMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"YouTube connection failed");}finally{setYouTubeBusy(false);}}
+  async function disconnectYouTube(){if(!window.studio)return;setYouTube(await window.studio.disconnectYouTube());setYouTubeMessage("YouTube disconnected locally.");}
+  async function syncYouTubeChannelData(){
+    if(!window.studio)return;
+    setYouTubeDataBusy(true);
+    setYouTubeDataMessage("Syncing channel data...");
+    try {
+      const result=await window.studio.syncYouTubeChannelData();
+      if(!result.ok){setYouTubeDataMessage(result.sanitizedError??"Channel data sync failed. Previous data is still available.");return;}
+      const snapshot=await window.studio.getYouTubeChannelData();
+      setYouTubeChannelData(snapshot);
+      setYouTubeDataMessage(`Channel data synced: ${result.videosFetched} videos from ${result.pagesFetched} playlist page${result.pagesFetched===1?"":"s"}.`);
+    } catch(error) {
+      setYouTubeDataMessage(error instanceof Error?error.message:"Channel data sync failed. Previous data is still available.");
+    } finally {setYouTubeDataBusy(false);}
+  }
+  async function syncYouTubeAnalytics(){if(!window.studio)return;setYouTubeAnalyticsBusy(true);setYouTubeAnalyticsMessage("Syncing YouTube Analytics...");try{const result=await window.studio.syncYouTubeAnalytics(youTubeAnalyticsRange);if(result.ok){setYouTubeAnalytics(result.snapshot);setYouTubeAnalyticsMessage("Analytics synced.");}else setYouTubeAnalyticsMessage(result.sanitizedError??"Analytics sync failed. Previous data remains available.");}catch(error){setYouTubeAnalyticsMessage(error instanceof Error?error.message:"Analytics sync failed.");}finally{setYouTubeAnalyticsBusy(false);}}  async function saveTikTokCredentials(){if(!window.studio)return;setTikTokBusy(true);try{const saved=await window.studio.saveTikTokCredentials(tikTokClientKey,tikTokClientSecret);setTikTok(saved);setTikTokClientSecret("");setTikTokMessage("TikTok credentials saved securely.");}catch(error){setTikTokMessage(error instanceof Error?error.message:"Could not save TikTok credentials");}finally{setTikTokBusy(false);}}
+  async function connectTikTok(){if(!window.studio)return;setTikTokBusy(true);setTikTokMessage("Authorize TikTok account in the browser...");try{await window.studio.beginTikTokConnect();for(let attempt=0;attempt<180;attempt++){await new Promise((resolve)=>window.setTimeout(resolve,1000));const connection=await window.studio.getTikTokConnection();setTikTok(connection);if(connection.connected){setTikTokMessage(`Connected TikTok open_id ${connection.openId}`);return;}if(connection.error)throw new Error(connection.error);}throw new Error("TikTok authorization timed out");}catch(error){setTikTokMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"TikTok connection failed");}finally{setTikTokBusy(false);}}
+  async function disconnectTikTok(){if(!window.studio)return;setTikTok(await window.studio.disconnectTikTok());setTikTokMessage("TikTok disconnected locally.");}
 
   async function generateWithOllama() {
     if (!window.studio || !aiSettings.model) {
@@ -275,20 +364,25 @@ export function App() {
   }
   async function generateCampaignPack() { if (!window.studio || !activeReleaseId || !aiSettings.model) { setCampaignPackMessage("Save a release and select an Ollama model first."); return; } setCampaignPackBusy(true); setCampaignPackMessage("Generating the complete local campaign pack..."); try { const items=await window.studio.generateCampaignPack({releaseId:activeReleaseId,...aiSettings,model:aiSettings.model,artistId:selectedArtist,artistName:artist.name,artistVoice:artist.voice,title,primaryGenre,story,releaseDate:releaseDate||null}); setCampaignPackItems(items); setCampaignPackMessage(`Campaign pack generated in ${aiSettings.language.toUpperCase()}. ${items.length} items saved as Draft.`); } catch(error){setCampaignPackMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Campaign pack generation failed");} finally{setCampaignPackBusy(false);} }
   async function changeCampaignPackStatus(itemId:string,next:DraftStatus){if(!window.studio)return;try{const updated=await window.studio.updateCampaignPackItemStatus(itemId,next);setCampaignPackItems((current)=>current.map((item)=>item.id===updated.id?updated:item));}catch(error){setCampaignPackMessage(error instanceof Error?error.message:"Could not update campaign item");}}
-  async function saveMediaCredentials(){if(!window.studio)return;setMediaMessage("Saving encrypted API keys...");try{setMediaSettings(await window.studio.saveMediaGenerationCredentials(openAiKey,klingKey));setOpenAiKey("");setKlingKey("");setMediaMessage("API keys saved with operating-system encryption.");}catch(error){setMediaMessage(error instanceof Error?error.message:"Could not save API keys");}}
+  async function saveMediaCredentials(){if(!window.studio)return;setMediaMessage("Saving encrypted API key...");try{setMediaSettings(await window.studio.saveMediaGenerationCredentials(openAiKey,""));setOpenAiKey("");setMediaMessage("API key saved with operating-system encryption.");}catch(error){setMediaMessage(error instanceof Error?error.message:"Could not save API key");}}
   async function testComfyUi(){if(!window.studio)return;setMediaMessage("Connecting to local ComfyUI...");try{const settings=await window.studio.testComfyUi(comfyUiUrl);setMediaSettings(settings);setComfyUiUrl(settings.comfyUiUrl);setComfyUiCheckpoint(settings.comfyUiCheckpoint??"");setMediaMessage(`ComfyUI connected. ${settings.comfyUiCheckpoints.length} checkpoint(s) found.`);}catch(error){setMediaMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"ComfyUI connection failed");}}
   async function saveComfyUi(){if(!window.studio||!comfyUiCheckpoint)return;setMediaMessage("Saving local image model...");try{const settings=await window.studio.saveComfyUiSettings(comfyUiUrl,comfyUiCheckpoint);setMediaSettings(settings);setMediaMessage(`ComfyUI ready with ${settings.comfyUiCheckpoint}.`);}catch(error){setMediaMessage(error instanceof Error?error.message:"Could not save ComfyUI settings");}}
   async function chooseComfyLauncher(){if(!window.studio)return;setLocalServiceBusy(true);try{setLocalServices(await window.studio.selectComfyUiLauncher());}finally{setLocalServiceBusy(false);}}
   async function toggleLocalService(service:"ollama"|"comfyui",running:boolean){if(!window.studio)return;setLocalServiceBusy(true);setMediaMessage(`${running?"Stopping":"Starting"} ${service}...`);try{const next=running?await window.studio.stopLocalService(service):await window.studio.startLocalService(service);setLocalServices(next);const runningNow=service==="ollama"?next.ollama.running:next.comfyUi.running;setMediaMessage(`${service} is ${runningNow?"running":"stopped"}.`);}catch(error){setMediaMessage(error instanceof Error?error.message:"Local service operation failed");}finally{setLocalServiceBusy(false);}}
   async function toggleServiceAutoStart(enabled:boolean){if(!window.studio)return;setLocalServices(await window.studio.setLocalServicesAutoStart(enabled));}
-  async function generateMedia(item:CampaignPackItem,provider:MediaProvider,mediaType:"image"|"video"){if(!window.studio)return;setMediaBusy(item.id);setMediaMessage(provider==="comfyui"?"Starting ComfyUI on demand, then sending the image prompt...":`Starting ${provider} ${mediaType} generation. This may use paid credits...`);try{const result=await window.studio.generateMedia({campaignPackItemId:item.id,provider,mediaType,...(imageAspect==="default"?{}:{aspectRatio:imageAspect})});setMediaGenerations((current)=>[result,...current.filter((row)=>row.id!==result.id)]);if(provider==="comfyui")setLocalServices(await window.studio.getLocalServiceStatus());setMediaMessage(result.status==="generating"?`${provider==="comfyui"?"ComfyUI":"Kling"} accepted the task. Use Refresh in the gallery after it finishes.`:"Generated media downloaded to the local gallery.");}catch(error){setMediaMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Media generation failed");}finally{setMediaBusy(null);}}
+  async function generateMedia(item:CampaignPackItem,provider:MediaProvider,mediaType:"image"|"video"){if(!window.studio)return;setMediaBusy(item.id);setMediaMessage(provider==="comfyui"?"Starting ComfyUI on demand, then sending the image prompt...":provider==="kling-cli"?`Starting Kling CLI ${mediaType} generation...`:`Starting ${provider} ${mediaType} generation. This may use paid credits...`);try{const result=await window.studio.generateMedia({campaignPackItemId:item.id,provider,mediaType,...(imageAspect==="default"?{}:{aspectRatio:imageAspect})});setMediaGenerations((current)=>[result,...current.filter((row)=>row.id!==result.id)]);if(provider==="comfyui")setLocalServices(await window.studio.getLocalServiceStatus());setMediaMessage(result.status==="generating"?`${provider==="comfyui"?"ComfyUI":provider==="kling-cli"?"Kling CLI":provider} accepted the task. Use Refresh in the gallery after it finishes.`:"Generated media downloaded to the local gallery.");}catch(error){setMediaMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Media generation failed");}finally{setMediaBusy(null);}}
   async function refreshMedia(id:string){if(!window.studio)return;setMediaBusy(id);try{const updated=await window.studio.refreshMediaGeneration(id);setMediaGenerations((current)=>current.map((row)=>row.id===id?updated:row));if(updated.status==="generating")setMediaMessage("Still generating. Refresh again in a moment.");else if(updated.status==="ready")setMediaMessage("Generated image downloaded to the local gallery.");else if(updated.error)setMediaMessage(updated.error);}catch(error){setMediaMessage(error instanceof Error?error.message:"Could not refresh generation");}finally{setMediaBusy(null);}}
   async function reviewMedia(id:string,status:"approved"|"rejected"){if(!window.studio)return;const updated=await window.studio.updateMediaGenerationStatus(id,status);setMediaGenerations((current)=>current.map((row)=>row.id===id?updated:row));}
-  async function addPublishingItem(){if(!window.studio||!activeReleaseId||!publishingCaptionId)return;setPublishingMessage("Adding post to publishing queue...");try{const item=await window.studio.createPublishingQueueItem({releaseId:activeReleaseId,campaignPackItemId:publishingCaptionId,mediaGenerationId:publishingMediaId||null,platform:publishingPlatform,scheduledAt:publishingDate?new Date(publishingDate).toISOString():null});setPublishingQueue((current)=>[...current,item].sort((a,b)=>(a.scheduledAt??"9999").localeCompare(b.scheduledAt??"9999")));setPublishingMessage("Post added as Draft. Review and approve it before scheduling.");}catch(error){setPublishingMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Could not create publishing item");}}
-  async function changePublishingStatus(id:string,status:PublishingStatus){if(!window.studio)return;try{const updated=await window.studio.updatePublishingQueueStatus(id,status);setPublishingQueue((current)=>current.map((item)=>item.id===id?updated:item));}catch(error){setPublishingMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Could not update publishing status");}}
+  async function reviewPublishingItem(id:string,action:"APPROVE"|"REJECT"|"RETURN_TO_DRAFT"|"SCHEDULE"){if(!window.studio)return;try{const updated=await window.studio.reviewPublishingQueueItem({id,action,reason:publishingReviewReason.trim()||undefined});setPublishingQueue((current)=>current.map((item)=>item.id===id?updated:item));setPublishingReviewReason("");setPublishingMessage(action==="REJECT"?"Queue item rejected.":action==="SCHEDULE"?"Queue item scheduled.":action==="APPROVE"?"Queue item approved.":"Queue item returned to Draft.");}catch(error){setPublishingMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Could not review publishing item");}}
+  function beginPublishingEdit(item:PublishingQueueItem){setPublishingEditId(item.id);setPublishingEditCaption(item.caption);setPublishingEditDate(item.scheduledAt?new Date(item.scheduledAt).toISOString().slice(0,16):"");}
+  async function savePublishingEdit(id:string){if(!window.studio)return;try{const updated=await window.studio.updatePublishingQueueContent({id,caption:publishingEditCaption,scheduledAt:publishingEditDate?new Date(publishingEditDate).toISOString():null});setPublishingQueue((current)=>current.map((item)=>item.id===id?updated:item));setPublishingEditId(null);setPublishingMessage("Draft updated.");}catch(error){setPublishingMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Could not update draft");}}
   async function exportPublishingPack(id:string){if(!window.studio)return;try{const directory=await window.studio.exportPublishingPack(id);if(directory){setPublishingMessage(`Publishing pack exported to ${directory}`);setPublishingQueue(await window.studio.listPublishingQueue());}}catch(error){setPublishingMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Could not export publishing pack");}}
   async function publishMetaItem(id:string){if(!window.studio)return;const destinationId=metaDestinationByItem[id];if(!destinationId){setPublishingMessage("Select a Meta destination first.");return;}setPublishingMessage("Publishing through Meta Graph API...");try{const updated=await window.studio.publishMetaQueueItem(id,destinationId);setPublishingQueue((current)=>current.map((item)=>item.id===id?updated:item));setPublishingMessage(`Published successfully · Meta post ${updated.remotePostId}`);}catch(error){setPublishingQueue(await window.studio.listPublishingQueue());setPublishingMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Meta publishing failed");}}
   async function saveBrandProfile(){if(!window.studio||!brandDraft)return;setBrandMessage("Saving brand profile...");try{const updated=await window.studio.updateBrandProfile(brandDraft);setBrandProfiles((current)=>current.map((profile)=>profile.artistId===updated.artistId?updated:profile));setBrandDraft(updated);setBrandMessage(`${updated.artistName} brand profile saved.`);}catch(error){setBrandMessage(error instanceof Error?error.message:"Could not save brand profile");}}
+  async function saveContact(){if(!window.studio)return;setContactMessage("Saving contact...");try{const saved=await window.studio.saveContact(contactDraft);setContacts(await window.studio.listContacts());setContactDraft({...emptyContact,id:saved.id,name:saved.name,contactType:saved.contactType,relationshipStatus:saved.relationshipStatus,artistId:saved.artistId,releaseId:saved.releaseId,organization:saved.organization??"",email:saved.email??"",phone:saved.phone??"",website:saved.website??"",socialHandle:saved.socialHandle??"",preferredChannel:saved.preferredChannel,consent:saved.consent,notes:saved.notes,nextFollowUpAt:saved.nextFollowUpAt,createFollowUpTask:false});setContactMessage(`Saved ${saved.name}.`);setTasks(await window.studio.listTasks());}catch(error){setContactMessage(error instanceof Error?error.message.replace(/^Error invoking remote method '[^']+': Error: /,""):"Could not save contact");}}
+  function editContact(contact:ContactSummary){setContactDraft({id:contact.id,name:contact.name,contactType:contact.contactType,relationshipStatus:contact.relationshipStatus,artistId:contact.artistId,releaseId:contact.releaseId,organization:contact.organization??"",email:contact.email??"",phone:contact.phone??"",website:contact.website??"",socialHandle:contact.socialHandle??"",preferredChannel:contact.preferredChannel,consent:contact.consent,notes:contact.notes,nextFollowUpAt:contact.nextFollowUpAt,createFollowUpTask:false});setInteractionSummary("");}
+  async function removeContact(id:string){if(!window.studio||!window.confirm("Delete this contact and its interaction history?"))return;await window.studio.deleteContact(id);setContacts(await window.studio.listContacts());if(contactDraft.id===id)setContactDraft(emptyContact);}
+  async function addContactInteraction(){if(!window.studio||!contactDraft.id||!interactionSummary.trim())return;const updated=await window.studio.addContactInteraction({contactId:contactDraft.id,channel:interactionChannel,direction:interactionDirection,summary:interactionSummary,occurredAt:new Date().toISOString()});setContacts(await window.studio.listContacts());editContact(updated);setInteractionSummary("");setContactMessage("Interaction added to history.");}
 
   async function persistRelease(): Promise<ReleaseSummary> {
     if (!window.studio) throw new Error("Desktop bridge unavailable");
@@ -315,13 +409,17 @@ export function App() {
   }
 
   async function saveRelease() {
+    setReleaseSaveFailed(false);
     const editing = Boolean(activeReleaseId);
     setSaveMessage(editing ? "Saving changes..." : "Creating release...");
     try {
       await persistRelease();
       setSaveMessage(editing ? "Release changes saved locally" : "Release created locally");
+      playInterfaceSound("success");
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "Could not save release");
+      setReleaseSaveFailed(true);
+      playInterfaceSound("error");
     }
   }
 
@@ -334,6 +432,69 @@ export function App() {
     } catch (error) {
       setGenerationState("error");
       setGenerationMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not update draft");
+    }
+  }
+
+  async function deleteDraft(draftId: string) {
+    if (!window.studio) return;
+    if (!window.confirm("Delete this campaign draft? This cannot be undone.")) return;
+    try {
+      const draft = drafts.find((item) => item.id === draftId);
+      await window.studio.deleteDraft(draftId);
+      setDrafts(await window.studio.listDrafts());
+      if (draft) setReleaseReadiness(await window.studio.getReleaseReadiness(draft.releaseId));
+      setDraftDeleteMessage("Draft deleted.");
+      playInterfaceSound("success");
+    } catch (error) {
+      setDraftDeleteMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not delete draft");
+      playInterfaceSound("error");
+    }
+  }
+
+  async function deleteCampaignPackItem(itemId: string) {
+    const studio = window.studio;
+    if (!studio) return;
+    const dependency = packDependencyStatuses[itemId] ?? null;
+    if (dependency && !dependency.canDelete) {
+      setCampaignPackMessage(dependency.dependencies.publishingQueue > 0 ? "Locked: publishing queue" : "Locked: media generation");
+      playInterfaceSound("error");
+      return;
+    }
+    const confirmText = dependency?.deleteMode === "detach-promo"
+      ? "Delete this promotion format? Linked promo content and schedule stay unchanged; only the source reference is detached. This cannot be undone."
+      : "Delete this promotion format? This cannot be undone.";
+    if (!window.confirm(confirmText)) return;
+    try {
+      await studio.deleteCampaignPackItem(itemId);
+      if (activeReleaseId) {
+        const items = await studio.listCampaignPackItems(activeReleaseId);
+        setCampaignPackItems(items);
+        const entries = await Promise.all(items.map(async (item) => [item.id, await studio.getCampaignPackItemDependencyStatus(item.id)] as const));
+        setPackDependencyStatuses(Object.fromEntries(entries));
+      }
+      setCampaignPackMessage(dependency?.deleteMode === "detach-promo" ? "Promotion format deleted. Promo content unchanged." : "Promotion format deleted.");
+      playInterfaceSound("success");
+    } catch (error) {
+      setCampaignPackMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not delete promotion format");
+      playInterfaceSound("error");
+    }
+  }
+
+  async function cleanupStaleMedia() {
+    const studio = window.studio;
+    if (!studio || !activeReleaseId) return;
+    try {
+      const result = await studio.cleanupStaleMediaGenerations(activeReleaseId);
+      setMediaGenerations(await studio.listMediaGenerations(activeReleaseId));
+      const items = await studio.listCampaignPackItems(activeReleaseId);
+      setCampaignPackItems(items);
+      const entries = await Promise.all(items.map(async (item) => [item.id, await studio.getCampaignPackItemDependencyStatus(item.id)] as const));
+      setPackDependencyStatuses(Object.fromEntries(entries));
+      setMediaMessage(result.removedIds.length ? `Removed ${result.removedIds.length} stale media generation(s).` : "No stale media to clean up.");
+      playInterfaceSound(result.removedIds.length ? "success" : "error");
+    } catch (error) {
+      setMediaMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not clean stale media");
+      playInterfaceSound("error");
     }
   }
 
@@ -373,6 +534,7 @@ export function App() {
       setAssets((current) => [asset, ...current.filter((item) => item.id !== asset.id && item.kind !== kind)]);
       setReleaseReadiness(await window.studio.getReleaseReadiness(release.id));
       setAssetMessage(`${asset.fileName} attached to ${release.title}`);
+      playInterfaceSound("success");
     } catch (error) {
       setAssetMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not attach file");
     }
@@ -392,6 +554,7 @@ export function App() {
       setAudioAnalyses((current) => ({ ...current, [assetId]: analysis }));
       if (activeReleaseId) setReleaseReadiness(await window.studio.getReleaseReadiness(activeReleaseId));
       setAssetMessage(analysis.status === "complete" ? "Audio analysis completed" : "Basic WAV analysis completed");
+      playInterfaceSound("completion");
     } catch (error) {
       setAssetMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Audio analysis failed");
     } finally {
@@ -487,8 +650,21 @@ export function App() {
   const fallbackDraft = `${artist.name} presents ${title}.\n\n${story}\n\nA ${primaryGenre} transmission shaped for listeners who want more than background music.`;
   const draft = generatedDraft?.content ?? fallbackDraft;
   const currentRelease = releases.find((release) => release.id === activeReleaseId) ?? releases[0];
-  const readinessScore = releaseReadiness?.score ?? 0;
-  const readinessCheck = (id: ReleaseReadiness["checks"][number]["id"]) => releaseReadiness?.checks.find((check) => check.id === id);
+  const [playerSource, setPlayerSource] = useState<string | undefined>(undefined);
+  const [playerPlaying, setPlayerPlaying] = useState(false);
+  const featuredAudioSource = (() => {
+    if (!currentRelease) return undefined;
+    const audioAsset = assets.find((a) => a.releaseId === currentRelease.id && a.kind === "audio");
+    return audioAsset ? playbackUrls[audioAsset.id] : undefined;
+  })();
+  function playFeaturedRelease() {
+    if (featuredAudioSource === playerSource && playerPlaying) {
+      setPlayerPlaying(false);
+    } else {
+      setPlayerSource(featuredAudioSource);
+      setPlayerPlaying(true);
+    }
+  }
   const persistedStatus = releases.find((release) => release.id === activeReleaseId)?.status ?? "draft";
   const allowedReleaseStatuses: Record<ReleaseStatus, ReleaseStatus[]> = {
     draft: ["draft", "planned"], planned: ["draft", "planned", "scheduled"],
@@ -501,6 +677,17 @@ export function App() {
     return matchesQuery && matchesStatus && matchesArtist;
   }).sort((a, b) => catalogSort === "plays" ? (b.playbackCount ?? 0) - (a.playbackCount ?? 0) : catalogSort === "likes" ? (b.likesCount ?? 0) - (a.likesCount ?? 0) : catalogSort === "engagement" ? b.engagementScore - a.engagementScore : Date.parse(b.createdAt) - Date.parse(a.createdAt));
   const soundCloudTotals = soundCloudTracks.reduce((totals, track) => ({ plays: totals.plays + (track.playbackCount ?? 0), likes: totals.likes + (track.likesCount ?? 0), comments: totals.comments + (track.commentCount ?? 0), reposts: totals.reposts + (track.repostsCount ?? 0), bootlegs: totals.bootlegs + (track.contentType === "bootleg" ? 1 : 0), gems: totals.gems + (track.catalogStatus === "gem" ? 1 : 0) }), { plays: 0, likes: 0, comments: 0, reposts: 0, bootlegs: 0, gems: 0 });
+  const analyticsTracks=soundCloudTracks.filter((track)=>analyticsArtist==="all"||track.artistId===analyticsArtist);
+  const analyticsReleases=releases.filter((release)=>analyticsArtist==="all"||release.artistId===analyticsArtist);
+  const analyticsSpotify=spotifyReleases.filter((release)=>analyticsArtist==="all"||release.artistId===analyticsArtist);
+  const analyticsQueue=publishingQueue.filter((item)=>analyticsArtist==="all"||analyticsReleases.some((release)=>release.id===item.releaseId));
+  const analyticsTotals=analyticsTracks.reduce((total,track)=>{const window=analyticsPerformance[track.id]?.windows.find((item)=>item.days===analyticsPeriod);return{plays:total.plays+(track.playbackCount??0),likes:total.likes+(track.likesCount??0),comments:total.comments+(track.commentCount??0),reposts:total.reposts+(track.repostsCount??0),playsDelta:total.playsDelta+(window?.playsDelta??0),tracked:total.tracked+(window?.available?1:0)};},{plays:0,likes:0,comments:0,reposts:0,playsDelta:0,tracked:0});
+  const analyticsRanked=[...analyticsTracks].sort((a,b)=>b.engagementScore-a.engagementScore||(b.playbackCount??0)-(a.playbackCount??0)).slice(0,10);
+  const analyticsContentTypes=(["original","bootleg","official-remix","edit","dj-set"] as SoundCloudContentType[]).map((type)=>({type,count:analyticsTracks.filter((track)=>track.contentType===type).length}));
+  const analyticsCatalogStatuses=(["unreviewed","release","gem","archive","exclude"] as SoundCloudCatalogStatus[]).map((status)=>({status,count:analyticsTracks.filter((track)=>track.catalogStatus===status).length}));
+  const averageReadiness=analyticsReleases.length?Math.round(analyticsReleases.reduce((sum,release)=>sum+(analyticsReadiness[release.id]?.score??0),0)/analyticsReleases.length):0;
+  const visibleContacts=contacts.filter((contact)=>(contactStatusFilter==="all"||contact.relationshipStatus===contactStatusFilter)&&(!contactQuery.trim()||`${contact.name} ${contact.organization??""} ${contact.email??""} ${contact.socialHandle??""}`.toLowerCase().includes(contactQuery.trim().toLowerCase())));
+  const selectedContact=contacts.find((contact)=>contact.id===contactDraft.id);
 
   function openReleaseWorkspace(release?: ReleaseSummary) {
     if (release) void selectRelease(release);
@@ -525,10 +712,10 @@ export function App() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">▥</span><div><strong>AI MUSIC</strong><small>MANAGER</small></div></div>
+        <div className="brand"><img src={studioManagerLogo} alt="AI Studio Manager" /></div>
         <nav>{navigation.map((item, index) => <button className={item.id === activeView ? "active" : ""} key={`${item.label}-${index}`} onClick={() => item.id !== "placeholder" && setActiveView(item.id)}><span>{item.icon}</span>{item.label}{item.label === "AI Studio" && <b>AI</b>}</button>)}</nav>
         <div className="nav-divider" />
-        <nav className="secondary-nav"><button className={activeView === "integrations" ? "active" : ""} onClick={() => setActiveView("integrations")}><span>⌘</span>Integrations<i className={`status-light ${soundCloud?.connected ? "connected" : ""}`} /></button><button className={activeView === "settings" ? "active" : ""} onClick={()=>setActiveView("settings")}><span>⚙</span>Settings</button></nav>
+        <nav className="secondary-nav"><button className={activeView === "settings" ? "active" : ""} onClick={()=>setActiveView("settings")}><span>⚙</span>Settings</button></nav>
         <div className="sidebar-spacer" />
         <div className="sidebar-health"><span className={`dot ${status?.ollama.available && database?.ready ? "online" : ""}`} /><span>{status?.ollama.available && database?.ready ? "Local systems ready" : "Connecting local systems"}</span></div>
         <div className="user-card"><span className="avatar">A</span><div><strong>Arkadiusz</strong><small>Independent artist</small></div><b>•••</b></div>
@@ -537,40 +724,60 @@ export function App() {
       <main className="app-main">
         <div className="topbar"><div className="search">⌕<span>Search releases, tracks, tasks...</span><kbd>⌘ K</kbd></div><div className="top-actions"><span><i className={`dot ${status?.ollama.available && database?.ready ? "online" : ""}`} />{status?.ollama.available && database?.ready ? "All systems synced" : "Systems starting"}</span><button className="icon-button">♧</button><button className="primary" onClick={startNewRelease}>+ New release</button></div></div>
         {bridgeError && <div className="bridge-error">{bridgeError}</div>}
-        {activeView === "overview" && <div className="overview page-content">
-          <div className="overview-heading"><div><span className="date-label">MONDAY, AUG 24</span><h1>Your music. <em>Ready for the world.</em></h1><p>Everything that needs your attention, in one place.</p></div><button className="daily-brief"><span>✦</span><small>RELEASE CHECK</small><strong>{releaseReadiness?.missing.length ?? 0} actions →<br />remaining</strong></button></div>
-          <section className="release-hero">
-            <div className="cover-art"><div className="orbit"><i /><i /></div><span>DIFFERENT<br />PERSPECTIVE</span><small>THE ARKADIUSZ</small></div>
-            <div className="release-info"><span className="eyebrow">NEXT RELEASE · {releaseDate ? "scheduled" : "date pending"}</span><h2>{currentRelease?.title ?? title}</h2><p>{currentRelease?.artistName ?? artist.name} · Single · {currentRelease?.primaryGenre ?? artist.genres[0]}</p><div className="platforms"><span>↗ Spotify</span><span>◖ SoundCloud</span><span>♪ TikTok</span><span>+12</span></div></div>
-            <div className="readiness" style={{ "--progress": `${readinessScore * 3.6}deg` } as React.CSSProperties}><div><strong>{readinessScore}%</strong><span>READY</span></div><small>Release readiness</small></div>
-            <div className="release-steps">{releaseReadiness?.checks.slice(0, 5).map((check, index) => <div className={check.complete ? "done" : index === releaseReadiness.checks.findIndex((item) => !item.complete) ? "current" : ""} key={check.id}><b>{check.complete ? "✓" : index + 1}</b><span>{check.label.toUpperCase()}<small>{check.detail}</small></span></div>)}</div>
-          </section>
-          <div className="dashboard-grid">
-            <section className="dashboard-card focus-card"><div className="card-header"><div><span>YOUR FOCUS</span><h3>Move the release forward</h3></div><div className="tabs"><b>Tasks</b><span>{readinessScore}%</span></div></div>{releaseReadiness?.checks.map((check) => <div className={`task ${check.complete ? "done" : ""}`} key={check.id}><b>{check.complete ? "✓" : ""}</b><i>{check.id.slice(0, 3).toUpperCase()}</i><div><strong>{check.label}</strong><small>{check.detail} · {check.weight}%</small></div>{check.id === "campaign" && !check.complete ? <button onClick={() => setActiveView("ai-studio")}>Review →</button> : <span>{check.complete ? "✓" : "→"}</span>}</div>)}</section>
-            <section className="dashboard-card intelligence-card"><div className="card-header"><div><span>RELEASE INTELLIGENCE</span><h3>Worth your attention</h3></div><b className="live">● LIVE</b></div><article><i>◷</i><div><small>NEXT ACTION</small><strong>{releaseReadiness?.missing[0] ?? "Release foundation complete"}</strong><p>{releaseReadiness?.missing.length ? `${releaseReadiness.missing.length} readiness items remain.` : "All required release elements are ready."}</p><button onClick={() => openReleaseWorkspace()}>Open release →</button></div></article><article><i>↗</i><div><small>AUDIO</small><strong>{readinessCheck("analysis")?.complete ? "Master analyzed" : "Analysis required"}</strong><p>{readinessCheck("analysis")?.detail ?? "Select a release to calculate readiness."}</p></div></article></section>
+        {activeView === "overview" && <Dashboard
+          releases={releases}
+          tasks={tasks}
+          assets={assets}
+          featuredRelease={currentRelease}
+          releaseReadiness={releaseReadiness}
+          queue={publishingQueue} events={dashboardEvents} meta={meta} soundCloud={soundCloud} spotify={spotify} youTube={youTube} youTubeData={youTubeChannelData} youTubeAnalytics={youTubeAnalytics} youTubeAnalyticsRange={youTubeAnalyticsRange} system={status} database={database}
+          soundCloudTracks={soundCloudTracks}
+          mediaGenerations={mediaGenerations}
+          campaignPackItems={campaignPackItems}
+          onCreateRelease={startNewRelease}
+          onOpenRelease={() => openReleaseWorkspace(currentRelease)}
+          onOpenTasks={() => setActiveView("calendar")}
+          onOpenCalendar={() => setActiveView("calendar")}
+          playerPlaying={playerPlaying}
+          onPlayFeatured={playFeaturedRelease}
+          featuredAudioSource={featuredAudioSource}
+        />}
+
+        {activeView === "ai-studio" && <ConversationWorkspace release={currentRelease} artistId={selectedArtist} artistName={artist.name} status={status} activeModel={aiSettings.model} onModelChange={(model) => void updateAiSettings({ ...aiSettings, model })} onOpenRelease={() => openReleaseWorkspace(currentRelease)} />}
+
+        {activeView==="analytics"&&<div className="page-content analytics-page">
+          <header><div><span className="eyebrow">Analytics Dashboard V1</span><h1>Catalog intelligence.</h1><p>Real SoundCloud snapshots, Spotify catalog data and local campaign progress. No estimated stream counts.</p></div><div className="analytics-filters"><label>Artist alias<select value={analyticsArtist} onChange={(event)=>setAnalyticsArtist(event.target.value as ArtistAlias|"all")}><option value="all">All aliases</option>{artists.map((profile)=><option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></label><label>Trend window<select value={analyticsPeriod} onChange={(event)=>setAnalyticsPeriod(Number(event.target.value) as 7|30|90)}><option value={7}>Last 7 days</option><option value={30}>Last 30 days</option><option value={90}>Last 90 days</option></select></label></div></header>
+          {analyticsMessage&&<p className="analytics-note">{analyticsMessage}</p>}
+          <div className="analytics-kpis"><article><span>SoundCloud plays</span><b>{analyticsTotals.plays.toLocaleString()}</b><em>{analyticsTotals.tracked?`${analyticsTotals.playsDelta>=0?"+":""}${analyticsTotals.playsDelta.toLocaleString()} in ${analyticsPeriod}d`:"collecting snapshots"}</em></article><article><span>Interactions</span><b>{(analyticsTotals.likes+analyticsTotals.comments+analyticsTotals.reposts).toLocaleString()}</b><small>{analyticsTotals.likes.toLocaleString()} likes</small></article><article><span>Imported tracks</span><b>{analyticsTracks.length}</b><small>{analyticsTracks.filter((track)=>track.artistId).length} assigned</small></article><article><span>Spotify releases</span><b>{analyticsSpotify.length}</b><small>catalog entries only</small></article><article><span>Release readiness</span><b>{averageReadiness}%</b><small>{analyticsReleases.length} local releases</small></article><article><span>Campaign posts</span><b>{analyticsQueue.length}</b><small>{analyticsQueue.filter((item)=>item.status==="scheduled").length} scheduled · {analyticsQueue.filter((item)=>item.status==="published").length} published</small></article></div>
+          <div className="analytics-grid">
+            <section className="panel analytics-panel"><span className="eyebrow">Performance ranking</span><h2>Tracks worth your attention</h2>{analyticsRanked.length?<div className="analytics-ranking">{analyticsRanked.map((track,index)=>{const window=analyticsPerformance[track.id]?.windows.find((item)=>item.days===analyticsPeriod);return <article key={track.id}><span>{index+1}</span><div><strong>{track.title}</strong><small>{artists.find((profile)=>profile.id===track.artistId)?.name??"Unassigned"} · {track.contentType} · {track.catalogStatus}</small></div><b>{(track.playbackCount??0).toLocaleString()}<small>plays</small></b><b>{track.engagementRate===null?"—":`${track.engagementRate}%`}<small>engagement</small></b><b>{window?.available?`${(window.playsDelta??0)>=0?"+":""}${window.playsDelta}`:"—"}<small>{analyticsPeriod}d plays</small></b></article>})}</div>:<div className="analytics-empty">No SoundCloud tracks match this alias.</div>}</section>
+            <section className="panel analytics-panel"><span className="eyebrow">Catalog structure</span><h2>Rights and classification</h2><div className="analytics-bars">{analyticsContentTypes.map((item)=><div key={item.type}><div className="analytics-bar-head"><span>{item.type.replace("official-remix","official remix")}</span><b>{item.count}</b></div><div className="analytics-bar-track"><i style={{width:`${analyticsTracks.length?item.count/analyticsTracks.length*100:0}%`}}/></div></div>)}</div><h2>Editorial status</h2><div className="analytics-bars">{analyticsCatalogStatuses.map((item)=><div key={item.status}><div className="analytics-bar-head"><span>{item.status}</span><b>{item.count}</b></div><div className="analytics-bar-track"><i style={{width:`${analyticsTracks.length?item.count/analyticsTracks.length*100:0}%`}}/></div></div>)}</div></section>
+            <section className="panel analytics-panel analytics-readiness"><span className="eyebrow">Release operations</span><h2>Readiness and next blockers</h2>{analyticsReleases.length?<div className="analytics-readiness-list">{analyticsReleases.map((release)=>{const readiness=analyticsReadiness[release.id];const score=readiness?.score??0;return <article key={release.id} onClick={()=>openReleaseWorkspace(release)}><div><strong>{release.title}</strong><span>{score}%</span></div><p>{release.artistName} · {release.status} · {readiness?.missing[0]??"Ready for campaign"}</p><div className="analytics-progress"><i style={{width:`${score}%`}}/></div></article>})}</div>:<div className="analytics-empty">No local releases for this alias.</div>}</section>
           </div>
+          <div className="analytics-post-publish-spacer"><PostPublishAnalytics publishingQueue={publishingQueue} /></div>
         </div>}
 
-        {activeView==="analytics"&&<AnalyticsPage releases={releases} onOpenRelease={openReleaseWorkspace} />}
+        {activeView==="publishing"&&<div className="page-content"><PublishingPage onNavigate={(v)=>setActiveView(v as AppView)} /></div>}
 
-        {activeView==="contacts"&&<ContactsPage releases={releases} onTasksChanged={setTasks} />}
+        {activeView==="contacts"&&<div className="page-content crm-page"><header><div><span className="eyebrow">Contacts & CRM V1</span><h1>Relationships move releases forward.</h1><p>Local contact database for collaborators, labels, promoters, press and playlist curators.</p></div></header><div className="crm-toolbar"><input placeholder="Search name, organization, email or handle..." value={contactQuery} onChange={(event)=>setContactQuery(event.target.value)}/><select value={contactStatusFilter} onChange={(event)=>setContactStatusFilter(event.target.value as ContactRelationshipStatus|"all")}><option value="all">All relationship statuses</option>{(["new","to-contact","contacted","conversation","collaboration","declined","inactive"] as ContactRelationshipStatus[]).map((status)=><option key={status}>{status}</option>)}</select><button className="primary" onClick={()=>{setContactDraft(emptyContact);setInteractionSummary("");setContactMessage("");}}>+ New contact</button></div><div className="crm-layout"><section className="panel crm-list">{visibleContacts.map((contact)=><article className={contactDraft.id===contact.id?"selected":""} key={contact.id} onClick={()=>editContact(contact)}><div><strong>{contact.name}</strong><span>{contact.relationshipStatus}</span></div><p>{contact.organization||contact.contactType} · {contact.artistName??"All aliases"}</p><small>{contact.email||contact.socialHandle||contact.phone||"No contact channel entered"}</small>{contact.nextFollowUpAt&&<em>FOLLOW UP · {new Date(contact.nextFollowUpAt).toLocaleString()}</em>}</article>)}{visibleContacts.length===0&&<div className="analytics-empty">No contacts match this filter.</div>}</section><section className="panel crm-editor"><div className="crm-editor-heading"><div><span className="eyebrow">{contactDraft.id?"Edit relationship":"New relationship"}</span><h2>{contactDraft.name||"Contact details"}</h2></div>{contactDraft.id&&<button className="danger-button" onClick={()=>void removeContact(contactDraft.id!)}>Delete</button>}</div><div className="crm-form-grid"><label>Name<input value={contactDraft.name} onChange={(event)=>setContactDraft({...contactDraft,name:event.target.value})}/></label><label>Organization<input value={contactDraft.organization} onChange={(event)=>setContactDraft({...contactDraft,organization:event.target.value})}/></label><label>Contact type<select value={contactDraft.contactType} onChange={(event)=>setContactDraft({...contactDraft,contactType:event.target.value as ContactType})}>{(["artist","vocalist","producer","label","promoter","playlist-curator","press","other"] as ContactType[]).map((type)=><option key={type}>{type}</option>)}</select></label><label>Relationship status<select value={contactDraft.relationshipStatus} onChange={(event)=>setContactDraft({...contactDraft,relationshipStatus:event.target.value as ContactRelationshipStatus})}>{(["new","to-contact","contacted","conversation","collaboration","declined","inactive"] as ContactRelationshipStatus[]).map((status)=><option key={status}>{status}</option>)}</select></label><label>Artist alias<select value={contactDraft.artistId??""} onChange={(event)=>setContactDraft({...contactDraft,artistId:(event.target.value||null) as ArtistAlias|null,releaseId:null})}><option value="">All / unassigned</option>{artists.map((profile)=><option value={profile.id} key={profile.id}>{profile.name}</option>)}</select></label><label>Related release<select value={contactDraft.releaseId??""} onChange={(event)=>setContactDraft({...contactDraft,releaseId:event.target.value||null})}><option value="">No release</option>{releases.filter((release)=>!contactDraft.artistId||release.artistId===contactDraft.artistId).map((release)=><option value={release.id} key={release.id}>{release.title} · {release.artistName}</option>)}</select></label><label>Email<input type="email" value={contactDraft.email} onChange={(event)=>setContactDraft({...contactDraft,email:event.target.value})}/></label><label>Phone<input value={contactDraft.phone} onChange={(event)=>setContactDraft({...contactDraft,phone:event.target.value})}/></label><label>Website<input value={contactDraft.website} onChange={(event)=>setContactDraft({...contactDraft,website:event.target.value})}/></label><label>Social handle<input value={contactDraft.socialHandle} onChange={(event)=>setContactDraft({...contactDraft,socialHandle:event.target.value})}/></label><label>Preferred channel<select value={contactDraft.preferredChannel} onChange={(event)=>setContactDraft({...contactDraft,preferredChannel:event.target.value as ContactChannel})}>{(["email","instagram","tiktok","soundcloud","phone","other"] as ContactChannel[]).map((channel)=><option key={channel}>{channel}</option>)}</select></label><label>Next follow-up<input type="datetime-local" value={contactDraft.nextFollowUpAt?.slice(0,16)??""} onChange={(event)=>setContactDraft({...contactDraft,nextFollowUpAt:event.target.value||null,createFollowUpTask:event.target.value?contactDraft.createFollowUpTask:false})}/></label><label className="crm-consent"><input type="checkbox" checked={contactDraft.consent} onChange={(event)=>setContactDraft({...contactDraft,consent:event.target.checked})}/> Consent to continued contact recorded</label><label className="crm-consent"><input type="checkbox" disabled={!contactDraft.nextFollowUpAt||!contactDraft.releaseId} checked={Boolean(contactDraft.createFollowUpTask)} onChange={(event)=>setContactDraft({...contactDraft,createFollowUpTask:event.target.checked})}/> Create task for this follow-up</label><label className="wide">Notes<textarea rows={4} value={contactDraft.notes} onChange={(event)=>setContactDraft({...contactDraft,notes:event.target.value})}/></label></div><div className="crm-actions"><p>{contactMessage||"Information stays in the local SQLite database."}</p><button className="primary" disabled={!contactDraft.name.trim()} onClick={()=>void saveContact()}>Save contact</button></div>{contactDraft.id&&<><div className="interaction-editor"><select value={interactionDirection} onChange={(event)=>setInteractionDirection(event.target.value as typeof interactionDirection)}><option value="note">Internal note</option><option value="outbound">Outgoing</option><option value="inbound">Incoming</option></select><select value={interactionChannel} onChange={(event)=>setInteractionChannel(event.target.value as typeof interactionChannel)}>{(["email","instagram","tiktok","soundcloud","phone","meeting","other"] as const).map((channel)=><option key={channel}>{channel}</option>)}</select><input placeholder="What happened?" value={interactionSummary} onChange={(event)=>setInteractionSummary(event.target.value)}/><button disabled={!interactionSummary.trim()} onClick={()=>void addContactInteraction()}>Add history</button></div><div className="interaction-history">{selectedContact?.interactions.map((interaction)=><article key={interaction.id}><div><strong>{interaction.direction.toUpperCase()} · {interaction.channel}</strong><small>{new Date(interaction.occurredAt).toLocaleString()}</small></div><p>{interaction.summary}</p></article>)}{selectedContact?.interactions.length===0&&<div className="analytics-empty">No interaction history yet.</div>}</div></>}</section></div></div>}
 
-        {activeView === "calendar" && TasksPage({tasks,taskTitle,setTaskTitle,taskPriority,setTaskPriority,taskAssignee,setTaskAssignee,taskDueAt,setTaskDueAt,activeReleaseId,createTask,taskMessage,runningTaskId,changeTaskStatus,runTaskAgent,meta,publishingQueue,metaQueueItemId,setMetaQueueItemId,metaDestinationByItem,setMetaDestinationByItem,publishMetaItem,releases,selectRelease,publishingPlatform,setPublishingPlatform,publishingCaptionId,setPublishingCaptionId,campaignPackItems,publishingMediaId,setPublishingMediaId,mediaGenerations,publishingDate,setPublishingDate,publishingMessage,addPublishingItem,changePublishingStatus,exportPublishingPack})}
-
-        {activeView==="settings"&&<div className="page-content brand-settings-page"><header><div><span className="eyebrow">Prompt Templates & Brand Profiles V1</span><h1>Keep every alias visually consistent.</h1><p>These rules are automatically added to approved image and video prompts before generation.</p></div></header><div className="brand-profile-layout"><aside>{brandProfiles.map((profile)=><button className={brandDraft?.artistId===profile.artistId?"selected":""} key={profile.artistId} onClick={()=>setBrandDraft(profile)}><strong>{profile.artistName}</strong><span>{profile.defaultAspectRatio} default · {profile.palette}</span></button>)}</aside>{brandDraft&&<section className="panel brand-editor"><div className="brand-editor-heading"><div><span className="eyebrow">{brandDraft.artistName}</span><h2>Visual identity template</h2></div><label>Default format<select value={brandDraft.defaultAspectRatio} onChange={(event)=>setBrandDraft({...brandDraft,defaultAspectRatio:event.target.value as MediaAspectRatio})}>{(["1:1","4:5","9:16","16:9"] as MediaAspectRatio[]).map((ratio)=><option key={ratio}>{ratio}</option>)}</select></label></div><label>Visual direction<textarea rows={3} value={brandDraft.visualDirection} onChange={(event)=>setBrandDraft({...brandDraft,visualDirection:event.target.value})}/></label><div className="brand-two-columns"><label>Color palette<textarea rows={3} value={brandDraft.palette} onChange={(event)=>setBrandDraft({...brandDraft,palette:event.target.value})}/></label><label>Typography and layout<textarea rows={3} value={brandDraft.typography} onChange={(event)=>setBrandDraft({...brandDraft,typography:event.target.value})}/></label><label>Required elements<textarea rows={4} value={brandDraft.requiredElements} onChange={(event)=>setBrandDraft({...brandDraft,requiredElements:event.target.value})}/></label><label>Forbidden elements<textarea rows={4} value={brandDraft.forbiddenElements} onChange={(event)=>setBrandDraft({...brandDraft,forbiddenElements:event.target.value})}/></label></div><label>ComfyUI negative prompt<textarea rows={4} value={brandDraft.negativePrompt} onChange={(event)=>setBrandDraft({...brandDraft,negativePrompt:event.target.value})}/></label><div className="brand-save-row"><p>{brandMessage||"The original campaign prompt is preserved; this profile is appended only at generation time."}</p><button className="primary" onClick={()=>void saveBrandProfile()}>Save brand profile</button></div></section>}</div></div>}
-
-        {activeView === "integrations" && <div className="page-content integrations-page">
-          <SoundCloudPanel connection={soundCloud} tracks={soundCloudTracks} visibleTracks={visibleSoundCloudTracks} releases={releases} totals={soundCloudTotals} clientId={soundCloudClientId} clientSecret={soundCloudClientSecret} message={soundCloudMessage} busy={soundCloudBusy} query={catalogQuery} statusFilter={catalogStatusFilter} artistFilter={catalogArtistFilter} sort={catalogSort} selectedPerformanceTrackId={selectedPerformanceTrackId} trackPerformance={trackPerformance} onClientIdChange={setSoundCloudClientId} onClientSecretChange={setSoundCloudClientSecret} onSaveCredentials={saveSoundCloudCredentials} onConnect={connectSoundCloud} onSync={syncSoundCloudCatalog} onDisconnect={disconnectSoundCloud} onQueryChange={setCatalogQuery} onStatusFilterChange={setCatalogStatusFilter} onArtistFilterChange={setCatalogArtistFilter} onSortChange={setCatalogSort} onMarkVisibleBootlegs={markVisibleTracksAsBootlegs} onClassify={classifySoundCloudTrack} onLink={linkSoundCloudTrack} onCreateLocal={createLocalEntryFromSoundCloud} onTogglePerformance={toggleTrackPerformance} />
-          <MetaPanel meta={meta} appId={metaAppId} appSecret={metaAppSecret} configurationId={metaConfigurationId} busy={metaBusy} message={metaMessage} onAppIdChange={setMetaAppId} onAppSecretChange={setMetaAppSecret} onConfigurationIdChange={setMetaConfigurationId} onSave={saveMetaCredentials} onConnect={connectMeta} onDisconnect={disconnectMeta} />
-          <MediaBridgePanel status={mediaBridge} accountId={r2AccountId} bucket={r2Bucket} accessKeyId={r2AccessKeyId} secretAccessKey={r2SecretAccessKey} busy={bridgeBusy} message={bridgeMessage} onAccountIdChange={setR2AccountId} onBucketChange={setR2Bucket} onAccessKeyIdChange={setR2AccessKeyId} onSecretAccessKeyChange={setR2SecretAccessKey} onSave={saveMediaBridge} />
-          <MediaProvidersPanel localServices={localServices} localServiceBusy={localServiceBusy} mediaSettings={mediaSettings} openAiKey={openAiKey} klingKey={klingKey} mediaMessage={mediaMessage} comfyUiUrl={comfyUiUrl} comfyUiCheckpoint={comfyUiCheckpoint} onAutoStartChange={toggleServiceAutoStart} onChooseComfyLauncher={chooseComfyLauncher} onToggleLocalService={toggleLocalService} onOpenAiKeyChange={setOpenAiKey} onKlingKeyChange={setKlingKey} onSaveCredentials={saveMediaCredentials} onComfyUiUrlChange={setComfyUiUrl} onTestComfyUi={testComfyUi} onComfyUiCheckpointChange={setComfyUiCheckpoint} onSaveComfyUi={saveComfyUi} />
-          <SpotifyPanel spotify={spotify} clientId={spotifyClientId} artistIds={spotifyArtistIds} releases={releases} spotifyReleases={spotifyReleases} matches={catalogMatches} message={spotifyMessage} busy={spotifyBusy} onClientIdChange={setSpotifyClientId} onArtistIdsChange={setSpotifyArtistIds} onSave={saveSpotifyConfiguration} onConnect={connectSpotify} onSync={syncSpotifyCatalog} onAcceptMatch={acceptCatalogMatch} onLinkRelease={linkSpotifyRelease} />
+        {activeView === "calendar" && <div className="page-content tasks-page"><ContentCalendar /><section className="panel meta-publish-control"><div><span className="eyebrow">Meta Publishing V1</span><h3>Publish an approved queue item.</h3><p>Facebook supports text and local images. Instagram images use the temporary Secure Media Bridge.</p></div><select value={metaQueueItemId} onChange={(event)=>{setMetaQueueItemId(event.target.value);setMetaDestinationByItem((current)=>({...current,[event.target.value]:""}));}}><option value="">Select Facebook or Instagram queue item</option>{publishingQueue.filter((item)=>["Facebook","Instagram"].includes(item.platform)&&["approved","scheduled","failed"].includes(item.status)).map((item)=><option value={item.id} key={item.id}>{item.platform} · {item.releaseTitle} · {item.status}</option>)}</select><select disabled={!metaQueueItemId} value={metaDestinationByItem[metaQueueItemId]??""} onChange={(event)=>setMetaDestinationByItem((current)=>({...current,[metaQueueItemId]:event.target.value}))}><option value="">Select destination</option>{meta?.destinations.filter((destination)=>destination.platform===publishingQueue.find((item)=>item.id===metaQueueItemId)?.platform).map((destination)=><option value={destination.id} key={destination.id}>{destination.username?`@${destination.username}`:destination.name}</option>)}</select><button className="primary" disabled={!meta?.connected||!metaQueueItemId||!metaDestinationByItem[metaQueueItemId]} onClick={()=>void publishMetaItem(metaQueueItemId)}>Publish now</button></section>
+          <header><div><span className="eyebrow">Tasks, Calendar & Agents</span><h1>Plan the release work.</h1><p>Human decisions, local AI assistance and automatic readiness checks in one queue.</p></div></header>
+          <section className="task-creator panel"><input placeholder="New task title" value={taskTitle} onChange={(event) => setTaskTitle(event.target.value)} /><select value={taskPriority} onChange={(event) => setTaskPriority(event.target.value as TaskPriority)}><option value="low">Low priority</option><option value="medium">Medium priority</option><option value="high">High priority</option></select><select value={taskAssignee} onChange={(event) => setTaskAssignee(event.target.value as TaskAssignee)}><option value="human">Human</option><option value="ai">AI Agent</option><option value="automatic">Automatic</option></select><input type="date" value={taskDueAt} onChange={(event) => setTaskDueAt(event.target.value)} /><button className="primary" disabled={!taskTitle.trim() || !activeReleaseId} onClick={() => void createTask()}>Add task</button></section>
+          {taskMessage && <p className="task-message">{taskMessage}</p>}
+          <div className="task-board">
+            {(["doing","todo","done"] as TaskStatus[]).map((column) => <section className="task-column" key={column}><div className="task-column-title"><strong>{column === "doing" ? "In progress" : column === "todo" ? "To do" : "Done"}</strong><span>{tasks.filter((task) => task.status === column).length}</span></div>{tasks.filter((task) => task.status === column).map((task) => <article className={`managed-task priority-${task.priority}`} key={task.id}><div className="managed-task-meta"><span>{task.assignee === "ai" ? "✦ AI AGENT" : task.assignee === "automatic" ? "⚙ AUTOMATIC" : "● HUMAN"}</span><b>{task.priority}</b></div><h3>{task.title}</h3><p>{task.releaseTitle ?? "No release"}{task.dueAt ? ` · due ${task.dueAt}` : ""}</p>{task.agentOutput && <div className="agent-output"><strong>Agent result · {task.model}</strong><p>{task.agentOutput}</p><small>Human review required</small></div>}<div className="managed-task-actions">{column !== "doing" && column !== "done" && <button onClick={() => void changeTaskStatus(task.id, "doing")}>Start</button>}{column !== "done" && <button onClick={() => void changeTaskStatus(task.id, "done")}>Done</button>}{column === "done" && <button onClick={() => void changeTaskStatus(task.id, "todo")}>Reopen</button>}{task.assignee === "ai" && column !== "done" && <button className="agent-button" disabled={runningTaskId === task.id} onClick={() => void runTaskAgent(task.id)}>{runningTaskId === task.id ? "Working..." : "Run agent"}</button>}</div></article>)}</section>)}
+          </div>
+          <section className="publishing-section panel"><div className="publishing-heading"><div><span className="eyebrow">Publishing Queue V1</span><h2>Build and schedule campaign posts.</h2><p>Only approved captions and media can enter the queue. Export creates a ready-to-post local folder.</p></div><div className="publishing-metrics"><span><b>{publishingQueue.filter((item)=>item.status==="publishing").length}</b> publishing</span><span><b>{publishingQueue.filter((item)=>item.status==="scheduled").length}</b> scheduled</span><span><b>{publishingQueue.filter((item)=>item.status==="published").length}</b> published</span></div></div><div className="publishing-canonical-notice"><strong>New queue drafts start in Content Calendar.</strong><span>Set approved promo content to READY, then send that ScheduleEvent to the Publishing Queue.</span></div>{publishingMessage&&<p className="task-message">{publishingMessage}</p>}<label className="publishing-review-reason">Review reason (optional)<input value={publishingReviewReason} onChange={(event)=>setPublishingReviewReason(event.target.value)} placeholder="Context for approval or rejection"/></label><div className="campaign-calendar">{publishingQueue.map((item)=><article className={`publishing-${item.status}`} key={item.id}><div className="publishing-date"><b>{item.scheduledAt?new Date(item.scheduledAt).toLocaleDateString(undefined,{day:"2-digit",month:"short"}):"NO DATE"}</b><span>{item.scheduledAt?new Date(item.scheduledAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"}):"Draft"}</span></div><div className="publishing-content"><div><strong>{item.platform} · {item.releaseTitle}</strong><b className={`status-${item.status}`}>{item.status==="failed"?"rejected":item.status}</b></div><p>{item.caption}</p><small>{item.mediaType?`${item.mediaProvider} ${item.mediaType}`:"Text only"}{item.sourceScheduleEventId?` · ScheduleEvent ${item.sourceScheduleEventId.slice(0,8)}`:" · no ScheduleEvent source"}{item.exportedAt?` · exported ${new Date(item.exportedAt).toLocaleDateString()}`:""}</small>{item.mediaGenerationId&&mediaUrls[item.mediaGenerationId]&&item.mediaType==="image"&&<img className="publishing-media-preview" src={mediaUrls[item.mediaGenerationId]} alt="Queue media preview"/>}{item.reviewedAt&&<small>Review: {item.reviewedBy??"local-user"} · {new Date(item.reviewedAt).toLocaleString()}{item.reviewReason?` · ${item.reviewReason}`:""}</small>}{item.rightsBlocked&&<em>BOOTLEG RIGHTS NOT CLEARED · SOUNDCLOUD/YOUTUBE BLOCKED</em>}</div><div className="publishing-actions">{item.status==="draft"&&<><button onClick={()=>beginPublishingEdit(item)}>Edit</button><button onClick={()=>void reviewPublishingItem(item.id,"APPROVE")}>Approve</button><button className="danger-button" onClick={()=>void reviewPublishingItem(item.id,"REJECT")}>Reject</button></>}{item.status==="approved"&&<><button onClick={()=>void reviewPublishingItem(item.id,"RETURN_TO_DRAFT")}>Return to Draft</button><button disabled={!item.scheduledAt} onClick={()=>void reviewPublishingItem(item.id,"SCHEDULE")}>Schedule</button></>}{item.status==="failed"&&<button onClick={()=>void reviewPublishingItem(item.id,"RETURN_TO_DRAFT")}>Return to Draft</button>}{["approved","scheduled","published"].includes(item.status)&&<button className="export-button" onClick={()=>void exportPublishingPack(item.id)}>Export Pack</button>}</div>{publishingEditId===item.id&&<div className="publishing-edit"><label>Caption<textarea value={publishingEditCaption} onChange={(event)=>setPublishingEditCaption(event.target.value)}/></label><label>Scheduled time<input type="datetime-local" value={publishingEditDate} onChange={(event)=>setPublishingEditDate(event.target.value)}/></label><button className="primary" onClick={()=>void savePublishingEdit(item.id)}>Save Draft</button><button onClick={()=>setPublishingEditId(null)}>Cancel</button></div>}</article>)}{publishingQueue.length===0&&<div className="publishing-empty">No campaign posts queued yet. Approve a caption in AI Studio, then create the first publishing draft.</div>}</div></section>
         </div>}
 
-        {(activeView === "releases" || activeView === "ai-studio") && <div className="page-content release-page">
+        {activeView==="settings"&&<SettingsPage status={status} onNavigate={(v)=>setActiveView(v as AppView)} />}
+
+
+        {activeView === "releases" && <div className={`page-content release-page release-page-v3 ${releaseWorkspaceTab === "foundation" ? "release-page-v31" : ""}`}>
         <header>
-          <div><span className="eyebrow">{activeView === "ai-studio" ? "AI Studio" : "Release Manager"}</span><h1>{activeView === "ai-studio" ? "Create campaign content." : "Build the next release."}</h1></div>
-          <div className="header-actions">{activeReleaseId && currentRelease && <button className="danger-button" onClick={() => void deleteRelease(currentRelease)}>Delete release</button>}<button className="primary" onClick={saveRelease}>{activeReleaseId ? "Save changes" : "Create release"}</button></div>
+          <div><span className="eyebrow">Release Manager</span><h1>Build the next release.</h1></div>
+          <div className="header-actions">{activeReleaseId && currentRelease && <Button variant="ghost" className="release-delete-action" onClick={() => void deleteRelease(currentRelease)}>Delete release</Button>}<Button onClick={saveRelease}>{activeReleaseId ? "Save changes" : "Create release"}</Button></div>
         </header>
         <section className="artist-strip">
           {artists.map((profile) => (
@@ -579,15 +786,64 @@ export function App() {
             </button>
           ))}
         </section>
+        <Tabs className="release-workspace-tabs" ariaLabel="Release workspace sections" activeTab={releaseWorkspaceTab} onChange={setReleaseWorkspaceTab} tabs={[{ id: "foundation", label: "Release Foundation" }, { id: "campaign-drafts", label: "Campaign Drafts" }, { id: "release-plan", label: "Release Plan" }, { id: "promotion-formats", label: "Promotion Formats" }]} />
+        <div className={`release-workspace-view release-workspace-${releaseWorkspaceTab}`}>
+        <div className="workspace">
+          {releaseWorkspaceTab === "foundation" && <ReleaseFoundation key={activeReleaseId ?? "new"} releaseId={activeReleaseId} title={title} artist={artist.name} genre={primaryGenre} date={releaseDate} story={story} status={releaseStatus}
+            allowedStatuses={activeReleaseId ? allowedReleaseStatuses[persistedStatus] : ["draft"]} assets={assets} readiness={releaseReadiness}
+            saveMessage={saveMessage} saveError={releaseSaveFailed} assetMessage={assetMessage} analyzing={Boolean(analyzingAssetId)}
+            onTitle={setTitle} onGenre={setPrimaryGenre} onDate={setReleaseDate} onStory={setStory} onStatus={setReleaseStatus}
+            onSave={() => void saveRelease()} onAttach={(kind) => void attachAsset(kind)} onNavigate={setReleaseWorkspaceTab}
+            renderAsset={(asset) => {
+              const analysis = audioAnalyses[asset.id];
+              return <article key={asset.id}><b>{asset.kind}</b><div><div className="asset-title"><strong>{asset.fileName}</strong><button onClick={() => void detachAsset(asset.id)}>Detach</button></div><span>{formatBytes(asset.sizeBytes)} · {asset.mimeType ?? "unknown type"}{asset.width && asset.height ? ` · ${asset.width} × ${asset.height}px` : ""}</span><small title={asset.filePath}>{asset.filePath}</small>
+                {asset.kind === "cover" && asset.width && asset.height && (asset.width !== asset.height || asset.width < 3000) && <small className="asset-warning">Cover recommendation: square artwork, at least 3000 × 3000 px.</small>}
+                {asset.kind === "audio" && playbackUrls[asset.id] && <AudioPlayer source={playbackUrls[asset.id]} title={asset.fileName} />}
+                {asset.kind === "audio" && <div className="analysis-row">{analysis ? <><span><b>{formatDuration(analysis.durationSeconds)}</b> duration</span><span><b>{(analysis.sampleRate / 1000).toFixed(1)} kHz</b> sample rate</span><span><b>{analysis.bitDepth ?? "—"} bit</b> depth</span><span><b>{analysis.integratedLufs ?? "—"} LUFS</b> loudness</span><span><b>{analysis.truePeakDbtp ?? "—"} dBTP</b> peak</span>{analysis.loudnessRangeLu !== null && <span><b>{analysis.loudnessRangeLu} LU</b> range</span>}<span className="musical-result"><b>{analysis.bpm ?? "—"} BPM</b>{analysis.bpmConfidence !== null ? `${analysis.bpmConfidence}% confidence` : "tempo unavailable"}{analysis.alternateBpm !== null && <small>alt. {analysis.alternateBpm}</small>}</span><span className="musical-result"><b>{analysis.musicalKey ?? "—"}</b>{analysis.keyConfidence !== null ? `${analysis.keyConfidence}% confidence` : "key unavailable"}{analysis.alternateKey && <small>alt. {analysis.alternateKey}</small>}</span></> : <span>No analysis saved</span>}<button disabled={analyzingAssetId === asset.id} onClick={() => void analyzeAsset(asset.id)}>{analyzingAssetId === asset.id ? "Analyzing..." : analysis ? "Analyze again" : "Analyze audio"}</button></div>}
+                {analysis?.note && <small className="analysis-note">{analysis.note}</small>}
+              </div></article>;
+            }} />}
 
-        <div className={`workspace ${activeView === "ai-studio" ? "ai-focus" : ""}`}>
-          <ReleaseSourcePanel title={title} setTitle={setTitle} artist={artist} primaryGenre={primaryGenre} setPrimaryGenre={setPrimaryGenre} releaseDate={releaseDate} setReleaseDate={setReleaseDate} releaseStatus={releaseStatus} setReleaseStatus={setReleaseStatus} activeReleaseId={activeReleaseId} allowedReleaseStatuses={allowedReleaseStatuses} persistedStatus={persistedStatus} story={story} setStory={setStory} saveMessage={saveMessage} attachAsset={attachAsset} assetMessage={assetMessage} assets={assets} audioAnalyses={audioAnalyses} detachAsset={detachAsset} playbackUrls={playbackUrls} analyzingAssetId={analyzingAssetId} analyzeAsset={analyzeAsset} formatBytes={formatBytes} formatDuration={formatDuration} />
-
-          <CampaignDraftPanel aiSettings={aiSettings} updateAiSettings={updateAiSettings} status={status} generationState={generationState} generateWithOllama={generateWithOllama} generationMessage={generationMessage} generatedDraft={generatedDraft} draft={draft} releases={releases} activeReleaseId={activeReleaseId} selectRelease={selectRelease} deleteRelease={deleteRelease} drafts={drafts} nextDraftActions={nextDraftActions} changeDraftStatus={changeDraftStatus} />
+          <section className="panel output-panel">
+            <div className="panel-heading"><span className="eyebrow">02 / Draft</span><h2>Campaign preview</h2></div>
+            <div className="ai-controls">
+              <label>Local model<select value={aiSettings.model ?? ""} onChange={(event) => void updateAiSettings({ ...aiSettings, model: event.target.value || null })}>
+                {status?.ollama.models.length ? status.ollama.models.map((model) => <option key={model.name} value={model.name}>{model.name}</option>) : <option value="">No models available</option>}
+              </select></label>
+              <label>Language<select value={aiSettings.language} onChange={(event) => void updateAiSettings({ ...aiSettings, language: event.target.value as AiSettings["language"] })}>
+                <option value="en">English</option><option value="de">Deutsch</option><option value="pl">Polski</option>
+              </select></label>
+              <label>Channel<select value={aiSettings.channel} onChange={(event) => void updateAiSettings({ ...aiSettings, channel: event.target.value as AiSettings["channel"] })}>
+                <option>Instagram</option><option>Facebook</option><option>TikTok</option><option>SoundCloud</option><option>YouTube</option>
+              </select></label>
+              <button className="generate-button" disabled={generationState === "generating" || !aiSettings.model} onClick={() => void generateWithOllama()}>{generationState === "generating" ? "Generating..." : "Generate with Ollama"}</button>
+            </div>
+            {generationMessage && <p className={`generation-message ${generationState === "error" ? "error" : ""}`}>{generationMessage}</p>}
+            {generationState === "generating" && <p className="generation-hint">DeepSeek R1 14B may need extra time on its first run while the model loads into VRAM.</p>}
+            <div className="draft"><span>{aiSettings.channel} · {aiSettings.language.toUpperCase()} {generatedDraft ? "· AI generated" : "· template preview"}</span><pre>{draft}</pre></div>
+            <div className="release-list">
+              <strong>Saved releases</strong>
+              {releases.length === 0 ? <p>No releases saved yet.</p> : releases.slice(0, 6).map((release) => (
+                <article className={activeReleaseId === release.id ? "active-release" : ""} key={release.id} onClick={() => void selectRelease(release)}><div><strong>{release.title}</strong><span>{release.artistName} · {release.primaryGenre}</span></div><div className="release-item-actions"><b>{activeReleaseId === release.id ? "ACTIVE" : release.status}</b><button title="Delete release" onClick={(event) => { event.stopPropagation(); void deleteRelease(release); }}>Delete</button></div></article>
+              ))}
+            </div>
+            <div className="draft-workflow">
+              <strong>Campaign drafts</strong>
+              {draftDeleteMessage && <p className="task-message" role="status">{draftDeleteMessage}</p>}
+              {drafts.length === 0 ? <p>No AI drafts saved yet.</p> : drafts.slice(0, 8).map((item) => (
+                <article key={item.id}>
+                  <div className="draft-summary"><strong>{item.channel} · {item.language.toUpperCase()}</strong><span>{item.releaseTitle} · {item.model}</span><p>{item.content}</p></div>
+                  <div className="draft-actions"><b className={`status-${item.status}`}>{item.status}</b>{nextDraftActions(item.status).map((next) => <button key={next} onClick={() => void changeDraftStatus(item.id, next)}>{next}</button>)}<button className="danger-button" title="Delete" onClick={() => void deleteDraft(item.id)}>Delete</button></div>
+                </article>
+              ))}
+            </div>
+          </section>
         </div>
-        {activeView === "ai-studio" && <CampaignPackPanel campaignPackBusy={campaignPackBusy} activeReleaseId={activeReleaseId} aiSettings={aiSettings} generateCampaignPack={generateCampaignPack} campaignPackMessage={campaignPackMessage} mediaMessage={mediaMessage} campaignPackItems={campaignPackItems} nextDraftActions={nextDraftActions} changeCampaignPackStatus={changeCampaignPackStatus} mediaBusy={mediaBusy} mediaSettings={mediaSettings} generateMedia={generateMedia} mediaGenerations={mediaGenerations} mediaUrls={mediaUrls} refreshMedia={refreshMedia} reviewMedia={reviewMedia} />}
-        </div>}
+        {activeView === "releases" && currentRelease && <section className="panel release-plan-panel"><ReleasePlanPanel release={currentRelease} /></section>}
+        {activeView === "releases" && <section className="panel campaign-pack-panel"><div className="campaign-pack-heading"><div><span className="eyebrow">Campaign Pack Generator V1</span><h2>One release. Every promotional format.</h2><p>Approve a media prompt first. ComfyUI starts automatically on demand; Kling CLI runs locally with no API credits.</p></div><button className="primary" disabled={campaignPackBusy||!activeReleaseId||!aiSettings.model} onClick={()=>void generateCampaignPack()}>{campaignPackBusy?"Generating pack...":`Generate ${aiSettings.language.toUpperCase()} pack`}</button>{mediaGenerations.some((row)=>["failed","rejected"].includes(row.status))&&<button className="danger-button" disabled={!activeReleaseId||mediaBusy!==null} title="Remove failed/rejected media generations and their local files" onClick={()=>void cleanupStaleMedia()}>Clean stale media</button>}</div>{(campaignPackMessage||mediaMessage)&&<p className="integration-message">{mediaMessage||campaignPackMessage}</p>}<div className="campaign-pack-grid">{campaignPackItems.map((item)=><article key={item.id}><div className="pack-item-head"><div><span>{item.kind.replaceAll("-"," ").toUpperCase()}</span><strong>{item.channel??"MEDIA GENERATION"} · {item.language.toUpperCase()}</strong></div><b className={`status-${item.status}`}>{item.status}</b></div><p>{item.content}</p><div className="pack-item-actions">{nextDraftActions(item.status).map((next)=><button key={next} onClick={()=>void changeCampaignPackStatus(item.id,next)}>{next}</button>)}<PackItemDeleteControls dependencyStatus={packDependencyStatuses[item.id]??null} onDelete={()=>void deleteCampaignPackItem(item.id)} />{item.status==="approved"&&item.kind==="image-prompt"&&<><button className="local-generate" disabled={mediaBusy===item.id||!mediaSettings.comfyUiCheckpoint} onClick={()=>void generateMedia(item,"comfyui","image")}>Generate locally · ComfyUI</button><button disabled={mediaBusy===item.id||!mediaSettings.openAiConfigured} onClick={()=>void generateMedia(item,"openai","image")}>OpenAI</button><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","image")}>Kling CLI</button></>}{item.status==="approved"&&["visualizer-prompt","video-script"].includes(item.kind)&&<><button disabled={mediaBusy===item.id||!klingCliStatus?.available} onClick={()=>void generateMedia(item,"kling-cli","video")}>Generate video · Kling CLI</button></>}</div></article>)}</div>{mediaGenerations.length>0&&<div className="media-gallery"><div className="campaign-pack-heading"><div><span className="eyebrow">Results gallery</span><h2>Generated media.</h2></div></div><div className="media-gallery-grid">{mediaGenerations.map((media)=><article key={media.id}>{mediaUrls[media.id]?(media.mediaType==="image"?<img src={mediaUrls[media.id]} alt={media.prompt}/>:<video src={mediaUrls[media.id]} controls preload="metadata"/>):<div className="media-pending">{media.status==="failed"?"Generation failed":"Generation in progress"}</div>}<div><strong>{media.provider.toUpperCase()} · {media.mediaType}</strong><b className={`status-${media.status}`}>{media.status}</b><p>{media.error??media.prompt}</p><div className="pack-item-actions">{media.status==="generating"&&<button disabled={mediaBusy===media.id} onClick={()=>void refreshMedia(media.id)}>Refresh {media.provider==="comfyui"?"ComfyUI":"Kling"} task</button>}{["ready","approved","rejected"].includes(media.status)&&<><button onClick={()=>void reviewMedia(media.id,"approved")}>Approve</button><button onClick={()=>void reviewMedia(media.id,"rejected")}>Reject</button></>}</div></div></article>)}</div></div>}</section>}
+        </div></div>}
       </main>
+      <BottomPlayer source={playerSource} playing={playerPlaying} onTogglePlay={() => setPlayerPlaying((p) => !p)} />
     </div>
   );
 }
