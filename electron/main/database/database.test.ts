@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import "./migration-runner.test.js";
+import "./migration-preservation.test.js";
 import { StudioDatabase } from "./database.js";
 
 test("creates a clean database, applies migrations and persists a release", () => {
@@ -11,7 +13,7 @@ test("creates a clean database, applies migrations and persists a release", () =
   const database = new StudioDatabase(filePath);
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 19);
+    assert.equal(database.health().schemaVersion, 30);
     assert.deepEqual(database.listReleases(), []);
     const created = database.createReleaseDraft({ artistId: "the-arkadiusz", title: "Different Perspective", primaryGenre: "Full-On Psytrance", story: "A shift beyond ego." });
     assert.equal(created.status, "draft");

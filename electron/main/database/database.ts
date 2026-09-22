@@ -3,7 +3,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { AddContactInteractionInput, AssetSummary, AttachAssetInput, AudioAnalysisSummary, BrandProfile, CampaignPackItem, CampaignPackKind, CatalogMatchSuggestion, ContactInteraction, ContactSummary, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DatabaseHealth, DraftStatus, DraftSummary, GeneratedMediaType, MediaGenerationStatus, MediaGenerationSummary, MediaProvider, PublishingQueueItem, PublishingStatus, ReleaseReadiness, ReleaseSummary, SaveGeneratedDraftInput, SoundCloudPerformancePoint, SoundCloudTrackPerformance, SoundCloudTrackSummary, SpotifyArtistMapping, SpotifyReleaseSummary, TaskStatus, TaskSummary, UpdateBrandProfileInput, UpdateReleaseInput, UpdateSoundCloudTrackInput, UpsertContactInput } from "../../shared/contracts.js";
-import { migrations } from "./migrations.js";
+import { migrateDatabase } from "./migration-runner.js";
 
 const seedArtists = [
   ["the-arkadiusz", "The Arkadiusz", ["Full-On Psytrance", "Dark Psy", "Progressive Psytrance", "Classic Psytrance"], "Psychedelic, conscious, direct, emotionally grounded"],
@@ -22,21 +22,7 @@ export class StudioDatabase {
   }
 
   initialize(): void {
-    const currentVersion = Number(this.database.prepare("PRAGMA user_version").get()?.user_version ?? 0);
-    const latestVersion = migrations.at(-1)?.version ?? 0;
-    if (currentVersion > latestVersion) throw new Error(`Database schema ${currentVersion} is newer than supported ${latestVersion}`);
-
-    for (const migration of migrations.filter((item) => item.version > currentVersion)) {
-      this.database.exec("BEGIN IMMEDIATE");
-      try {
-        this.database.exec(migration.sql);
-        this.database.exec(`PRAGMA user_version = ${migration.version}`);
-        this.database.exec("COMMIT");
-      } catch (error) {
-        this.database.exec("ROLLBACK");
-        throw new Error(`Migration ${migration.version} (${migration.name}) failed`, { cause: error });
-      }
-    }
+    migrateDatabase(this.database);
     this.seedArtistProfiles();
     this.seedBrandProfiles();
   }
