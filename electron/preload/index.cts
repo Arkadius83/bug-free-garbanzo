@@ -3,6 +3,8 @@ import type { StudioApi } from "../shared/contracts.js";
 const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
 const api: StudioApi = {
+  getInterfacePreferences: () => ipcRenderer.invoke("studio:get-interface-preferences"),
+  saveInterfacePreferences: (value) => ipcRenderer.invoke("studio:save-interface-preferences", value),
   sendConversationMessage: (input, onChunk) => {
     const listener = (_event: Electron.IpcRendererEvent, chunk: { requestId: string }) => { if (chunk.requestId === input.requestId) onChunk?.(chunk as never); };
     if (onChunk) ipcRenderer.on("studio:conversation-chunk", listener);
@@ -36,7 +38,6 @@ const api: StudioApi = {
   regenerateReleasePlan: (input) => ipcRenderer.invoke("studio:regenerate-release-plan", input),
   getCurrentReleasePlan: (releaseId) => ipcRenderer.invoke("studio:get-current-release-plan", releaseId),
   approveReleasePlan: (input) => ipcRenderer.invoke("studio:approve-release-plan", input),
-
   getAiSettings: () => ipcRenderer.invoke("studio:get-ai-settings"),
   saveAiSettings: (settings) => ipcRenderer.invoke("studio:save-ai-settings", settings),
   generateCampaignDraft: (input) => ipcRenderer.invoke("studio:generate-campaign-draft", input),
@@ -81,6 +82,7 @@ const api: StudioApi = {
   saveMediaGenerationCredentials: (openAiApiKey, klingApiKey) => ipcRenderer.invoke("studio:save-media-generation-credentials", openAiApiKey, klingApiKey),
   testComfyUi: (comfyUiUrl) => ipcRenderer.invoke("studio:test-comfy-ui",comfyUiUrl),
   saveComfyUiSettings: (comfyUiUrl,checkpoint) => ipcRenderer.invoke("studio:save-comfy-ui-settings",comfyUiUrl,checkpoint),
+  getKlingCliStatus: () => ipcRenderer.invoke("studio:get-kling-cli-status").catch(() => ({ available:false, version:null, account:null, error:"Kling CLI not consolidated yet — UI disabled" } as any)),
   getLocalServiceStatus: () => ipcRenderer.invoke("studio:get-local-service-status"),
   selectComfyUiLauncher: () => ipcRenderer.invoke("studio:select-comfy-ui-launcher"),
   setLocalServicesAutoStart: (enabled) => ipcRenderer.invoke("studio:set-local-services-auto-start",enabled),
@@ -92,8 +94,9 @@ const api: StudioApi = {
   updateMediaGenerationStatus: (generationId, status) => ipcRenderer.invoke("studio:update-media-generation-status", generationId, status),
   getGeneratedMediaUrl: (generationId) => ipcRenderer.invoke("studio:get-generated-media-url", generationId),
   listPublishingQueue: () => ipcRenderer.invoke("studio:list-publishing-queue"),
-  createPublishingQueueItem: (input) => ipcRenderer.invoke("studio:create-publishing-queue-item",input),
   updatePublishingQueueStatus: (itemId,status) => ipcRenderer.invoke("studio:update-publishing-queue-status",itemId,status),
+  reviewPublishingQueueItem: (input) => ipcRenderer.invoke("studio:review-publishing-queue-item", input).catch(() => Promise.reject(new Error("Review not consolidated — UI disabled"))),
+  updatePublishingQueueContent: (input) => ipcRenderer.invoke("studio:update-publishing-queue-content", input).catch(() => Promise.reject(new Error("Update not consolidated"))),
   exportPublishingPack: (itemId) => ipcRenderer.invoke("studio:export-publishing-pack",itemId),
   listBrandProfiles: () => ipcRenderer.invoke("studio:list-brand-profiles"),
   updateBrandProfile: (input) => ipcRenderer.invoke("studio:update-brand-profile",input),
@@ -106,9 +109,45 @@ const api: StudioApi = {
   beginMetaConnect: () => ipcRenderer.invoke("studio:begin-meta-connect"),
   disconnectMeta: () => ipcRenderer.invoke("studio:disconnect-meta"),
   publishMetaQueueItem: (itemId,destinationId) => ipcRenderer.invoke("studio:publish-meta-queue-item",itemId,destinationId),
+  publishMetaTestPost: (input) => ipcRenderer.invoke("studio:publish-meta-test-post",input).catch(() => ({ ok:false, platform:"Facebook", sanitizedError:"Meta test publish not consolidated — UI disabled" } as any)),
   getMediaBridgeStatus: () => ipcRenderer.invoke("studio:get-media-bridge-status"),
-  saveMediaBridgeSettings: (accountId,bucket,accessKeyId,secretAccessKey) => ipcRenderer.invoke("studio:save-media-bridge-settings",accountId,bucket,accessKeyId,secretAccessKey)
+  saveMediaBridgeSettings: (accountId,bucket,accessKeyId,secretAccessKey) => ipcRenderer.invoke("studio:save-media-bridge-settings",accountId,bucket,accessKeyId,secretAccessKey),
+  generatePromoContent: (input) => ipcRenderer.invoke("studio:generate-promo-content", input).catch(() => Promise.reject(new Error("Promo generation not consolidated — UI disabled"))),
+  listPromoGenerations: (releasePlanId) => ipcRenderer.invoke("studio:list-promo-generations", releasePlanId).catch(() => [] as any),
+  retryPromoGeneration: (input) => ipcRenderer.invoke("studio:retry-promo-generation", input).catch(() => Promise.reject(new Error("Not consolidated"))),
+  updatePromoReview: (input) => ipcRenderer.invoke("studio:update-promo-review", input).catch(() => Promise.reject(new Error("Not consolidated"))),
+  editPromoContent: (input) => ipcRenderer.invoke("studio:edit-promo-content", input).catch(() => Promise.reject(new Error("Not consolidated"))),
+  createScheduleEvent: (input) => ipcRenderer.invoke("studio:create-schedule-event", input).catch(() => Promise.reject(new Error("Schedule events not consolidated — UI disabled"))),
+  updateScheduleEvent: (input) => ipcRenderer.invoke("studio:update-schedule-event", input).catch(() => Promise.reject(new Error("Not consolidated"))),
+  cancelScheduleEvent: (id) => ipcRenderer.invoke("studio:cancel-schedule-event", id).catch(() => Promise.reject(new Error("Not consolidated"))),
+  listScheduleEvents: (input) => ipcRenderer.invoke("studio:list-schedule-events", input).catch(() => [] as any),
+  sendScheduleEventToPublishingQueue: (id) => ipcRenderer.invoke("studio:send-schedule-event-to-publishing-queue", id).catch(() => Promise.reject(new Error("Not consolidated"))),
+  listArtistPromotionProfiles: () => ipcRenderer.invoke("studio:list-artist-promotion-profiles").catch(() => [] as any),
+  getArtistPromotionProfile: (artistId) => ipcRenderer.invoke("studio:get-artist-promotion-profile", artistId).catch(() => null as any),
+  updateArtistPromotionProfile: (input) => ipcRenderer.invoke("studio:update-artist-promotion-profile", input).catch(() => Promise.reject(new Error("Artist promotion not consolidated"))),
+  beginPublishing: (itemId: string) => ipcRenderer.invoke("studio:begin-publishing", itemId).catch(() => Promise.reject(new Error("Begin publishing not consolidated"))),
+  verifyPublishedPost: (itemId: string) => ipcRenderer.invoke("studio:verify-published-post", itemId).catch(() => Promise.reject(new Error("Post verification not consolidated — UI disabled"))),
+  fetchAndStorePostAnalytics: (itemId: string) => ipcRenderer.invoke("studio:fetch-post-analytics", itemId).catch(() => Promise.reject(new Error("Analytics not consolidated — UI disabled"))),
+  getAnalyticsSnapshots: (itemId: string) => ipcRenderer.invoke("studio:get-analytics-snapshots", itemId).catch(() => [] as any),
+  getReleaseAnalyticsSummary: (releaseId: string) => ipcRenderer.invoke("studio:get-release-analytics-summary", releaseId).catch(() => ({ releaseId, snapshots: [] } as any)),
+  getYouTubeConnection: () => ipcRenderer.invoke("studio:get-youtube-connection").catch(() => ({ configured:false, connected:false, error:"YouTube not consolidated — UI disabled" } as any)),
+  saveYouTubeCredentials: (clientId, clientSecret) => ipcRenderer.invoke("studio:save-youtube-credentials", clientId, clientSecret).catch(() => Promise.reject(new Error("YouTube not consolidated — UI disabled"))),
+  beginYouTubeConnect: () => ipcRenderer.invoke("studio:begin-youtube-connect").catch(() => Promise.reject(new Error("YouTube not consolidated"))),
+  disconnectYouTube: () => ipcRenderer.invoke("studio:disconnect-youtube").catch(() => Promise.reject(new Error("YouTube not consolidated"))),
+  publishYouTubeTest: (input) => ipcRenderer.invoke("studio:publish-youtube-test", input).catch(() => ({ ok:false, platform:"YouTube", sanitizedError:"YouTube test not consolidated" } as any)),
+  selectYouTubeTestVideo: () => ipcRenderer.invoke("studio:select-youtube-test-video").catch(() => null as any),
+  selectYouTubeTestThumbnail: () => ipcRenderer.invoke("studio:select-youtube-test-thumbnail").catch(() => null as any),
+  getTikTokConnection: () => ipcRenderer.invoke("studio:get-tiktok-connection").catch(() => ({ configured:false, connected:false, error:"TikTok not consolidated — UI disabled" } as any)),
+  saveTikTokCredentials: (clientKey, clientSecret) => ipcRenderer.invoke("studio:save-tiktok-credentials", clientKey, clientSecret).catch(() => Promise.reject(new Error("TikTok not consolidated"))),
+  beginTikTokConnect: () => ipcRenderer.invoke("studio:begin-tiktok-connect").catch(() => Promise.reject(new Error("TikTok not consolidated"))),
+  disconnectTikTok: () => ipcRenderer.invoke("studio:disconnect-tiktok").catch(() => Promise.reject(new Error("TikTok not consolidated"))),
+  getTikTokCreatorInfo: () => ipcRenderer.invoke("studio:get-tiktok-creator-info").catch(() => ({ creatorNickName:null } as any)),
+  publishTikTokTest: (input) => ipcRenderer.invoke("studio:publish-tiktok-test", input).catch(() => ({ ok:false, platform:"TikTok", sanitizedError:"TikTok test not consolidated" } as any)),
+  selectTikTokTestVideo: () => ipcRenderer.invoke("studio:select-tiktok-test-video").catch(() => null as any),
+  getYouTubeChannelData: () => ipcRenderer.invoke("studio:get-youtube-channel-data").catch(() => null as any),
+  syncYouTubeChannelData: () => ipcRenderer.invoke("studio:sync-youtube-channel-data").catch(() => ({ ok:false, sanitizedError:"YouTube channel data not consolidated — UI disabled" } as any)),
+  getYouTubeAnalytics: (range) => ipcRenderer.invoke("studio:get-youtube-analytics", range).catch(() => null as any),
+  syncYouTubeAnalytics: (range) => ipcRenderer.invoke("studio:sync-youtube-analytics", range).catch(() => ({ ok:false, sanitizedError:"YouTube analytics not consolidated — UI disabled" } as any))
 };
 
 contextBridge.exposeInMainWorld("studio", api);
-

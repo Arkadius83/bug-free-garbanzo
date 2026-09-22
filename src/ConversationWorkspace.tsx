@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import "./conversation-diagnostics.css";
 import type { ArtistAlias, ConversationMessage, ConversationRuntimeState, ProviderExecutionTrace, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { buildProviderTraceViewModel } from "../electron/shared/provider-trace-view-model";
 
@@ -48,13 +47,12 @@ function ProviderDiagnostics({ trace }: { trace?: ProviderExecutionTrace | null 
     <details className="provider-diagnostics">
       <summary><span>Provider diagnostics</span><b className={`trace-status ${model.statusTone}`}>{model.finalStatus}</b><em>{model.duration}</em></summary>
       <div className="provider-diagnostics-body">
-        <div className="provider-diagnostics-overview"><span>{model.routingDecision}</span><b>Fallback: {model.fallbackUsed}</b></div>
+        <div className="provider-diagnostics-overview"><span>Fallback used</span><b>{model.fallbackUsed}</b></div>
         {model.attempts.map((attempt, index) => (
           <section className="provider-attempt" key={`${attempt.providerId}-${index}`}>
             <header><strong>{index + 1}. {attempt.providerName}</strong><b className={`trace-status ${attempt.statusTone}`}>{attempt.finalStatus}</b></header>
             <dl>
               <div><dt>Provider</dt><dd>{attempt.providerId}</dd></div>
-              <div><dt>Model</dt><dd>{attempt.model}</dd></div>
               <div><dt>Duration</dt><dd>{attempt.duration}</dd></div>
               <div><dt>Fallback</dt><dd>{attempt.fallbackUsed}</dd></div>
               <div><dt>Exit code</dt><dd>{attempt.exitCode}</dd></div>
@@ -135,7 +133,6 @@ export function ConversationWorkspace({ artistId, artistName, release, status, a
           releaseStatus: release?.status ?? null
         }
       }, (chunk) => {
-        if (chunk.trace) setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, providerTrace: chunk.trace } : message));
         if (activeRequestId.current !== requestId || cancelledRequestIds.current.has(requestId)) return;
         if (chunk.content) {
           setRuntimeState("Responding");

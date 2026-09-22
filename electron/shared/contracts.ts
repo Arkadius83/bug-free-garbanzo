@@ -320,10 +320,12 @@ export interface CatalogMatchSuggestion { soundCloudTrackId: number; soundCloudT
 export type CampaignPackKind = "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt";
 export interface CampaignPackItem { id: string; releaseId: string; releaseTitle: string; kind: CampaignPackKind; channel: CampaignChannel | null; language: ContentLanguage; content: string; status: DraftStatus; model: string; createdAt: string; updatedAt: string; }
 export interface GenerateCampaignPackInput extends GenerateCampaignDraftInput { releaseId: string; }
-export type MediaProvider = "openai" | "kling" | "comfyui";
+export type MediaProvider = "openai" | "kling" | "kling-cli" | "comfyui";
 export type GeneratedMediaType = "image" | "video";
 export type MediaGenerationStatus = "queued" | "generating" | "ready" | "failed" | "approved" | "rejected";
-export interface MediaGenerationSettings { openAiConfigured: boolean; klingConfigured: boolean; comfyUiUrl:string; comfyUiAvailable:boolean; comfyUiCheckpoints:string[]; comfyUiCheckpoint:string|null; comfyUiError:string|null; }
+export interface MediaGenerationSettings { openAiConfigured: boolean; klingConfigured: boolean; klingCliConfigured: boolean; klingCliVersion: string|null; comfyUiUrl:string; comfyUiAvailable:boolean; comfyUiCheckpoints:string[]; comfyUiCheckpoint:string|null; comfyUiError:string|null; }
+export interface KlingCliAccount { userId: number; membershipType: string; availableRemainCredits: number; }
+export interface KlingCliStatus { available: boolean; version: string | null; account: KlingCliAccount | null; error: string | null; }
 export interface LocalServiceStatus { ollama:{running:boolean;managed:boolean;error:string|null}; comfyUi:{running:boolean;managed:boolean;batchPath:string|null;error:string|null}; autoStart:boolean; }
 export interface MediaGenerationSummary { id:string; releaseId:string; campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; prompt:string; status:MediaGenerationStatus; providerTaskId:string|null; mimeType:string|null; error:string|null; metadata:Record<string,unknown>; createdAt:string; updatedAt:string; }
 export type MediaAspectRatio="1:1"|"4:5"|"9:16"|"16:9";
@@ -337,12 +339,291 @@ export interface ContactSummary { id:string; name:string; contactType:ContactTyp
 export interface UpsertContactInput { id?:string; name:string; contactType:ContactType; relationshipStatus:ContactRelationshipStatus; artistId:ArtistAlias|null; releaseId:string|null; organization:string; email:string; phone:string; website:string; socialHandle:string; preferredChannel:ContactChannel; consent:boolean; notes:string; nextFollowUpAt:string|null; createFollowUpTask?:boolean; }
 export interface AddContactInteractionInput { contactId:string; channel:ContactChannel|"meeting"; direction:"outbound"|"inbound"|"note"; summary:string; occurredAt:string; }
 export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; aspectRatio?:MediaAspectRatio; }
-export type PublishingStatus="draft"|"approved"|"scheduled"|"published"|"failed";
-export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; remotePostId:string|null; publishedAt:string|null; destinationId:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; createdAt:string; updatedAt:string; }
+export type PublishingStatus="draft"|"approved"|"scheduled"|"publishing"|"published"|"failed";
+export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; remotePostId:string|null; publishedAt:string|null; destinationId:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; sourceScheduleEventId:string|null; sourceCampaignItemTitle:string|null; reviewedBy:string|null; reviewedAt:string|null; reviewReason:string|null; createdAt:string; updatedAt:string; }
 export interface CreatePublishingQueueInput { releaseId:string; campaignPackItemId:string; mediaGenerationId:string|null; platform:CampaignChannel; scheduledAt:string|null; }
+export interface ReviewPublishingQueueItemInput { id:string; action:"APPROVE"|"REJECT"|"RETURN_TO_DRAFT"|"SCHEDULE"; actor?:string; reason?:string; }
+export interface UpdatePublishingQueueContentInput { id:string; caption:string; scheduledAt:string|null; }
 export interface MetaDestination { id:string; platform:"Facebook"|"Instagram";pageId:string;name:string;username:string|null; }
 export interface MetaConnection { configured:boolean;connected:boolean;callbackUrl:string;graphVersion:string;configurationId:string|null;destinations:MetaDestination[];error:string|null; }
+export interface MetaTestPublishInput { destinationId:string; text:string; }
+export interface MetaTestPublishResult { ok:boolean; destinationId:string; destinationName:string; endpoint:string; startedAt:string; finishedAt:string; postId:string|null; error:string|null; }
 export interface MediaBridgeStatus { configured:boolean;provider:"cloudflare-r2";accountId:string|null;bucket:string|null;error:string|null; }
+
+export type PublisherPlatform = "YouTube" | "TikTok";
+export interface PublisherTestResult {
+  platform: PublisherPlatform;
+  ok: boolean;
+  destinationName: string;
+  remoteId: string | null;
+  startedAt: string;
+  finishedAt: string;
+  status: string;
+  endpoint: string;
+  sanitizedError: string | null;
+}
+export interface YouTubeConnection {
+  configured: boolean;
+  connected: boolean;
+  channelId: string | null;
+  channelTitle: string | null;
+  callbackUrl: string;
+  scopes: string[];
+  error: string | null;
+}
+export type YouTubePrivacyStatus = "private" | "unlisted" | "public";
+export interface YouTubeTestPublishInput {
+  title: string;
+  description: string;
+  tags: string[];
+  privacyStatus: YouTubePrivacyStatus;
+  videoPath: string;
+  thumbnailPath?: string | null;
+}
+export interface YouTubeTestPublishResult extends PublisherTestResult {
+  platform: "YouTube";
+  videoId: string | null;
+  privacyStatus: YouTubePrivacyStatus;
+}
+export interface TikTokConnection {
+  configured: boolean;
+  connected: boolean;
+  openId: string | null;
+  displayName: string | null;
+  callbackUrl: string;
+  scopes: string[];
+  error: string | null;
+}
+export interface TikTokCreatorInfo {
+  creator_avatar_url?: string;
+  creator_username?: string;
+  creator_nickname?: string;
+  privacy_level_options?: string[];
+  comment_disabled?: boolean;
+  duet_disabled?: boolean;
+  stitch_disabled?: boolean;
+  max_video_post_duration_sec?: number;
+}
+export type TikTokPublishMode = "draft" | "direct";
+export interface TikTokTestPublishInput {
+  mode: TikTokPublishMode;
+  caption: string;
+  videoPath: string;
+  privacyLevel?: string;
+  disableComment?: boolean;
+  disableDuet?: boolean;
+  disableStitch?: boolean;
+}
+export interface TikTokTestPublishResult extends PublisherTestResult {
+  platform: "TikTok";
+  publishId: string | null;
+  mode: TikTokPublishMode;
+  creatorInfo?: TikTokCreatorInfo | null;
+}
+
+export interface YouTubeThumbnail { url: string; width?: number | null; height?: number | null; }
+export interface YouTubeChannelSnapshot {
+  channelId: string;
+  title: string;
+  description: string | null;
+  customUrl: string | null;
+  publishedAt: string | null;
+  country: string | null;
+  thumbnails: Record<string, YouTubeThumbnail> | null;
+  subscriberCount: number | null;
+  hiddenSubscriberCount: boolean | null;
+  viewCount: number | null;
+  videoCount: number | null;
+  uploadsPlaylistId: string | null;
+  brandingSettings?: Record<string, unknown> | null;
+}
+export interface YouTubeVideoSnapshot {
+  videoId: string;
+  channelId: string;
+  title: string;
+  description: string | null;
+  publishedAt: string | null;
+  tags: string[] | null;
+  categoryId: string | null;
+  thumbnails: Record<string, YouTubeThumbnail> | null;
+  duration: string | null;
+  definition: string | null;
+  caption: string | null;
+  licensedContent: boolean | null;
+  privacyStatus: string | null;
+  uploadStatus: string | null;
+  embeddable: boolean | null;
+  madeForKids: boolean | null;
+  viewCount: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+}
+export interface YouTubeChannelDataSnapshot {
+  schemaVersion: number;
+  channelId: string;
+  lastSuccessfulSyncAt: string | null;
+  lastAttemptAt: string | null;
+  channel: YouTubeChannelSnapshot | null;
+  videos: YouTubeVideoSnapshot[];
+}
+export interface YouTubeChannelDataSyncResult {
+  channel: YouTubeChannelSnapshot | null;
+  videos: YouTubeVideoSnapshot[];
+  syncedAt: string;
+  videosFetched: number;
+  pagesFetched: number;
+  ok: boolean;
+  sanitizedError: string | null;
+}
+
+export interface PostPublishSnapshot {
+  id: string;
+  publishingQueueItemId: string;
+  releaseId: string;
+  externalPostId: string;
+  platform: CampaignChannel;
+  verified: boolean;
+  verifiedAt: string | null;
+  verificationError: string | null;
+  views: number | null;
+  reach: number | null;
+  impressions: number | null;
+  likes: number | null;
+  comments: number | null;
+  shares: number | null;
+  clicks: number | null;
+  capturedAt: string;
+  createdAt: string;
+}
+
+export interface AnalyticsPlatformSummary {
+  platform: CampaignChannel;
+  postCount: number;
+  avgReach: number | null;
+  avgImpressions: number | null;
+  avgLikes: number | null;
+  avgComments: number | null;
+  avgShares: number | null;
+  totalReach: number;
+  totalImpressions: number;
+  totalLikes: number;
+  totalComments: number;
+  totalShares: number;
+}
+
+export interface ReleaseAnalyticsSummary {
+  releaseId: string;
+  totalSnapshots: number;
+  platforms: AnalyticsPlatformSummary[];
+  recentSnapshotAt: string | null;
+}
+
+export type PromoGenerationStatus = "SUCCESS" | "FAILED" | "SKIPPED";
+
+export type PromoReviewStatus = "GENERATED" | "REVIEW_REQUIRED" | "EDITED" | "APPROVED" | "REJECTED";
+
+export interface PromoGeneration {
+  id: string;
+  releaseId: string;
+  releasePlanId: string;
+  campaignItemId: string;
+  contentType: CampaignItemContentType;
+  generatedContent: string;
+  campaignPackItemId: string | null;
+  status: PromoGenerationStatus;
+  error: string | null;
+  model: string;
+  reviewStatus: PromoReviewStatus;
+  originalContent: string | null;
+  editedContent: string | null;
+  reviewActor: string | null;
+  reviewReason: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface GeneratePromoContentInput {
+  releasePlanId: string;
+  model: string;
+  language: ContentLanguage;
+}
+
+export interface PromoGenerationResult {
+  runId: string;
+  totalItems: number;
+  generated: number;
+  failed: number;
+  skipped: number;
+  items: PromoGenerationItemResult[];
+}
+
+export interface PromoGenerationItemResult {
+  campaignItemId: string;
+  title: string;
+  contentType: CampaignItemContentType;
+  status: PromoGenerationStatus;
+  error: string | null;
+  promoGenerationId: string | null;
+}
+
+export interface UpdatePromoReviewInput {
+  promoGenerationId: string;
+  reviewStatus: "GENERATED" | "REVIEW_REQUIRED" | "EDITED" | "APPROVED" | "REJECTED";
+  reviewActor?: string;
+  reviewReason?: string;
+}
+
+export interface EditPromoContentInput {
+  promoGenerationId: string;
+  editedContent: string;
+}
+
+export interface RetryPromoGenerationInput {
+  promoGenerationId: string;
+  model: string;
+  language: ContentLanguage;
+}
+
+export type ScheduleEventStatus = "DRAFT" | "SCHEDULED" | "CANCELLED" | "READY";
+
+export interface ScheduleEvent {
+  id: string;
+  releaseId: string;
+  releaseTitle: string;
+  releasePlanId: string;
+  campaignItemId: string;
+  campaignItemTitle: string;
+  promoGenerationId: string;
+  platform: CampaignChannel;
+  scheduledAt: string;
+  timezone: string;
+  status: ScheduleEventStatus;
+  publishingQueueId: string | null;
+  queuedAt: string | null;
+  queuedBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateScheduleEventInput {
+  promoGenerationId: string;
+  platform: CampaignChannel;
+  scheduledAt: string;
+  timezone: string;
+}
+
+export interface UpdateScheduleEventInput {
+  id: string;
+  platform?: CampaignChannel;
+  scheduledAt?: string;
+  timezone?: string;
+  status?: ScheduleEventStatus;
+}
+
+export interface QueueScheduleEventResult {
+  scheduleEvent: ScheduleEvent;
+  publishingQueueItem: PublishingQueueItem;
+}
 
 export type SoundCloudCatalogStatus = "unreviewed" | "release" | "gem" | "archive" | "exclude";
 export type SoundCloudContentType = "original" | "bootleg" | "official-remix" | "edit" | "dj-set";
@@ -420,6 +701,37 @@ export type ReleasePlanStatus = "DRAFT" | "REVIEWED" | "APPROVED" | "EXECUTING" 
 export type CampaignItemStatus = "DRAFT" | "READY" | "APPROVED" | "CANCELLED";
 export type CampaignItemContentType = "caption" | "video-hook" | "video-script" | "image-prompt" | "visualizer-prompt" | "story" | "email" | "other";
 export type ApprovalAction = "SUBMITTED" | "APPROVED" | "REJECTED" | "REVISION_REQUESTED";
+export type ApprovalMode = "manual" | "auto";
+
+export interface ArtistPromotionProfile {
+  artistId: ArtistAlias;
+  artistName: string;
+  toneOfVoice: string;
+  languages: ContentLanguage[];
+  postingFrequency: string;
+  preferredContentTypes: CampaignItemContentType[];
+  avoidedContentTypes: CampaignItemContentType[];
+  hashtagRules: string;
+  emojiRules: string;
+  callToActionRules: string;
+  platformPreferences: Record<string, unknown>;
+  defaultApprovalMode: ApprovalMode;
+  updatedAt: string;
+}
+
+export interface UpdateArtistPromotionProfileInput {
+  artistId: ArtistAlias;
+  toneOfVoice?: string;
+  languages?: ContentLanguage[];
+  postingFrequency?: string;
+  preferredContentTypes?: CampaignItemContentType[];
+  avoidedContentTypes?: CampaignItemContentType[];
+  hashtagRules?: string;
+  emojiRules?: string;
+  callToActionRules?: string;
+  platformPreferences?: Record<string, unknown>;
+  defaultApprovalMode?: ApprovalMode;
+}
 export type ApprovalEntityType = "release_plan";
 
 export interface CampaignItem {
@@ -541,7 +853,6 @@ export interface RecordApprovalActionInput {
   previousStatus?: string | null;
   newStatus?: string | null;
 }
-
 export interface CreateReleaseDraftInput {
   artistId: ArtistAlias;
   title: string;
@@ -555,7 +866,18 @@ export interface UpdateReleaseInput extends CreateReleaseDraftInput {
   status: ReleaseStatus;
 }
 
+export type YouTubeAnalyticsRange = "7d" | "28d" | "90d";
+export interface YouTubeAnalyticsTimeSeriesPoint { day: string; views: number | null; estimatedMinutesWatched: number | null; averageViewDuration: number | null; likes: number | null; comments: number | null; }
+export type YouTubeAnalyticsMetricSource = "analytics-period" | "data-api-lifetime";
+export interface YouTubeAnalyticsVideoPerformance { videoId: string; title: string | null; thumbnailUrl: string | null; views: number | null; estimatedMinutesWatched: number | null; averageViewDuration: number | null; likes: number | null; likesSource: YouTubeAnalyticsMetricSource | null; comments: number | null; commentsSource: YouTubeAnalyticsMetricSource | null; }
+export interface YouTubeAnalyticsTrafficSource { source: string; views: number | null; estimatedMinutesWatched: number | null; }
+export interface YouTubeAnalyticsCountry { country: string; views: number | null; estimatedMinutesWatched: number | null; }
+export interface YouTubeAnalyticsDevice { device: string; views: number | null; estimatedMinutesWatched: number | null; }
+export interface YouTubeAnalyticsSnapshot { schemaVersion: number; channelId: string; range: YouTubeAnalyticsRange; lastSuccessfulSyncAt: string | null; lastAttemptAt: string | null; timeSeries: YouTubeAnalyticsTimeSeriesPoint[]; videos: YouTubeAnalyticsVideoPerformance[]; trafficSources: YouTubeAnalyticsTrafficSource[]; countries: YouTubeAnalyticsCountry[]; devices: YouTubeAnalyticsDevice[]; }
+export interface YouTubeAnalyticsSyncResult { ok: boolean; snapshot: YouTubeAnalyticsSnapshot | null; sanitizedError: string | null; }
 export interface StudioApi {
+  getInterfacePreferences(): Promise<import("./interface-preferences.js").InterfacePreferences>;
+  saveInterfacePreferences(value: import("./interface-preferences.js").InterfacePreferences): Promise<import("./interface-preferences.js").InterfacePreferences>;
   sendConversationMessage(input: ConversationRequest, onChunk?: (chunk: ConversationChunk) => void): Promise<ConversationResponse>;
   cancelConversation(requestId: string): Promise<void>;
   runAiHarnessPlan(input: AiHarnessRequest): Promise<AiHarnessResponse>;
@@ -585,7 +907,6 @@ export interface StudioApi {
   reorderCampaignItems(input: ReorderCampaignItemsInput): Promise<CampaignItem[]>;
   recordApprovalAction(input: RecordApprovalActionInput): Promise<ApprovalRecord>;
   listApprovalRecords(entityType: ApprovalEntityType, entityId: string): Promise<ApprovalRecord[]>;
-
   getAiSettings(): Promise<AiSettings>;
   saveAiSettings(settings: AiSettings): Promise<AiSettings>;
   generateCampaignDraft(input: GenerateCampaignDraftInput): Promise<GeneratedCampaignDraft>;
@@ -630,6 +951,7 @@ export interface StudioApi {
   saveMediaGenerationCredentials(openAiApiKey: string, klingApiKey: string): Promise<MediaGenerationSettings>;
   testComfyUi(comfyUiUrl:string):Promise<MediaGenerationSettings>;
   saveComfyUiSettings(comfyUiUrl:string,checkpoint:string):Promise<MediaGenerationSettings>;
+  getKlingCliStatus():Promise<KlingCliStatus>;
   getLocalServiceStatus():Promise<LocalServiceStatus>;
   selectComfyUiLauncher():Promise<LocalServiceStatus>;
   setLocalServicesAutoStart(enabled:boolean):Promise<LocalServiceStatus>;
@@ -641,8 +963,9 @@ export interface StudioApi {
   updateMediaGenerationStatus(generationId: string, status: "approved" | "rejected"): Promise<MediaGenerationSummary>;
   getGeneratedMediaUrl(generationId: string): Promise<string>;
   listPublishingQueue():Promise<PublishingQueueItem[]>;
-  createPublishingQueueItem(input:CreatePublishingQueueInput):Promise<PublishingQueueItem>;
   updatePublishingQueueStatus(itemId:string,status:PublishingStatus):Promise<PublishingQueueItem>;
+  reviewPublishingQueueItem(input: ReviewPublishingQueueItemInput): Promise<PublishingQueueItem>;
+  updatePublishingQueueContent(input: UpdatePublishingQueueContentInput): Promise<PublishingQueueItem>;
   exportPublishingPack(itemId:string):Promise<string|null>;
   listBrandProfiles():Promise<BrandProfile[]>;
   updateBrandProfile(input:UpdateBrandProfileInput):Promise<BrandProfile>;
@@ -655,6 +978,43 @@ export interface StudioApi {
   beginMetaConnect():Promise<void>;
   disconnectMeta():Promise<MetaConnection>;
   publishMetaQueueItem(itemId:string,destinationId:string):Promise<PublishingQueueItem>;
+  publishMetaTestPost(input:MetaTestPublishInput):Promise<MetaTestPublishResult>;
   getMediaBridgeStatus():Promise<MediaBridgeStatus>;
   saveMediaBridgeSettings(accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string):Promise<MediaBridgeStatus>;
+  generatePromoContent(input: GeneratePromoContentInput): Promise<PromoGenerationResult>;
+  listPromoGenerations(releasePlanId: string): Promise<PromoGeneration[]>;
+  retryPromoGeneration(input: RetryPromoGenerationInput): Promise<PromoGeneration>;
+  updatePromoReview(input: UpdatePromoReviewInput): Promise<PromoGeneration>;
+  editPromoContent(input: EditPromoContentInput): Promise<PromoGeneration>;
+  createScheduleEvent(input: CreateScheduleEventInput): Promise<ScheduleEvent>;
+  updateScheduleEvent(input: UpdateScheduleEventInput): Promise<ScheduleEvent>;
+  cancelScheduleEvent(id: string): Promise<ScheduleEvent>;
+  listScheduleEvents(input?: { releaseId?: string | null; from?: string | null; to?: string | null }): Promise<ScheduleEvent[]>;
+  sendScheduleEventToPublishingQueue(id: string): Promise<QueueScheduleEventResult>;
+  listArtistPromotionProfiles(): Promise<ArtistPromotionProfile[]>;
+  getArtistPromotionProfile(artistId: ArtistAlias): Promise<ArtistPromotionProfile | null>;
+  updateArtistPromotionProfile(input: UpdateArtistPromotionProfileInput): Promise<ArtistPromotionProfile>;
+  beginPublishing(itemId: string): Promise<PublishingQueueItem>;
+  verifyPublishedPost(itemId: string): Promise<PostPublishSnapshot>;
+  fetchAndStorePostAnalytics(itemId: string): Promise<PostPublishSnapshot>;
+  getAnalyticsSnapshots(itemId: string): Promise<PostPublishSnapshot[]>;
+  getReleaseAnalyticsSummary(releaseId: string): Promise<ReleaseAnalyticsSummary>;
+  getYouTubeConnection(): Promise<YouTubeConnection>;
+  saveYouTubeCredentials(clientId: string, clientSecret: string): Promise<YouTubeConnection>;
+  beginYouTubeConnect(): Promise<void>;
+  disconnectYouTube(): Promise<YouTubeConnection>;
+  publishYouTubeTest(input: YouTubeTestPublishInput): Promise<YouTubeTestPublishResult>;
+  selectYouTubeTestVideo(): Promise<string | null>;
+  selectYouTubeTestThumbnail(): Promise<string | null>;
+  getTikTokConnection(): Promise<TikTokConnection>;
+  saveTikTokCredentials(clientKey: string, clientSecret: string): Promise<TikTokConnection>;
+  beginTikTokConnect(): Promise<void>;
+  disconnectTikTok(): Promise<TikTokConnection>;
+  getTikTokCreatorInfo(): Promise<TikTokCreatorInfo>;
+  publishTikTokTest(input: TikTokTestPublishInput): Promise<TikTokTestPublishResult>;
+  selectTikTokTestVideo(): Promise<string | null>;
+  getYouTubeChannelData(): Promise<YouTubeChannelDataSnapshot | null>;
+  syncYouTubeChannelData(): Promise<YouTubeChannelDataSyncResult>;
+  getYouTubeAnalytics(range: YouTubeAnalyticsRange): Promise<YouTubeAnalyticsSnapshot | null>;
+  syncYouTubeAnalytics(range: YouTubeAnalyticsRange): Promise<YouTubeAnalyticsSyncResult>;
 }
