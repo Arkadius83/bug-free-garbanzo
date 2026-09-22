@@ -3,7 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { ConversationProviderRouteResult, ConversationProviderRouter } from "./conversation-runtime.js";
+import type { ConversationProviderAttempt, ConversationProviderRouteResult, ConversationProviderRouter } from "./conversation-runtime.js";
+import type { ProviderExecutionDiagnostic, ProviderExecutionFinalStatus, ProviderExecutionTrace } from "../shared/contracts.js";
 
 export type ProviderState = "CONNECTING" | "RUNNING" | "DONE" | "ERROR" | "CANCELLED";
 
@@ -80,57 +81,207 @@ export function localQwenFallbackSource(): string {
   `;
 }
 
-type ProcessResult = { stdout: string; finalState: ProviderState };
+type ProcessResult = { stdout: string; finalState: ProviderState; diagnostic: ProviderExecutionDiagnostic };
 
-async function runProcessWithStateTracking(
+type CompiledProviderEntry = { providerEntry: string; diagnostic: ProviderExecutionDiagnostic };
+
+export type ProviderProcessCloseDecision = {
+  action: "resolve" | "reject" | "cancel" | "timeout";
+  detail: string;
+};
+
+function timestamp(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+export function parseProviderResult(stdout: string): ConversationProviderRouteResult | null {
+  for (const line of stdout.trim().split(/\r?\n/).reverse()) {
+    try {
+      const value = JSON.parse(line) as ConversationProviderRouteResult;
+      if (value && typeof value.ok === "boolean" && Number.isFinite(value.durationMs) && Array.isArray(value.attempts)
+        && value.attempts.every((attempt) => attempt && typeof attempt.provider === "string" && typeof attempt.model === "string" && typeof attempt.ok === "boolean" && Number.isFinite(attempt.durationMs))
+        && (!value.ok || (typeof value.output === "string" && Boolean(value.output.trim())))) return value;
+    } catch { /* Ignore non-result runner log lines. */ }
+  }
+  return null;
+}
+
+function hasSuccessfulProviderResult(stdout: string): boolean {
+  return parseProviderResult(stdout)?.ok === true;
+}
+export function classifyProviderProcessClose(input: { code: number | null; signal: NodeJS.Signals | null; stdout: string; signalAborted: boolean; timedOut: boolean; label: string }): ProviderProcessCloseDecision {
+  const exit = `exit code ${input.code === null ? "null" : input.code} signal ${input.signal ?? "none"}`;
+  if (input.signalAborted) return { action: "cancel", detail: `user abort; ${exit}` };
+  if (input.timedOut) return { action: "timeout", detail: `hard limit reached; ${exit}` };
+  if (input.code === 0) return { action: "resolve", detail: exit };
+  if (input.code === null && input.label === "provider runner" && hasSuccessfulProviderResult(input.stdout)) return { action: "resolve", detail: `${exit}; valid result already received` };
+  return { action: "reject", detail: exit };
+}
+
+function statusForDecision(decision: ProviderProcessCloseDecision): ProviderExecutionFinalStatus {
+  if (decision.action === "resolve") return "success";
+  if (decision.action === "cancel") return "cancelled";
+  if (decision.action === "timeout") return "timeout";
+  return "crash";
+}
+
+export function createProviderExecutionDiagnostic(input: {
+  providerId: string;
+  providerName: string;
+  model?: string;
+  startMs: number;
+  endMs: number;
+  finalStatus: ProviderExecutionFinalStatus;
+  exitCode?: number | null;
+  exitSignal?: string | null;
+  validResultReceived?: boolean;
+  fallbackUsed?: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}): ProviderExecutionDiagnostic {
+  return {
+    providerId: input.providerId,
+    providerName: input.providerName,
+    ...(input.model ? { model: input.model } : {}),
+    startTimestamp: timestamp(input.startMs),
+    endTimestamp: timestamp(input.endMs),
+    durationMs: Math.max(0, input.endMs - input.startMs),
+    finalStatus: input.finalStatus,
+    exitCode: input.exitCode ?? null,
+    exitSignal: input.exitSignal ?? null,
+    validResultReceived: Boolean(input.validResultReceived),
+    fallbackUsed: Boolean(input.fallbackUsed),
+    ...(input.errorCode ? { errorCode: input.errorCode } : {}),
+    ...(input.errorMessage ? { errorMessage: input.errorMessage } : {})
+  };
+}
+
+export function buildProviderExecutionTrace(input: {
+  startMs: number;
+  endMs: number;
+  diagnostics: ProviderExecutionDiagnostic[];
+  finalStatus?: ProviderExecutionFinalStatus;
+  fallbackUsed?: boolean;
+}): ProviderExecutionTrace {
+  const finalStatus = input.finalStatus ?? input.diagnostics.at(-1)?.finalStatus ?? "invalid_result";
+  const fallbackUsed = input.fallbackUsed ?? input.diagnostics.some((diagnostic) => diagnostic.fallbackUsed);
+  return {
+    startTimestamp: timestamp(input.startMs),
+    endTimestamp: timestamp(input.endMs),
+    durationMs: Math.max(0, input.endMs - input.startMs),
+    finalStatus,
+    fallbackUsed,
+    diagnostics: input.diagnostics
+  };
+}
+
+export function providerAttemptDiagnostics(attempts: ConversationProviderAttempt[], routeEndMs: number): ProviderExecutionDiagnostic[] {
+  const firstSuccessfulIndex = attempts.findIndex((attempt) => attempt.ok);
+  const fallbackWasUsed = firstSuccessfulIndex > 0 || (firstSuccessfulIndex === -1 && attempts.length > 1);
+  return attempts.map((attempt, index) => {
+    const endMs = routeEndMs - attempts.slice(index + 1).reduce((sum, item) => sum + Math.max(0, Math.round(item.durationMs)), 0);
+    const startMs = Math.max(0, endMs - Math.max(0, Math.round(attempt.durationMs)));
+    const finalStatus: ProviderExecutionFinalStatus = attempt.ok ? "success" : attempt.errorType === "TIMEOUT" ? "timeout" : "crash";
+    return createProviderExecutionDiagnostic({
+      providerId: attempt.provider,
+      providerName: attempt.label || attempt.provider,
+      model: attempt.model,
+      startMs,
+      endMs,
+      finalStatus,
+      exitCode: null,
+      exitSignal: null,
+      validResultReceived: attempt.ok,
+      fallbackUsed: fallbackWasUsed && index > 0,
+      errorCode: attempt.errorType,
+      errorMessage: attempt.errorMessage
+    });
+  });
+}
+
+export async function runProcessWithStateTracking(
   command: string,
   args: string[],
   cwd: string,
-  options: { signal?: AbortSignal; hardLimitMs: number; label: string }
+  options: { signal?: AbortSignal; hardLimitMs: number; label: string; providerId?: string; providerName?: string; spawnProcess?: typeof spawn }
 ): Promise<ProcessResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    const startMs = Date.now();
+    if (options.signal?.aborted) { reject(new DOMException("Aborted", "AbortError")); return; }
+    const child = (options.spawnProcess ?? spawn)(command, args, { cwd, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
     let state: ProviderState = "CONNECTING";
     let stdout = "";
     let stderr = "";
     let hardLimitTimer: ReturnType<typeof setTimeout> | null = null;
+    let timedOut = false;
+    let settled = false;
+    const onAbort = () => { child.kill("SIGTERM"); };
 
     function clearTimers(): void {
       if (hardLimitTimer) { clearTimeout(hardLimitTimer); hardLimitTimer = null; }
+      options.signal?.removeEventListener("abort", onAbort);
     }
     function transitionTo(newState: ProviderState, detail?: string): void {
       const from = state;
       state = newState;
       logStateTransition(from, newState, `${options.label}${detail ? `: ${detail}` : ""}`);
     }
+    function diagnosticFor(decision: ProviderProcessCloseDecision, code: number | null, signal: NodeJS.Signals | null, errorMessage?: string): ProviderExecutionDiagnostic {
+      const finalStatus = decision.action === "resolve" && options.providerId === "provider-runner" && !parseProviderResult(stdout) ? "invalid_result" : statusForDecision(decision);
+      return createProviderExecutionDiagnostic({
+        providerId: options.providerId ?? options.label,
+        providerName: options.providerName ?? options.label,
+        startMs,
+        endMs: Date.now(),
+        finalStatus,
+        exitCode: code,
+        exitSignal: signal,
+        validResultReceived: hasSuccessfulProviderResult(stdout),
+        fallbackUsed: false,
+        errorCode: finalStatus === "success" ? undefined : finalStatus.toUpperCase(),
+        errorMessage
+      });
+    }
 
     transitionTo("RUNNING", "process spawned");
     child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
     child.stderr.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
-    child.on("error", (error) => { clearTimers(); transitionTo("ERROR", error.message); reject(error); });
-    child.on("close", (code) => {
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
       clearTimers();
-      if (options.signal?.aborted) {
-        transitionTo("CANCELLED", "user abort");
-        reject(new DOMException("Aborted", "AbortError"));
-        return;
-      }
-      if (code !== 0) {
-        transitionTo("ERROR", `exit code ${code}`);
-        reject(new Error(`${options.label} exited with code ${code}. stdout: ${stdout.slice(0, 1200)} stderr: ${stderr.slice(0, 800)}`));
-        return;
-      }
-      transitionTo("DONE", `exit code ${code}`);
-      resolve({ stdout, finalState: state });
+      transitionTo("ERROR", error.message);
+      const decision: ProviderProcessCloseDecision = { action: "reject", detail: error.message };
+      const diagnostic = diagnosticFor(decision, null, null, error.message);
+      reject(Object.assign(error, { diagnostic }));
     });
-    if (options.signal) {
-      options.signal.addEventListener("abort", () => {
-        clearTimers();
-        transitionTo("CANCELLED", "signal abort");
-        child.kill("SIGTERM");
-      }, { once: true });
-    }
+    child.on("close", (code, signal) => {
+      if (settled) return;
+      settled = true;
+      clearTimers();
+      const decision = classifyProviderProcessClose({ code, signal, stdout, signalAborted: Boolean(options.signal?.aborted), timedOut, label: options.label });
+      const diagnostic = diagnosticFor(decision, code, signal, decision.action === "resolve" ? undefined : decision.detail);
+      if (decision.action === "cancel") {
+        transitionTo("CANCELLED", decision.detail);
+        reject(Object.assign(new DOMException("Aborted", "AbortError"), { diagnostic }));
+        return;
+      }
+      if (decision.action === "timeout") {
+        transitionTo("ERROR", decision.detail);
+        reject(Object.assign(new Error(`${options.label} exceeded the hard limit. ${decision.detail}.`), { diagnostic }));
+        return;
+      }
+      if (decision.action === "reject") {
+        transitionTo("ERROR", decision.detail);
+        reject(Object.assign(new Error(`${options.label} exited unexpectedly. ${decision.detail}.`), { diagnostic }));
+        return;
+      }
+      transitionTo("DONE", decision.detail);
+      resolve({ stdout, finalState: state, diagnostic });
+    });
+    options.signal?.addEventListener("abort", onAbort, { once: true });
     hardLimitTimer = setTimeout(() => {
+      timedOut = true;
       console.error(`[provider-router] Hard limit ${options.hardLimitMs}ms reached - killing ${options.label}`);
       transitionTo("ERROR", `hard limit ${options.hardLimitMs}ms reached`);
       child.kill("SIGTERM");
@@ -138,7 +289,15 @@ async function runProcessWithStateTracking(
   });
 }
 
-async function compileHarnessProviders(tempDirectory: string, harnessRoot: string, signal: AbortSignal | undefined, hardLimitMs: number): Promise<string> {
+function diagnosticFromError(error: unknown): ProviderExecutionDiagnostic | null {
+  if (typeof error === "object" && error !== null && "diagnostic" in error) {
+    const diagnostic = (error as { diagnostic?: unknown }).diagnostic;
+    if (typeof diagnostic === "object" && diagnostic !== null) return diagnostic as ProviderExecutionDiagnostic;
+  }
+  return null;
+}
+
+async function compileHarnessProviders(tempDirectory: string, harnessRoot: string, signal: AbortSignal | undefined, hardLimitMs: number): Promise<CompiledProviderEntry> {
   const compiledDirectory = path.join(tempDirectory, "compiled");
   const tsconfigPath = path.join(tempDirectory, "tsconfig.provider.json");
   const harnessSrc = path.join(harnessRoot, "src");
@@ -167,8 +326,8 @@ async function compileHarnessProviders(tempDirectory: string, harnessRoot: strin
   }, null, 2), "utf8");
   const command = process.platform === "win32" ? "cmd.exe" : "pnpm";
   const args = process.platform === "win32" ? ["/d", "/c", "pnpm.cmd", "exec", "tsc", "-p", tsconfigPath] : ["exec", "tsc", "-p", tsconfigPath];
-  await runProcessWithStateTracking(command, args, harnessRoot, { signal, hardLimitMs, label: "provider compile" });
-  return path.join(compiledDirectory, "providers", "provider-manager-v8.js");
+  const processResult = await runProcessWithStateTracking(command, args, harnessRoot, { signal, hardLimitMs, label: "provider compile", providerId: "provider-compile", providerName: "Harness provider compile" });
+  return { providerEntry: path.join(compiledDirectory, "providers", "provider-manager-v8.js"), diagnostic: processResult.diagnostic };
 }
 
 export function createAiHarnessProviderRouter(options: AiHarnessProviderRouterOptions = {}): ConversationProviderRouter {
@@ -182,10 +341,13 @@ export function createAiHarnessProviderRouter(options: AiHarnessProviderRouterOp
     const directory = await mkdtemp(path.join(os.tmpdir(), "ai-studio-provider-route-"));
     const inputPath = path.join(directory, "request.json");
     const runnerPath = path.join(directory, "provider-router.mjs");
-    const startTime = Date.now();
+    const startMs = Date.now();
+    const diagnostics: ProviderExecutionDiagnostic[] = [];
     try {
       await writeFile(inputPath, JSON.stringify({ prompt, allowPremiumFallback, localQwenNumPredict, localQwenTimeoutMs: 300_000 }), "utf8");
-      const providerEntry = pathToFileURL(await compileHarnessProviders(directory, harnessRoot, runtimeOptions.signal, hardLimitMs)).href;
+      const compiled = await compileHarnessProviders(directory, harnessRoot, runtimeOptions.signal, hardLimitMs);
+      diagnostics.push(compiled.diagnostic);
+      const providerEntry = pathToFileURL(compiled.providerEntry).href;
       await writeFile(runnerPath, `
         import { readFile } from "node:fs/promises";
         import { runProviderTask } from ${JSON.stringify(providerEntry)};
@@ -218,34 +380,47 @@ export function createAiHarnessProviderRouter(options: AiHarnessProviderRouterOp
         });
       `, "utf8");
 
-      const { stdout, finalState } = await runProcessWithStateTracking(process.execPath, [runnerPath, inputPath], harnessRoot, { signal: runtimeOptions.signal, hardLimitMs, label: "provider runner" });
-      const totalMs = Date.now() - startTime;
-      const lastJsonLine = stdout.trim().split(/\r?\n/).filter(Boolean).at(-1);
-      if (!lastJsonLine) {
-        console.error(`[provider-router] No JSON result in stdout. state=${finalState} totalMs=${totalMs} lines=${stdout.trim().split(/\r?\n/).length}`);
-        throw new Error("AI Harness provider router returned no result");
+      const processResult = await runProcessWithStateTracking(process.execPath, [runnerPath, inputPath], harnessRoot, { signal: runtimeOptions.signal, hardLimitMs, label: "provider runner", providerId: "provider-runner", providerName: "Harness provider runner" });
+      diagnostics.push(processResult.diagnostic);
+      const endMs = Date.now();
+      const result = parseProviderResult(processResult.stdout);
+      if (!result) {
+        return { ok: false, durationMs: endMs - startMs, attempts: [], errorMessage: "AI Harness provider router returned an invalid result.", trace: buildProviderExecutionTrace({ startMs, endMs, diagnostics, finalStatus: "invalid_result" }) };
       }
-      const result = JSON.parse(lastJsonLine) as ConversationProviderRouteResult;
-      console.log(`[provider-router] Parsed: ok=${result.ok} provider=${result.provider ?? "none"} model=${result.model ?? "none"} attempts=${result.attempts.length} totalMs=${totalMs} finalState=${finalState}`);
+      const attemptDiagnostics = providerAttemptDiagnostics(result.attempts ?? [], endMs);
+      const fallbackUsed = attemptDiagnostics.some((diagnostic) => diagnostic.fallbackUsed);
+      const finalStatus: ProviderExecutionFinalStatus = result.ok ? "success" : "crash";
+      result.trace = buildProviderExecutionTrace({ startMs, endMs, diagnostics: [...diagnostics, ...attemptDiagnostics], finalStatus, fallbackUsed });
+      result.trace.selectedProvider = result.provider;
+      result.trace.selectedModel = result.model;
+      result.trace.routingMode = "auto";
+      console.log(`[provider-router] Parsed: ok=${result.ok} provider=${result.provider ?? "none"} model=${result.model ?? "none"} attempts=${result.attempts.length} totalMs=${endMs - startMs} finalState=${processResult.finalState} traceStatus=${result.trace.finalStatus} fallbackUsed=${result.trace.fallbackUsed}`);
       return result;
     } catch (error) {
-      const totalMs = Date.now() - startTime;
+      const endMs = Date.now();
+      const diagnostic = diagnosticFromError(error);
+      const traceDiagnostics = diagnostic ? [...diagnostics, diagnostic] : diagnostics;
       if (error instanceof DOMException && error.name === "AbortError") {
-        console.error(`[provider-router] Cancelled after ${totalMs}ms`);
-        return { ok: false, durationMs: totalMs, attempts: [], errorMessage: "Provider routing was cancelled." };
+        const trace = buildProviderExecutionTrace({ startMs, endMs, diagnostics: traceDiagnostics, finalStatus: "cancelled" });
+        console.error(`[provider-router] Cancelled after ${endMs - startMs}ms trace=${JSON.stringify(trace)}`);
+        return { ok: false, durationMs: endMs - startMs, attempts: [], errorMessage: "Provider routing was cancelled.", trace };
       }
       if (error instanceof Error && /startup timeout|failed to start/i.test(error.message)) {
-        console.error(`[provider-router] Startup timeout after ${totalMs}ms`);
-        return { ok: false, durationMs: totalMs, attempts: [], errorMessage: `Provider routing failed to start within ${Math.round(startupTimeoutMs / 1000)}s. The providers may be unavailable.` };
+        const trace = buildProviderExecutionTrace({ startMs, endMs, diagnostics: traceDiagnostics, finalStatus: "timeout" });
+        console.error(`[provider-router] Startup timeout after ${endMs - startMs}ms trace=${JSON.stringify(trace)}`);
+        return { ok: false, durationMs: endMs - startMs, attempts: [], errorMessage: `Provider routing failed to start within ${Math.round(startupTimeoutMs / 1000)}s. The providers may be unavailable.`, trace };
       }
       if (error instanceof Error && /hard limit/i.test(error.message)) {
-        console.error(`[provider-router] Hard limit reached after ${totalMs}ms`);
-        return { ok: false, durationMs: totalMs, attempts: [], errorMessage: `Provider routing exceeded the ${Math.round(hardLimitMs / 1000)}s hard limit. The providers may be unavailable.` };
+        const trace = buildProviderExecutionTrace({ startMs, endMs, diagnostics: traceDiagnostics, finalStatus: "timeout" });
+        console.error(`[provider-router] Hard limit reached after ${endMs - startMs}ms trace=${JSON.stringify(trace)}`);
+        return { ok: false, durationMs: endMs - startMs, attempts: [], errorMessage: `Provider routing exceeded the ${Math.round(hardLimitMs / 1000)}s hard limit. The providers may be unavailable.`, trace };
       }
-      console.error(`[provider-router] Failed after ${totalMs}ms: ${error instanceof Error ? error.message : String(error)}`);
-      throw error;
+      console.error(`[provider-router] Failed after ${endMs - startMs}ms: ${error instanceof Error ? error.message : String(error)}`);
+      return { ok: false, durationMs: endMs - startMs, attempts: [], errorMessage: error instanceof Error ? error.message : "Provider routing failed.", trace: buildProviderExecutionTrace({ startMs, endMs, diagnostics: traceDiagnostics, finalStatus: "crash" }) };
     } finally {
-      await rm(directory, { recursive: true, force: true });
+      await rm(directory, { recursive: true, force: true }).catch(() => {
+        console.warn("[provider-router] Temporary route directory cleanup failed; preserving routing result.");
+      });
     }
   };
 }

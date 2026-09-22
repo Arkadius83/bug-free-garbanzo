@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ArtistAlias, ConversationMessage, ConversationRuntimeState, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import "./conversation-diagnostics.css";
+import type { ArtistAlias, ConversationMessage, ConversationRuntimeState, ProviderExecutionTrace, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
+import { buildProviderTraceViewModel } from "../electron/shared/provider-trace-view-model";
 
 type ConversationWorkspaceProps = {
   artistId: ArtistAlias;
@@ -12,7 +14,13 @@ type ConversationWorkspaceProps = {
 };
 
 const MAX_SESSION_MESSAGES = 16;
-const starterMessages: ConversationMessage[] = [
+type ConversationUiMessage = ConversationMessage & {
+  providerTrace?: ProviderExecutionTrace | null;
+  providerLabel?: string | null;
+  modelLabel?: string | null;
+};
+
+const starterMessages: ConversationUiMessage[] = [
   {
     id: "welcome",
     role: "assistant",
@@ -21,8 +29,11 @@ const starterMessages: ConversationMessage[] = [
   }
 ];
 
-function boundedHistory(messages: ConversationMessage[]): ConversationMessage[] {
-  return messages.filter((message) => message.id !== "welcome").slice(-MAX_SESSION_MESSAGES);
+function boundedHistory(messages: ConversationUiMessage[]): ConversationMessage[] {
+  return messages
+    .filter((message) => message.id !== "welcome")
+    .map(({ id, role, content, createdAt }) => ({ id, role, content, createdAt }))
+    .slice(-MAX_SESSION_MESSAGES);
 }
 
 function cleanError(error: unknown): string {
@@ -30,8 +41,35 @@ function cleanError(error: unknown): string {
   return raw.replace(/^Error invoking remote method '[^']+': Error: /, "");
 }
 
+function ProviderDiagnostics({ trace }: { trace?: ProviderExecutionTrace | null }) {
+  const model = buildProviderTraceViewModel(trace);
+  if (!model.visible) return null;
+  return (
+    <details className="provider-diagnostics">
+      <summary><span>Provider diagnostics</span><b className={`trace-status ${model.statusTone}`}>{model.finalStatus}</b><em>{model.duration}</em></summary>
+      <div className="provider-diagnostics-body">
+        <div className="provider-diagnostics-overview"><span>{model.routingDecision}</span><b>Fallback: {model.fallbackUsed}</b></div>
+        {model.attempts.map((attempt, index) => (
+          <section className="provider-attempt" key={`${attempt.providerId}-${index}`}>
+            <header><strong>{index + 1}. {attempt.providerName}</strong><b className={`trace-status ${attempt.statusTone}`}>{attempt.finalStatus}</b></header>
+            <dl>
+              <div><dt>Provider</dt><dd>{attempt.providerId}</dd></div>
+              <div><dt>Model</dt><dd>{attempt.model}</dd></div>
+              <div><dt>Duration</dt><dd>{attempt.duration}</dd></div>
+              <div><dt>Fallback</dt><dd>{attempt.fallbackUsed}</dd></div>
+              <div><dt>Exit code</dt><dd>{attempt.exitCode}</dd></div>
+              <div><dt>Exit signal</dt><dd>{attempt.exitSignal}</dd></div>
+              <div><dt>Valid result</dt><dd>{attempt.validResultReceived}</dd></div>
+            </dl>
+            {attempt.error ? <p className="provider-attempt-error">{attempt.error}</p> : null}
+          </section>
+        ))}
+      </div>
+    </details>
+  );
+}
 export function ConversationWorkspace({ artistId, artistName, release, status, activeModel, onModelChange, onOpenRelease }: ConversationWorkspaceProps) {
-  const [messages, setMessages] = useState<ConversationMessage[]>(starterMessages);
+  const [messages, setMessages] = useState<ConversationUiMessage[]>(starterMessages);
   const [input, setInput] = useState("");
   const [runtimeState, setRuntimeState] = useState<ConversationRuntimeState>("Ready");
   const [workStatus, setWorkStatus] = useState("Waiting for your next request.");
@@ -73,9 +111,9 @@ export function ConversationWorkspace({ artistId, artistName, release, status, a
     cancelledRequestIds.current.delete(requestId);
     shouldStickToBottom.current = true;
     const now = new Date().toISOString();
-    const userMessage: ConversationMessage = { id: `user-${requestId}`, role: "user", content, createdAt: now };
+    const userMessage: ConversationUiMessage = { id: `user-${requestId}`, role: "user", content, createdAt: now };
     const assistantId = `assistant-${requestId}`;
-    const assistantMessage: ConversationMessage = { id: assistantId, role: "assistant", content: "", createdAt: now };
+    const assistantMessage: ConversationUiMessage = { id: assistantId, role: "assistant", content: "", createdAt: now };
     setMessages((current) => [...current, userMessage, assistantMessage]);
     setInput("");
     setRuntimeState("Thinking");
@@ -97,6 +135,7 @@ export function ConversationWorkspace({ artistId, artistName, release, status, a
           releaseStatus: release?.status ?? null
         }
       }, (chunk) => {
+        if (chunk.trace) setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, providerTrace: chunk.trace } : message));
         if (activeRequestId.current !== requestId || cancelledRequestIds.current.has(requestId)) return;
         if (chunk.content) {
           setRuntimeState("Responding");
@@ -106,7 +145,7 @@ export function ConversationWorkspace({ artistId, artistName, release, status, a
       });
       if (!cancelledRequestIds.current.has(requestId)) {
         const providerModel = response.provider && response.model ? `${response.provider}/${response.model}` : response.provider ?? "unknown";
-        setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content || response.content } : message).slice(-MAX_SESSION_MESSAGES - 1));
+        setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content || response.content, providerTrace: response.trace ?? null, providerLabel: response.provider, modelLabel: response.model } : message).slice(-MAX_SESSION_MESSAGES - 1));
         setRuntimeState("Ready");
         setWorkStatus(response.streamed ? `Response from ${providerModel}.` : `Response from ${providerModel}. Streaming was not available, so the answer arrived at once.`);
       }
@@ -158,7 +197,7 @@ export function ConversationWorkspace({ artistId, artistName, release, status, a
 
         <section className="conversation-main panel">
           <div className="conversation-history" ref={historyRef} onScroll={handleHistoryScroll} aria-label="Conversation history">
-            {messages.map((message) => <article className={`conversation-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "AI Studio" : "You"} · {message.createdAt === new Date(0).toISOString() ? "ready" : new Date(message.createdAt).toLocaleTimeString()}</small><p>{message.content || (runtimeState === "Thinking" ? "Thinking..." : "")}</p></article>)}
+            {messages.map((message) => <article className={`conversation-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "AI Studio" : "You"} · {message.createdAt === new Date(0).toISOString() ? "ready" : new Date(message.createdAt).toLocaleTimeString()}</small><p>{message.content || (runtimeState === "Thinking" ? "Thinking..." : "")}</p><ProviderDiagnostics trace={message.providerTrace} /></article>)}
           </div>
           <div className="conversation-composer">
             <textarea rows={3} value={input} disabled={busy} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendMessage(); }} placeholder="Ask AI Studio to plan a release task, draft a post, organize campaign work, or think through the next step..." />

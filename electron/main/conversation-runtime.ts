@@ -1,4 +1,4 @@
-import type { ConversationChunk, ConversationMessage, ConversationRequest, ConversationResponse } from "../shared/contracts.js";
+import type { ConversationChunk, ConversationMessage, ConversationRequest, ConversationResponse, ProviderExecutionTrace } from "../shared/contracts.js";
 
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 export type ConversationErrorCode = "PROVIDER_UNAVAILABLE" | "CONFIGURATION_ERROR" | "TIMEOUT" | "CANCELLED" | "STREAM_INTERRUPTED" | "INVALID_REQUEST";
@@ -21,6 +21,7 @@ export type ConversationProviderRouteResult = {
   durationMs: number;
   attempts: ConversationProviderAttempt[];
   errorMessage?: string;
+  trace?: ProviderExecutionTrace;
 };
 export type ConversationProviderRouter = (prompt: string, options?: { signal?: AbortSignal }) => Promise<ConversationProviderRouteResult>;
 
@@ -94,12 +95,13 @@ async function runAutoRoutedConversation(input: ConversationRequest, options: { 
   const result = await options.providerRouter(buildConversationPrompt(input), { signal: options.signal });
   const totalMs = Date.now() - startTime;
   console.log("[conversation] Auto routing completed: ok=" + result.ok + " provider=" + (result.provider ?? "none") + " model=" + (result.model ?? "none") + " attempts=" + result.attempts.length + " totalMs=" + totalMs);
+  if (result.trace) options.onChunk?.({ requestId: input.requestId, content: "", done: false, trace: result.trace });
   if (!result.ok || !result.output?.trim()) throw new ConversationRuntimeError("PROVIDER_UNAVAILABLE", routeFailureMessage(result));
   const content = stripThinking(result.output);
   if (!content) throw new ConversationRuntimeError("PROVIDER_UNAVAILABLE", "The selected provider returned an empty response.");
   options.onChunk?.({ requestId: input.requestId, content, done: false });
   options.onChunk?.({ requestId: input.requestId, content: "", done: true });
-  return { requestId: input.requestId, provider: result.provider ?? "auto", model: result.model ?? "auto", content, streamed: false, interrupted: false };
+  return { requestId: input.requestId, provider: result.provider ?? "auto", model: result.model ?? "auto", content, streamed: false, interrupted: false, trace: result.trace };
 }
 
 async function runLocalOllamaConversation(input: ConversationRequest, model: string, options: { fetchImpl?: FetchLike; signal?: AbortSignal; onChunk?: (chunk: ConversationChunk) => void; timeoutMs?: number }): Promise<ConversationResponse> {

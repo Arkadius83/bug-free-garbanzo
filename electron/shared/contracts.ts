@@ -57,6 +57,37 @@ export interface ConversationChunk {
   requestId: string;
   content: string;
   done: boolean;
+  trace?: ProviderExecutionTrace;
+}
+
+export type ProviderExecutionFinalStatus = "success" | "cancelled" | "timeout" | "crash" | "invalid_result";
+
+export interface ProviderExecutionDiagnostic {
+  model?: string;
+  providerId: string;
+  providerName: string;
+  startTimestamp: string;
+  endTimestamp: string;
+  durationMs: number;
+  finalStatus: ProviderExecutionFinalStatus;
+  exitCode: number | null;
+  exitSignal: string | null;
+  validResultReceived: boolean;
+  fallbackUsed: boolean;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface ProviderExecutionTrace {
+  selectedProvider?: string;
+  selectedModel?: string;
+  routingMode?: "auto";
+  startTimestamp: string;
+  endTimestamp: string;
+  durationMs: number;
+  finalStatus: ProviderExecutionFinalStatus;
+  fallbackUsed: boolean;
+  diagnostics: ProviderExecutionDiagnostic[];
 }
 
 export interface ConversationResponse {
@@ -66,6 +97,7 @@ export interface ConversationResponse {
   content: string;
   streamed: boolean;
   interrupted: boolean;
+  trace?: ProviderExecutionTrace;
   error?: string;
 }
 export interface GenerateCampaignDraftInput {

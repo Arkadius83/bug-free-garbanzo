@@ -131,3 +131,47 @@ test("passive workspace context is still supplied for relevant requests", () => 
   assert.match(system, /Genre: Psytrance/);
   assert.match(system, /Artist: The Arkadiusz/);
 });
+
+test("auto routing response carries provider execution trace", async () => {
+  const router: ConversationProviderRouter = async () => ({
+    ok: true,
+    provider: "opencode-http",
+    model: "opencode-default",
+    output: "Auto routed response",
+    durationMs: 100,
+    attempts: [],
+    trace: {
+      startTimestamp: "1970-01-01T00:00:01.000Z",
+      endTimestamp: "1970-01-01T00:00:01.100Z",
+      durationMs: 100,
+      finalStatus: "success",
+      fallbackUsed: false,
+      diagnostics: [{
+        providerId: "provider-runner",
+        providerName: "Harness provider runner",
+        startTimestamp: "1970-01-01T00:00:01.000Z",
+        endTimestamp: "1970-01-01T00:00:01.100Z",
+        durationMs: 100,
+        finalStatus: "success",
+        exitCode: 0,
+        exitSignal: null,
+        validResultReceived: true,
+        fallbackUsed: false
+      }]
+    }
+  });
+  const result = await runConversation(request({ model: null }), { providerRouter: router });
+  assert.equal(result.trace?.finalStatus, "success");
+  assert.equal(result.trace?.diagnostics[0]?.providerName, "Harness provider runner");
+  assert.equal(result.trace?.diagnostics[0]?.validResultReceived, true);
+});
+
+test("failed Auto route sends diagnostics before preserving rejection semantics", async () => {
+  const chunks: unknown[] = [];
+  const trace = { startTimestamp: "2026-01-01T00:00:00Z", endTimestamp: "2026-01-01T00:00:01Z", durationMs: 1000, finalStatus: "timeout" as const, fallbackUsed: false, diagnostics: [] };
+  await assert.rejects(runConversation(request({ model: null }), {
+    onChunk: chunk => chunks.push(chunk),
+    providerRouter: async () => ({ ok: false, durationMs: 1000, attempts: [], errorMessage: "Timed out", trace })
+  }), /Timed out/);
+  assert.deepEqual(chunks, [{ requestId: "request-1", content: "", done: false, trace }]);
+});
