@@ -77,6 +77,7 @@
 .connected-info-subtle{border-color:#29313b;background:#0a1017}
 .connected-info-youtube{border-color:#4d1a1a;background:#1a0f0f}
 .connected-info-tiktok{border-color:#222;background:#0f0f0f}
+.tiktok-profile-avatar{width:40px;height:40px;border-radius:50%;object-fit:cover;border:1px solid #353535}
 .settings-info-panel{margin-top:14px;padding:14px;border:1px solid #29313b;border-radius:8px;background:#0b1017}
 .settings-hint-small{color:#788491;font-size:10px}
 .settings-status-ok{color:#55d7a0;font-size:11px}

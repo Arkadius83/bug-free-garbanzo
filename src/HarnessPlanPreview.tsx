@@ -237,7 +237,7 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
       <div className="harness-status-strip">{(["PLAN READY", "READY TO APPROVE", "APPROVED", "EXECUTING", "SUCCESS", "FAILED", "REJECTED", "BLOCKED", "ROLLED BACK"] as HarnessFlowStatus[]).map((label) => <span key={label} className={flowStatus === label ? "active" : ""}>{label}</span>)}</div>
 
       <div className="harness-layout">
-        <section className="panel harness-request-panel">
+        <section className="v4-card harness-request-panel">
           <div className="panel-heading"><span className="eyebrow">Request</span><h2>Goal sent to AI Harness</h2></div>
           <label>Goal / request<textarea rows={8} value={instruction} onChange={(event) => setInstruction(event.target.value)} /></label>
           <div className="harness-context"><span><small>PROJECT</small><b>AI Studio Manager</b></span><span><small>RELEASE</small><b>{release?.title ?? "No active release"}</b></span><span><small>ARTIST</small><b>{release?.artistName ?? artistName}</b></span><span><small>MODE</small><b>planOnly=true</b></span></div>
@@ -245,7 +245,7 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
           {message && <p className="harness-message error">{message}</p>}
         </section>
 
-        <section className="panel harness-result-panel">
+        <section className="v4-card harness-result-panel">
           <div className="panel-heading"><span className="eyebrow">Report</span><h2>Routing result</h2></div>
           {state === "empty" && <div className="harness-empty"><strong>No plan preview yet</strong><p>Enter a goal and preview the V12 plan to inspect task order, capabilities and blockers.</p></div>}
           {state === "loading" && <div className="harness-empty"><strong>Building plan...</strong><p>AI Manager is calling the Harness facade in plan-only mode.</p></div>}
@@ -254,7 +254,7 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
       </div>
 
       <div className="harness-bottom-grid">
-        <section className="panel harness-approval-panel">
+        <section className="v4-card harness-approval-panel">
           <div className="panel-heading"><span className="eyebrow">Execution Approval</span><h2>Review, approve, execute</h2></div><p className="harness-flow-copy">Select a READY file task, review the exact target and diff, type the confirmation phrase, then execute inside the smoke-test workspace.</p>
           <div className="harness-approval-summary"><span><small>SELECTED READY TASKS</small><b>{approvalDraft.selectedTaskIds.length}</b></span><span><small>EXECUTOR CHECK</small><b>{selectedTasksHaveExecutors ? "PASS" : "WAIT"}</b></span></div>
           <code>{approvalDraft.selectedTaskIds.length ? approvalDraft.selectedTaskIds.join(", ") : "No READY task selected"}</code>
@@ -266,18 +266,18 @@ export function HarnessPlanPreview({ release, artistId, artistName, defaultInstr
           {executionResult && <div className="harness-execution-result"><strong>{executionResult.status}</strong>{executionResult.results.map((result) => <article key={result.taskId}><b>{result.taskId}</b><span>{result.status}</span><p>{result.message}</p>{result.changedResources.map((resource) => <small key={resource.path}>{`${resource.path}: ${resource.beforeSizeBytes ?? 0} -> ${resource.afterSizeBytes ?? 0} bytes · verify ${result.verificationStatus} · rollback ${result.rollbackAttempted ? result.rollbackSucceeded ? "ok" : "failed" : "not-run"}`}</small>)}</article>)}</div>}
         </section>
 
-        <section className="panel harness-capability-panel">
+        <section className="v4-card harness-capability-panel">
           <div className="panel-heading"><span className="eyebrow">Capabilities</span><h2>Executor summary</h2></div>
           {readiness.capabilities.length === 0 ? <div className="harness-empty compact"><strong>No capability data</strong></div> : <div className="harness-capability-list">{readiness.capabilities.map((item) => { const executor = executorByCapability.get(item.capability); return <article key={item.capability}><strong>{item.capability}</strong><span>{item.taskCount} task{item.taskCount === 1 ? "" : "s"}</span><b>executor {executor?.available ? "YES" : "NO"}</b><small>{item.readyCount} ready · {item.blockedCount} blocked</small></article>; })}</div>}
         </section>
 
-        <section className="panel harness-history-panel">
-          <div className="panel-heading"><span className="eyebrow">Recent Harness Plans</span><h2>Product-owned history</h2></div>
+        <section className="v4-card harness-history-panel">
+           <div className="panel-heading"><span className="eyebrow">Recent Harness Plans</span><h2>Product-owned history</h2></div>
           {planHistory.length === 0 ? <div className="harness-empty compact"><strong>No saved plan summaries</strong></div> : <div className="harness-history-list">{planHistory.slice(0, 8).map((item) => <article key={item.planId}><div><strong>{item.goalSummary}</strong><small>{new Date(item.timestamp).toLocaleString()} · {item.overallStatus}</small></div><span>{item.total} total · {item.ready} ready · {item.noExecutor} no executor · {item.blocked} blocked</span></article>)}</div>}
         </section>
 
-        <section className="panel harness-history-panel">
-          <div className="panel-heading"><span className="eyebrow">Recent Executions</span><h2>Local execution summaries</h2></div>
+        <section className="v4-card harness-history-panel">
+           <div className="panel-heading"><span className="eyebrow">Recent Executions</span><h2>Local execution summaries</h2></div>
           {executionHistory.length === 0 ? <div className="harness-empty compact"><strong>No execution summaries</strong></div> : <div className="harness-history-list">{executionHistory.slice(0, 8).map((item) => <article key={item.executionId}><div><strong>{item.executionId}</strong><small>{new Date(item.timestamp).toLocaleString()} · {item.status} · {item.planFingerprint?.slice(0, 10) ?? "no-fingerprint"}</small></div><span>{item.taskSummaries.map((task) => `${task.taskId}:${task.status}`).join(", ")}</span></article>)}</div>}<div className="harness-audit-list"><strong>Audit History</strong>{auditHistory.length === 0 ? <small>No durable audit entries</small> : auditHistory.slice(0, 10).map((entry) => <article key={`${entry.executionId}-${entry.taskId}-${entry.finishedAt}`}><div><b>{entry.taskId}</b><span>{entry.outcome} · {entry.verificationStatus}</span></div><small>{entry.capability} · {entry.executorId ?? "no executor"}</small><small>{entry.targetPath ?? "no target"} · rollback {entry.rollbackAttempted ? entry.rollbackSucceeded ? "SUCCESS" : "FAILED" : "NOT RUN"}</small><small>{entry.fingerprint?.slice(0, 16) ?? "no fingerprint"}</small></article>)}</div>
         </section>
       </div>

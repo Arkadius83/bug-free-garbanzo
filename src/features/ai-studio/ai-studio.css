@@ -1,0 +1,362 @@
+/* AI Studio V5.2 — compact layout polish */
+.ai-studio-page, .conversation-page {
+  padding: var(--v4-page-pad-y) var(--v4-page-pad-x) var(--v4-page-pad-bottom);
+}
+.conversation-page {
+  display: grid;
+  align-content: start;
+  gap: var(--v4-section-gap);
+  min-width: 0;
+}
+
+/* --- Context bar ------------------------------------------------------ */
+.ai-studio-context-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--ui-space-3);
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-control);
+  background: var(--v4-surface-raised);
+}
+.ai-studio-context-bar span {
+  display: grid;
+  gap: 2px;
+}
+.ai-studio-context-bar small {
+  color: var(--ui-text-secondary);
+  font-size: 7px;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.ai-studio-context-bar strong {
+  color: var(--ui-text-primary);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.context-artist { min-width: 120px; }
+.context-release { min-width: 140px; }
+.context-provider { min-width: 180px; }
+.context-status { min-width: 100px; }
+
+/* --- Mode bar --------------------------------------------------------- */
+.ai-studio-mode-bar {
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid #2d4362;
+  border-radius: var(--ui-radius-control);
+  background: #0a1423;
+  overflow: hidden;
+}
+.mode-tab {
+  min-height: 32px;
+  padding: 6px 18px;
+  border: none;
+  background: transparent;
+  color: var(--ui-text-secondary);
+  font-size: .76rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+.mode-tab:hover:not(.active) {
+  color: #d6f7ff;
+  background: #12263d;
+}
+.mode-tab.active {
+  border-color: var(--ui-line-cyan);
+  color: #e9fdff;
+  background: #133a53;
+  box-shadow: var(--ui-glow-subtle);
+}
+.mode-tab:focus-visible {
+  outline: 2px solid var(--ui-line-cyan);
+  outline-offset: -2px;
+}
+
+/* --- Create mode layout ----------------------------------------------- */
+.ai-studio-create-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 23%) minmax(0, 1fr);
+  gap: 12px 16px;
+  align-items: start;
+  min-width: 0;
+}
+
+.ai-studio-setup {
+  min-width: 0;
+}
+.ai-studio-setup .v4-card {
+  display: grid;
+  gap: var(--ui-space-2);
+}
+
+.ai-studio-create {
+  min-width: 0;
+}
+
+.create-workspace-body {
+  display: grid;
+  gap: var(--v4-card-gap);
+}
+
+.create-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.generation-progress {
+  padding: 8px 12px;
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-control);
+  background: var(--v4-surface-raised);
+  color: var(--ui-text-secondary);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.generation-error {
+  padding: 8px 12px;
+  border: 1px solid var(--ui-line-danger);
+  border-radius: var(--ui-radius-control);
+  background: var(--v4-surface-raised);
+  color: #ff9aa6;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.create-result {
+  max-height: 400px;
+  overflow-y: auto;
+}
+.create-result .preview-messages {
+  display: grid;
+  gap: var(--v4-card-gap);
+}
+.create-result article {
+  padding: var(--v4-card-gap);
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-control);
+  background: var(--v4-surface-raised);
+}
+.create-result article p {
+  margin: 0;
+  color: var(--ui-text-primary);
+  font-size: 14px;
+  line-height: 1.68;
+}
+
+/* --- Assistant mode layout -------------------------------------------- */
+.ai-studio-assistant-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--v4-section-gap);
+  min-width: 0;
+}
+.ai-studio-assistant-layout .conversation-main {
+  min-width: 0;
+}
+
+.assistant-diagnostics-toggle {
+  margin-top: var(--v4-card-gap);
+}
+
+/* --- Shared components ------------------------------------------------ */
+.conversation-message small {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--ui-text-secondary);
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.conversation-message p {
+  margin: 0;
+  color: var(--ui-text-primary);
+  font-size: 14px;
+  line-height: 1.68;
+}
+.conversation-message.user {
+  align-self: flex-end;
+  border-color: #514073;
+  background: var(--ui-surface-raised);
+  border-radius: var(--ui-radius-control);
+}
+.conversation-history {
+  display: grid;
+  gap: var(--v4-card-gap);
+}
+.conversation-composer {
+  display: flex;
+  gap: var(--ui-space-2);
+  align-items: flex-end;
+  margin-top: var(--v4-card-gap);
+}
+.conversation-composer textarea { flex: 1; }
+.conversation-composer .danger-button {
+  height: 44px;
+  border: 1px solid #8c3948;
+  border-radius: 7px;
+  padding: 0 18px;
+  background: #2a1118;
+  color: #ff9aa6;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.analytics-empty {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  text-align: center;
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-control);
+  background: var(--v4-surface-raised);
+}
+.analytics-empty strong {
+  color: var(--ui-text-primary);
+  font-size: 11px;
+}
+.analytics-empty p {
+  margin: 0;
+  color: var(--ui-text-secondary);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+/* --- Provider diagnostics -------------------------------------------- */
+.provider-diagnostics {
+  margin-top: 12px;
+  border-top: 1px solid var(--v4-separator);
+  padding-top: 9px;
+  color: var(--ui-text-secondary);
+  font-size: 9px;
+}
+.provider-diagnostics summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  list-style: none;
+}
+.provider-diagnostics summary span {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+.provider-diagnostics summary em {
+  margin-left: auto;
+  color: var(--ui-text-secondary);
+  font-style: normal;
+}
+.provider-diagnostics-body {
+  display: grid;
+  gap: 9px;
+  margin-top: 9px;
+}
+.provider-diagnostics-overview {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 9px;
+  border: 1px solid var(--v4-edge);
+  border-radius: 6px;
+  background: var(--v4-surface-raised);
+}
+.provider-attempt {
+  padding: var(--v4-card-gap);
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-control);
+  background: var(--v4-surface);
+}
+.provider-attempt header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.provider-attempt strong {
+  color: var(--ui-text-primary);
+  font-size: 10px;
+}
+.provider-attempt dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+.provider-attempt dl div {
+  min-width: 0;
+}
+.provider-attempt dt {
+  color: var(--ui-text-secondary);
+  font-size: 7px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.provider-attempt dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--ui-text-secondary);
+}
+.provider-attempt-error {
+  margin: 0 !important;
+  color: #ff9aa6 !important;
+  font-size: 9px !important;
+  line-height: 1.4 !important;
+  border-color: var(--ui-line-danger);
+}
+
+/* --- Responsive ------------------------------------------------------- */
+@media (max-width: 1920px) {
+  .ai-studio-create-layout {
+    grid-template-columns: minmax(220px, 23%) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1440px) {
+  .ai-studio-create-layout {
+    grid-template-columns: minmax(200px, 23%) minmax(0, 1fr);
+  }
+  .ai-studio-context-bar {
+    gap: var(--ui-space-2);
+  }
+}
+
+@media (max-width: 1050px) {
+  .ai-studio-create-layout {
+    grid-template-columns: 1fr;
+  }
+  .ai-studio-setup {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--ui-space-2);
+  }
+}
+
+@media (max-width: 700px) {
+  .ai-studio-create-layout {
+    grid-template-columns: 1fr;
+  }
+  .ai-studio-setup {
+    grid-template-columns: 1fr;
+  }
+  .ai-studio-context-bar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .conversation-composer {
+    flex-direction: column;
+  }
+  .mode-tab {
+    flex: 1;
+    text-align: center;
+  }
+  .create-result {
+    max-height: none;
+  }
+}

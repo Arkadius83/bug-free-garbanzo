@@ -1,0 +1,113 @@
+/* Fixed desktop layout; smaller windows retain the V4 scrolling composition. */
+.overview-v4 .kpi-symbol {
+  flex-basis: 42px;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  font-size: 20px;
+}
+.overview-v4 .kpi-value-field span { font-size: 12px; }
+
+@media (min-width: 1360px) and (min-height: 950px) {
+  .dashboard.overview-v4 {
+    height: calc(100dvh - 70px - 64px);
+    min-height: 0;
+    max-height: calc(100dvh - 70px - 64px);
+    padding: 8px 20px;
+    gap: 8px;
+    overflow: hidden;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    grid-template-rows: 24px minmax(0, .85fr) minmax(0, 2.2fr) 64px minmax(0, 2.8fr) minmax(0, 1.1fr) 36px;
+    grid-template-areas:
+      "heading heading heading heading heading heading heading heading heading heading heading heading"
+      "kpis kpis kpis kpis kpis kpis kpis kpis kpis kpis kpis kpis"
+      "featured featured featured featured featured studio studio studio studio actions actions actions"
+      "workflow workflow workflow workflow workflow workflow workflow workflow workflow workflow workflow workflow"
+      "platforms platforms platforms platforms youtube youtube youtube youtube youtube campaign campaign campaign"
+      "recommendations recommendations recommendations recommendations blockers blockers blockers blockers schedule schedule schedule schedule"
+      "system system system system system system system system system system system system";
+  }
+  .overview-v4 .dashboard-top-strip,
+  .overview-v4 .dashboard-main-row,
+  .overview-v4 .dashboard-operations-grid { display: contents; }
+  .overview-v4 .dashboard-header { grid-area: heading; }
+  .overview-v4 .dashboard-kpi-row { grid-area: kpis; }
+  .overview-v4 .featured-release-card { grid-area: featured; }
+  .overview-v4 .ai-studio-chat { grid-area: studio; }
+  .overview-v4 .quick-actions-panel { grid-area: actions; }
+  .overview-v4 .release-workflow-card { grid-area: workflow; }
+  .overview-v4 .platform-performance { grid-area: platforms; }
+  .overview-v4 .youtube-performance { grid-area: youtube; }
+  .overview-v4 .campaign-performance { grid-area: campaign; }
+  .overview-v4 .recommendations { grid-area: recommendations; }
+  .overview-v4 .blockers { grid-area: blockers; }
+  .overview-v4 .upcoming { grid-area: schedule; }
+  .overview-v4 .dashboard-system-strip { grid-area: system; }
+
+  .overview-v4 .dashboard-panel,
+  .overview-v4 .dashboard-operation-panel,
+  .overview-v4 .dashboard-system-strip {
+    min-height: 0;
+    min-width: 0;
+    height: 100%;
+    max-height: 100%;
+    padding: 10px 12px;
+    overflow: auto;
+  }
+  .overview-v4 .dashboard-header h1 { font-size: 20px; margin: 0; }
+  .overview-v4 .dashboard-panel-heading { min-height: 24px; padding-bottom: 6px; gap: 6px; flex-wrap: nowrap; }
+  .overview-v4 .dashboard-panel-heading small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .overview-v4 .dashboard-eyebrow { font-size: 12px; }
+  .overview-v4 .dashboard-kpi-row { gap: 8px; align-items: stretch; min-height: 0; }
+  .overview-v4 .kpi-widget { min-height: 0; height: 100%; padding: 10px 12px; gap: 12px; }
+  .overview-v4 .kpi-value-field { gap: 3px; }
+  .overview-v4 .kpi-value-field strong { font-size: 26px; }
+  .overview-v4 .kpi-value-field span { white-space: nowrap; text-overflow: ellipsis; }
+  .overview-v4 .featured-release-card { grid-template-rows: auto minmax(0,1fr) auto; gap: 4px; overflow: hidden; }
+  .overview-v4 .featured-release-body { min-height: 0; padding: 4px 0; overflow: auto; gap: 12px; }
+  .overview-v4 .featured-release-art { height: 124px; width: 124px; max-height: 100%; aspect-ratio: 1; flex-shrink: 0; }
+  .overview-v4 .featured-release-copy h2 { font-size: 18px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .overview-v4 .featured-release-copy p { margin: 3px 0; }
+  .overview-v4 .featured-release-meta { margin: 4px 0; }
+  .overview-v4 .featured-release-footer { padding-top: 4px; flex-wrap: nowrap; }
+  .overview-v4 .dashboard-empty-panel { grid-template-rows: none; align-content: center; }
+  .overview-v4 .ai-studio-chat { overflow: hidden; gap: 4px; }
+  .overview-v4 .ai-studio-model-select { max-width: 150px; font-size: 12px; }
+  .overview-v4 .ai-studio-messages { flex: 1 1 0; min-height: 0; }
+  .overview-v4 .ai-studio-input { flex-shrink: 0; }
+  .overview-v4 .quick-actions-panel { display: grid; grid-template-rows: auto minmax(0,1fr); gap: 6px; }
+  .overview-v4 .quick-actions-list { margin: 0; gap: 6px; min-height: 0; overflow: auto; align-content: start; }
+  .overview-v4 .quick-actions-list button { min-height: 44px; padding: 6px 8px; }
+  .overview-v4 .quick-actions-list small { font-size: 12px; margin-top: 2px; }
+  .overview-v4 .release-workflow-card { grid-template-columns: minmax(0,3fr) minmax(0,5fr) minmax(0,4fr); grid-template-rows: minmax(0,1fr); gap: 12px; align-items: center; padding-block: 6px; }
+  .overview-v4 .workflow-head h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+  .overview-v4 .workflow-head { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 3px 8px; line-height: 16px; }
+  .overview-v4 .workflow-head h2 { grid-row: 2; grid-column: 1 / -1; }
+  .overview-v4 .workflow-head .ui-status-badge { grid-row: 1; grid-column: 2; }
+  .overview-v4 .workflow-step { gap: 2px; line-height: 16px; }
+  .overview-v4 .workflow-step i { width: 20px; height: 20px; }
+  .overview-v4 .workflow-step:not(:last-child)::after { top: 10px; }
+  .overview-v4 .workflow-empty { margin: 0; font-size: 12px; }
+  .overview-v4 .workflow-foot { font-size: 12px; justify-content: flex-end; gap: 4px 8px; }
+  .overview-v4 .workflow-foot span:nth-child(2) { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .overview-v4 .dashboard-operation-panel { grid-template-rows: auto minmax(0,1fr); gap: 6px; overflow: hidden; }
+  .overview-v4 .dashboard-operation-panel > :nth-child(2) { min-height: 0; overflow: auto; margin: 0; scrollbar-width: thin; }
+  .overview-v4 .platform-performance .platform-status-list { max-height: none; overflow: auto; grid-auto-rows: minmax(24px, 1fr); }
+  .overview-v4 .platform-status-list > div { height: auto; min-height: 24px; padding: 0; gap: 8px; }
+  .overview-v4 .platform-status-list small { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; max-width: 100%; }
+  .overview-v4 .platform-status-list .ui-status-badge { font-size: 12px; }
+  .overview-v4 .platform-name { font-size: 12px; }
+  .overview-v4 :is(.dashboard-operation-panel,.dashboard-system-strip) .ui-status-badge { font-size: 12px; }
+  .overview-v4 .dashboard-action-list li, .overview-v4 .dashboard-blocker-list li, .overview-v4 .dashboard-schedule-list li { padding: 4px 0; }
+  .overview-v4 .dashboard-operation-panel .dashboard-list-overflow { font-size: 11px; margin-top: 2px; }
+  .overview-v4 .dashboard-operation-panel small { font-size: 12px; }
+  .overview-v4 .youtube-analytics-metrics { margin: 0; gap: 4px 10px; }
+  .overview-v4 .youtube-analytics-metrics span { padding: 4px 0; }
+  .overview-v4 .youtube-analytics-metrics b { font-size: 17px; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+  .overview-v4 .youtube-analytics-chart { height: 56px; margin: 4px 0; }
+  .overview-v4 .youtube-analytics-lists { margin-top: 4px; gap: 8px; }
+  .overview-v4 .dashboard-system-strip { padding: 4px 12px; flex-wrap: nowrap; align-items: center; }
+  .overview-v4 .dashboard-system-strip > div { display: flex; align-items: center; gap: 12px; }
+  .overview-v4 .dashboard-system-strip .ui-status-badge { font-size: 12px; }
+  .overview-v4 .dashboard-empty-copy { font-size: 12px; margin: 4px 0; }
+}

@@ -142,17 +142,23 @@ beginPublishing: (itemId: string) => ipcRenderer.invoke("studio:begin-publishing
   publishYouTubeTest: (input) => ipcRenderer.invoke("studio:publish-youtube-test", input).catch(() => ({ ok:false, platform:"YouTube", sanitizedError:"YouTube test not consolidated" } as any)),
   selectYouTubeTestVideo: () => ipcRenderer.invoke("studio:select-youtube-test-video").catch(() => null as any),
   selectYouTubeTestThumbnail: () => ipcRenderer.invoke("studio:select-youtube-test-thumbnail").catch(() => null as any),
-  getTikTokConnection: () => ipcRenderer.invoke("studio:get-tiktok-connection").catch(() => ({ configured:false, connected:false, error:"TikTok not consolidated â€” UI disabled" } as any)),
-  saveTikTokCredentials: (clientKey, clientSecret) => ipcRenderer.invoke("studio:save-tiktok-credentials", clientKey, clientSecret).catch(() => Promise.reject(new Error("TikTok not consolidated"))),
-  beginTikTokConnect: () => ipcRenderer.invoke("studio:begin-tiktok-connect").catch(() => Promise.reject(new Error("TikTok not consolidated"))),
-  disconnectTikTok: () => ipcRenderer.invoke("studio:disconnect-tiktok").catch(() => Promise.reject(new Error("TikTok not consolidated"))),
-  getTikTokCreatorInfo: () => ipcRenderer.invoke("studio:get-tiktok-creator-info").catch(() => ({ creatorNickName:null } as any)),
-  publishTikTokTest: (input) => ipcRenderer.invoke("studio:publish-tiktok-test", input).catch(() => ({ ok:false, platform:"TikTok", sanitizedError:"TikTok test not consolidated" } as any)),
-  selectTikTokTestVideo: () => ipcRenderer.invoke("studio:select-tiktok-test-video").catch(() => null as any),
+  getTikTokConnection: () => ipcRenderer.invoke("studio:get-tiktok-connection"),
+  saveTikTokCredentials: (clientKey, clientSecret) => ipcRenderer.invoke("studio:save-tiktok-credentials", clientKey, clientSecret),
+  beginTikTokConnect: () => ipcRenderer.invoke("studio:begin-tiktok-connect"),
+  disconnectTikTok: () => ipcRenderer.invoke("studio:disconnect-tiktok"),
+  getTikTokCreatorInfo: () => ipcRenderer.invoke("studio:get-tiktok-creator-info"),
+  getTikTokUserProfile: () => ipcRenderer.invoke("studio:get-tiktok-user-profile"),
+  publishTikTokTest: (input) => ipcRenderer.invoke("studio:publish-tiktok-test", input),
+  selectTikTokTestVideo: () => ipcRenderer.invoke("studio:select-tiktok-test-video"),
   getYouTubeChannelData: () => ipcRenderer.invoke("studio:get-youtube-channel-data"),
   syncYouTubeChannelData: () => ipcRenderer.invoke("studio:sync-youtube-channel-data"),
   getYouTubeAnalytics: (range) => ipcRenderer.invoke("studio:get-youtube-analytics", range),
-  syncYouTubeAnalytics: (range) => ipcRenderer.invoke("studio:sync-youtube-analytics", range)
+  syncYouTubeAnalytics: (range) => ipcRenderer.invoke("studio:sync-youtube-analytics", range),
+  getDistroKidConnection: () => ipcRenderer.invoke("studio:get-distrokid-connection"),
+  prepareDistroKidForm: (releaseId) => ipcRenderer.invoke("studio:prepare-distrokid-form", releaseId),
+  openDistroKidUpload: (releaseId) => ipcRenderer.invoke("studio:open-distrokid-upload", releaseId),
+  fillDistroKidForm: () => ipcRenderer.invoke("studio:fill-distrokid-form"),
+  closeDistroKidSession: () => ipcRenderer.invoke("studio:close-distrokid-session")
 };
 
 contextBridge.exposeInMainWorld("studio", api);

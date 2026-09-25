@@ -22,8 +22,8 @@ describe("ContentCalendar", () => {
     studio.listScheduleEvents = async () => [mockScheduleEvent({ campaignItemTitle: "Launch caption", platform: "Instagram", status: "READY", scheduledAt: new Date().toISOString() })];
     render(<ContentCalendar />);
     expect(await screen.findByText("Launch caption")).toBeInTheDocument();
-    expect(screen.getByText(/Instagram/)).toBeInTheDocument();
-    expect(screen.getByText(/Different Perspective/)).toBeInTheDocument();
+    expect(screen.getByText(/Instagram · Different Perspective/)).toBeInTheDocument();
+    expect(screen.getByText(/Launch caption\s*—\s*Different Perspective/)).toBeInTheDocument();
   });
 
   it("switches week, month and list views", async () => {

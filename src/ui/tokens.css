@@ -32,4 +32,19 @@
   --panel-soft: var(--ui-surface-raised);
   --muted: var(--ui-text-muted);
   --text: var(--ui-text-primary);
+
+  /* V4 shared layout foundation (page shells, cards, toolbars) */
+  --v4-page-pad-x: 24px;
+  --v4-page-pad-y: 16px;
+  --v4-page-pad-bottom: 24px;
+  --v4-page-gap: 16px;
+  --v4-card-pad: 18px;
+  --v4-card-gap: 14px;
+  --v4-section-gap: 16px;
+  --v4-edge: color-mix(in srgb, var(--ui-line-cyan) 34%, var(--ui-line-subtle));
+  --v4-separator: rgb(54 118 157 / 34%);
+  --v4-surface: linear-gradient(125deg, var(--ui-surface-raised), #091522 75%, #0b1e29);
+  --v4-surface-shadow: inset 0 1px 0 rgb(82 228 225 / 12%), 0 6px 18px rgb(0 0 0 / 20%);
+  --v4-scrollbar-thumb: color-mix(in srgb, var(--ui-line-cyan) 30%, transparent);
+  --v4-scrollbar-thumb-hover: color-mix(in srgb, var(--ui-line-cyan) 52%, transparent);
 }

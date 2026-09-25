@@ -14,6 +14,41 @@ const seedArtists = [
   ["echoes-of-arcadia", "Echoes of Arcadia", ["Psybient", "Psychill", "Downtempo", "Ambient"], "Cinematic, spacious, contemplative, organic"]
 ] as const;
 
+const DISTROKID_ARTIST_DEFAULTS: Record<string, import("../../shared/contracts.js").DistroKidArtistDefaults> = {
+  arkadelic: {
+    recordLabel: "Sonic Ark Records",
+    songwriter: null,
+    appleArtistUrl: null,
+    trackPrice: null,
+    albumPrice: null,
+    instrumental: false,
+  },
+  "the-arkadiusz": {
+    recordLabel: null,
+    songwriter: null,
+    appleArtistUrl: null,
+    trackPrice: null,
+    albumPrice: null,
+    instrumental: false,
+  },
+  "ar-tek": {
+    recordLabel: null,
+    songwriter: null,
+    appleArtistUrl: null,
+    trackPrice: null,
+    albumPrice: null,
+    instrumental: false,
+  },
+  "echoes-of-arcadia": {
+    recordLabel: null,
+    songwriter: null,
+    appleArtistUrl: null,
+    trackPrice: null,
+    albumPrice: null,
+    instrumental: false,
+  },
+};
+
 const releasePlanTransitions: Record<ReleasePlanStatus, ReleasePlanStatus[]> = {
   DRAFT: ["REVIEWED", "CANCELLED"],
   REVIEWED: ["DRAFT", "APPROVED", "CANCELLED"],
@@ -520,6 +555,31 @@ export class StudioDatabase {
   }
 
   getSpotifyArtistMappings(): SpotifyArtistMapping[] { return this.getSetting<SpotifyArtistMapping[]>("spotify.artistMappings", []); }
+  getDistroKidArtistDefaults(artistId: string): import("../../shared/contracts.js").DistroKidArtistDefaults {
+    const stored = this.getSetting<Record<string, Partial<import("../../shared/contracts.js").DistroKidArtistDefaults>>>("distrokid.artistDefaults", {});
+    const override = stored[artistId] ?? {};
+    const base = DISTROKID_ARTIST_DEFAULTS[artistId] ?? DISTROKID_ARTIST_DEFAULTS["arkadelic"]!;
+    return {
+      recordLabel: override.recordLabel !== undefined ? override.recordLabel : base.recordLabel,
+      songwriter: override.songwriter !== undefined ? override.songwriter : base.songwriter,
+      appleArtistUrl: override.appleArtistUrl !== undefined ? override.appleArtistUrl : base.appleArtistUrl,
+      trackPrice: override.trackPrice !== undefined ? override.trackPrice : base.trackPrice,
+      albumPrice: override.albumPrice !== undefined ? override.albumPrice : base.albumPrice,
+      instrumental: override.instrumental !== undefined ? override.instrumental : base.instrumental,
+    };
+  }
+  saveDistroKidArtistDefaults(artistId: string, defaults: Partial<import("../../shared/contracts.js").DistroKidArtistDefaults>): import("../../shared/contracts.js").DistroKidArtistDefaults {
+    const stored = this.getSetting<Record<string, Partial<import("../../shared/contracts.js").DistroKidArtistDefaults>>>("distrokid.artistDefaults", {});
+    stored[artistId] = { ...(stored[artistId] ?? {}), ...defaults };
+    this.setSetting("distrokid.artistDefaults", stored);
+    return this.getDistroKidArtistDefaults(artistId);
+  }
+  getArtistGenres(artistId: string): string[] {
+    const row = this.database.prepare("SELECT genres_json FROM artist_profiles WHERE id=?").get(artistId) as { genres_json?: string } | undefined;
+    if (!row?.genres_json) return [];
+    try { const parsed: unknown = JSON.parse(row.genres_json); return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : []; }
+    catch { return []; }
+  }
   saveSpotifyArtistMappings(mappings: SpotifyArtistMapping[]): SpotifyArtistMapping[] {
     const clean = mappings.filter((item) => seedArtists.some(([id]) => id === item.artistId) && item.spotifyArtistId.trim()).map((item) => ({ artistId: item.artistId, spotifyArtistId: spotifyArtistId(item.spotifyArtistId) }));
     this.setSetting("spotify.artistMappings", clean); return clean;

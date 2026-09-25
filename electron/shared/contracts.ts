@@ -414,6 +414,11 @@ export interface TikTokCreatorInfo {
   stitch_disabled?: boolean;
   max_video_post_duration_sec?: number;
 }
+export interface TikTokUserProfile {
+  openId: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
 export type TikTokPublishMode = "draft" | "direct";
 export interface TikTokTestPublishInput {
   mode: TikTokPublishMode;
@@ -429,6 +434,91 @@ export interface TikTokTestPublishResult extends PublisherTestResult {
   publishId: string | null;
   mode: TikTokPublishMode;
   creatorInfo?: TikTokCreatorInfo | null;
+}
+
+export interface DistroKidConnection {
+  configured: boolean;
+  connected: boolean;
+  mode: "browser-assisted";
+  uploadUrl: string;
+  sessionId: string | null;
+  releaseId: string | null;
+  openedAt: string | null;
+  error: string | null;
+}
+export interface DistroKidAudioFile {
+  fileName: string;
+  filePath: string;
+}
+export interface DistroKidArtistMappings {
+  spotifyUrl: string | null;
+  youtubeUrl: string | null;
+  appleUrl: string | null;
+}
+export interface DistroKidSongwriter {
+  firstName: string;
+  middleName?: string | null;
+  lastName: string;
+  role?: string | null;
+}
+export interface DistroKidArtistDefaults {
+  recordLabel: string | null;
+  songwriter: DistroKidSongwriter | null;
+  appleArtistUrl: string | null;
+  trackPrice: string | null;
+  albumPrice: string | null;
+  instrumental: boolean;
+}
+export interface DistroKidFormPayload {
+  releaseId: string;
+  songTitle: string;
+  artistName: string;
+  genre: string;
+  secondaryGenre: string | null;
+  releaseDate: string | null;
+  songCount: number;
+  language: ContentLanguage;
+  audioFiles: DistroKidAudioFile[];
+  artworkFilePath: string | null;
+  coverFileName: string | null;
+  artistMappings: DistroKidArtistMappings;
+  recordLabel: string | null;
+  songwriter: DistroKidSongwriter | null;
+  trackPrice: string | null;
+  albumPrice: string | null;
+  instrumental: boolean;
+  preparedAt: string;
+}
+export interface DistroKidUploadSession {
+  sessionId: string;
+  releaseId: string;
+  openedAt: string;
+  uploadUrl: string;
+  payload: DistroKidFormPayload;
+}
+export type DistroKidFieldStatus = "filled" | "already" | "not-found" | "manual" | "no-data" | "mismatch" | "error";
+export interface DistroKidFieldReport {
+  id: string;
+  track: number | null;
+  status: DistroKidFieldStatus;
+  expected: string | null;
+  actual: string | null;
+}
+export type DistroKidFileStatus = "attached" | "not-found" | "missing-on-disk" | "error";
+export interface DistroKidFileReport {
+  kind: "artwork" | "audio";
+  track: number | null;
+  fileName: string | null;
+  selector: string | null;
+  status: DistroKidFileStatus;
+}
+export interface DistroKidFillResult {
+  ok: boolean;
+  filledFields: number;
+  message: string;
+  loginRequired: boolean;
+  fields: DistroKidFieldReport[];
+  files: DistroKidFileReport[];
 }
 
 export interface YouTubeThumbnail { url: string; width?: number | null; height?: number | null; }
@@ -1026,10 +1116,16 @@ export interface StudioApi {
   beginTikTokConnect(): Promise<void>;
   disconnectTikTok(): Promise<TikTokConnection>;
   getTikTokCreatorInfo(): Promise<TikTokCreatorInfo>;
+  getTikTokUserProfile(): Promise<TikTokUserProfile>;
   publishTikTokTest(input: TikTokTestPublishInput): Promise<TikTokTestPublishResult>;
   selectTikTokTestVideo(): Promise<string | null>;
   getYouTubeChannelData(): Promise<YouTubeChannelDataSnapshot | null>;
   syncYouTubeChannelData(): Promise<YouTubeChannelDataSyncResult>;
   getYouTubeAnalytics(range: YouTubeAnalyticsRange): Promise<YouTubeAnalyticsSnapshot | null>;
   syncYouTubeAnalytics(range: YouTubeAnalyticsRange): Promise<YouTubeAnalyticsSyncResult>;
+  getDistroKidConnection(): Promise<DistroKidConnection>;
+  prepareDistroKidForm(releaseId: string): Promise<DistroKidFormPayload>;
+  openDistroKidUpload(releaseId: string): Promise<DistroKidUploadSession>;
+  fillDistroKidForm(): Promise<DistroKidFillResult>;
+  closeDistroKidSession(): Promise<DistroKidConnection>;
 }

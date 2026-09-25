@@ -18,3 +18,16 @@
   font-size: 14px;
   line-height: 1.6;
 }
+
+.harness-request-panel.v4-card,
+.harness-result-panel.v4-card,
+.harness-approval-panel.v4-card,
+.harness-capability-panel.v4-card,
+.harness-history-panel.v4-card {
+  position: relative;
+  min-width: 0;
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-panel);
+  background: var(--v4-surface);
+  box-shadow: var(--v4-surface-shadow);
+}

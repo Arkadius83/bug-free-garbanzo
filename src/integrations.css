@@ -1,9 +1,6 @@
-/* Campaign Pack Generator — used by App.tsx releases view */
+/* Campaign Pack Generator â€” used by App.tsx releases view */
 .integration-message { color:#b8c2cd; background:#0a0d12; border-left:2px solid #a9db32; padding:11px 13px; font-size:12px; }
 .campaign-pack-panel { margin-top:20px; padding:24px; }
-.campaign-pack-heading { display:flex; justify-content:space-between; align-items:flex-start; gap:20px; }
-.campaign-pack-heading h2 { margin:5px 0; }
-.campaign-pack-heading p { color:#87939f; margin:0; }
 .campaign-pack-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-top:18px; }
 .campaign-pack-grid article { border:1px solid #2b333d; border-radius:9px; background:#0a0f15; padding:14px; }
 .pack-item-head { display:flex; justify-content:space-between; gap:10px; }

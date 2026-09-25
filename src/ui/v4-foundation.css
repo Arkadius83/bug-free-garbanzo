@@ -1,0 +1,125 @@
+/* Shared V4 layout foundation: page shells, page headers, cards, toolbars and scrolling.
+   Visual reference: Overview V4.1. Loaded after styles.css so equal-specificity ties win here.
+   Namespace: .v4-* (plus header.v4-page-header). Feature CSS may layer on top with .v4-* hooks. */
+
+/* --- Page shell ------------------------------------------------------- */
+.v4-page {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: var(--v4-page-gap);
+  padding: var(--v4-page-pad-y) var(--v4-page-pad-x) var(--v4-page-pad-bottom);
+}
+
+/* --- Page header ------------------------------------------------------ */
+header.v4-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--v4-section-gap);
+  min-width: 0;
+  padding: 2px;
+}
+.v4-page-header-copy { display: grid; gap: 5px; min-width: 0; }
+.v4-page-header .eyebrow,
+.v4-card-header .eyebrow {
+  color: var(--ui-accent-cyan);
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+header.v4-page-header h1 {
+  margin: 0;
+  color: #f5f8ff;
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+.v4-page-lead { max-width: 84ch; margin: 0; color: var(--ui-text-secondary); font-size: .84rem; line-height: 1.55; }
+.v4-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--ui-space-2); flex-wrap: wrap; }
+
+/* --- Section cards ---------------------------------------------------- */
+.v4-card {
+  position: relative;
+  min-width: 0;
+  padding: var(--v4-card-pad);
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-panel);
+  background: var(--v4-surface);
+  box-shadow: var(--v4-surface-shadow);
+}
+.v4-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+  margin-bottom: var(--v4-card-gap);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--v4-separator);
+}
+.v4-card-heading { display: grid; gap: 3px; min-width: 0; }
+.v4-card-header h2 {
+  margin: 0;
+  color: var(--ui-text-primary);
+  font-size: 1.02rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+.v4-card-meta { display: flex; align-items: center; gap: var(--ui-space-2); flex-wrap: wrap; min-width: 0; }
+.v4-card-lead { max-width: 92ch; margin: 0 0 var(--v4-card-gap); color: var(--ui-text-secondary); font-size: .86rem; line-height: 1.55; }
+.v4-card-actions { display: flex; align-items: center; gap: var(--ui-space-2); flex-wrap: wrap; }
+.v4-card-body { display: grid; gap: var(--v4-card-gap); min-width: 0; }
+.v4-card-body > :last-child { margin-bottom: 0; }
+
+/* --- Toolbars --------------------------------------------------------- */
+.v4-toolbar { display: flex; align-items: center; gap: var(--ui-space-2); flex-wrap: wrap; min-width: 0; }
+.v4-toolbar-end { justify-content: flex-end; }
+
+/* --- Empty / note copy ------------------------------------------------ */
+.v4-empty { margin: 0; color: var(--ui-text-secondary); font-size: .84rem; line-height: 1.6; }
+
+/* --- Consistent internal scrolling ------------------------------------ */
+.v4-scroll {
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--v4-scrollbar-thumb) transparent;
+}
+.v4-scroll * { scrollbar-width: thin; scrollbar-color: var(--v4-scrollbar-thumb) transparent; }
+.v4-scroll::-webkit-scrollbar, .v4-scroll *::-webkit-scrollbar { width: 8px; height: 8px; }
+.v4-scroll::-webkit-scrollbar-track, .v4-scroll *::-webkit-scrollbar-track { background: transparent; }
+.v4-scroll::-webkit-scrollbar-thumb, .v4-scroll *::-webkit-scrollbar-thumb {
+  background: var(--v4-scrollbar-thumb);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+.v4-scroll::-webkit-scrollbar-thumb:hover, .v4-scroll *::-webkit-scrollbar-thumb:hover {
+  background: var(--v4-scrollbar-thumb-hover);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+/* --- Shared interaction affordances ----------------------------------- */
+.v4-page button:focus-visible,
+.v4-card button:focus-visible { outline: 2px solid var(--ui-line-cyan); outline-offset: 2px; }
+
+/* --- Responsive ------------------------------------------------------- */
+@media (max-width: 1050px) {
+  .v4-page { padding: 30px 24px var(--v4-page-pad-bottom); }
+}
+@media (max-width: 700px) {
+  .v4-page { padding-inline: 16px; }
+  header.v4-page-header { align-items: flex-start; flex-direction: column; gap: var(--ui-space-3); }
+  .v4-page-actions { width: 100%; justify-content: flex-start; }
+  .v4-page-actions .ui-button { flex: 1; }
+}
+.v4-page-header h1, .v4-card-heading h2 { overflow-wrap: anywhere; }
+.v4-card-actions, .v4-toolbar > * { max-width: 100%; }
+.v4-scroll:focus-visible { outline: 2px solid var(--ui-line-cyan); outline-offset: -2px; }

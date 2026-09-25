@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { InterfacePreferencesPanel } from "../../ui/InterfacePreferencesPanel";
-import type { ArtistAlias, KlingCliStatus, LocalServiceStatus, MediaBridgeStatus, MediaGenerationSettings, MetaConnection, SoundCloudConnection, SpotifyConnection, YouTubeConnection, TikTokConnection, YouTubeChannelDataSnapshot, TikTokCreatorInfo, BrandProfile, MediaAspectRatio } from "../../../electron/shared/contracts";
+import type { ArtistAlias, KlingCliStatus, LocalServiceStatus, MediaBridgeStatus, MediaGenerationSettings, MetaConnection, SoundCloudConnection, SpotifyConnection, YouTubeConnection, TikTokConnection, YouTubeChannelDataSnapshot, TikTokUserProfile, BrandProfile, MediaAspectRatio } from "../../../electron/shared/contracts";
 import { artists } from "../../data/artists";
 import { Tabs } from "../../ui/Tabs";
 import "./settings.css";
@@ -462,14 +462,33 @@ function TikTokConnectionSection() {
   const [connection, setConnection] = useState<TikTokConnection | null>(null);
   const [clientKey, setClientKey] = useState("");
   const [clientSecret, setClientSecret] = useState("");
-  const [creatorInfo, setCreatorInfo] = useState<TikTokCreatorInfo | null>(null);
+  const [profile, setProfile] = useState<TikTokUserProfile | null>(null);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!window.studio) return;
-    void window.studio.getTikTokConnection().then(setConnection).catch(() => undefined);
+    void window.studio.getTikTokConnection().then((current) => {
+      setConnection(current);
+      if (current.connected) void loadProfile();
+    }).catch((error) => {
+      console.error("[tiktok] Could not load connection status", error);
+      setMessage(error instanceof Error ? error.message : "Could not load TikTok connection status");
+    });
   }, []);
+
+  async function loadProfile() {
+    if (!window.studio) return;
+    try {
+      const nextProfile = await window.studio.getTikTokUserProfile();
+      setProfile(nextProfile);
+      setConnection((current) => current ? { ...current, openId: nextProfile.openId, displayName: nextProfile.displayName } : current);
+      setMessage("TikTok profile loaded.");
+    } catch (error) {
+      console.error("[tiktok] User Info request failed", error);
+      setMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Could not load TikTok profile");
+    }
+  }
 
   async function saveCredentials() {
     if (!window.studio) return; setBusy(true);
@@ -479,13 +498,15 @@ function TikTokConnectionSection() {
   }
 
   async function connect() {
-    if (!window.studio) return; setBusy(true); setMessage("Authorize in the browser...");
+    console.info("[tiktok] Connect TikTok clicked");
+    if (!window.studio) { setMessage("Desktop integration bridge is unavailable. Restart the application."); return; }
+    setBusy(true); setMessage("Authorize in the browser...");
     try {
       await window.studio.beginTikTokConnect();
       for (let i = 0; i < 180; i++) {
         await new Promise((r) => setTimeout(r, 1000));
         const c = await window.studio.getTikTokConnection(); setConnection(c);
-        if (c.connected) { setMessage(`Connected: ${c.openId}`); return; }
+        if (c.connected) { setMessage("TikTok connected. Loading profile..."); await loadProfile(); return; }
         if (c.error) throw new Error(c.error);
       }
       throw new Error("Authorization timed out");
@@ -494,7 +515,7 @@ function TikTokConnectionSection() {
   }
 
   async function disconnect() {
-    if (!window.studio) return; setConnection(await window.studio.disconnectTikTok()); setMessage("TikTok disconnected locally."); setCreatorInfo(null);
+    if (!window.studio) return; setConnection(await window.studio.disconnectTikTok()); setMessage("TikTok disconnected locally."); setProfile(null);
   }
 
   return (
@@ -513,11 +534,10 @@ function TikTokConnectionSection() {
         <button className="primary" disabled={busy || !connection?.configured || connection.connected} onClick={() => void connect()}>{busy ? "Working..." : "Connect TikTok"}</button>
         {connection?.connected && <button className="danger-button" disabled={busy} onClick={() => void disconnect()}>Disconnect</button>}
       </div>
-      {connection?.connected && <div className="connected-info connected-info-tiktok"><span>✓</span><div><strong>{connection.displayName}</strong><small>{connection.openId}</small></div></div>}
+      {connection?.connected && <div className="connected-info connected-info-tiktok">{profile?.avatarUrl ? <img className="tiktok-profile-avatar" src={profile.avatarUrl} alt="TikTok profile" /> : <span>✓</span>}<div><strong>{profile?.displayName ?? connection.displayName ?? "TikTok account"}</strong><small>open_id: {profile?.openId ?? connection.openId}</small></div></div>}
       {connection?.connected && (
         <div className="settings-row">
-          <button disabled={busy} onClick={() => { void window.studio?.getTikTokCreatorInfo().then((info) => { setCreatorInfo(info); setMessage(`Privacy options: ${info.privacy_level_options?.join(", ") ?? "n/a"}`); }).catch((e) => setMessage(e instanceof Error ? e.message : "Could not fetch")); }}>Query creator info</button>
-          {creatorInfo && <small className="settings-card-subtitle">Privacy: {creatorInfo.privacy_level_options?.join(", ") ?? "n/a"} · Max duration: {creatorInfo.max_video_post_duration_sec ?? "n/a"}s</small>}
+          <button disabled={busy} onClick={() => void loadProfile()}>Get profile info</button>
         </div>
       )}
       {message && <p className="settings-message">{message}</p>}

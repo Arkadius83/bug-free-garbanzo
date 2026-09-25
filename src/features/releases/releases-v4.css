@@ -1,0 +1,100 @@
+/* Releases V4 adaptation — shell-scoped layer on top of the shared V4 foundation.
+   Loaded last (main.tsx) so equal-specificity ties win over styles.css / release-plan.css /
+   release-foundation.css. Only rules that depend on Releases shell structure live here;
+   component skin comes from src/ui/v4-foundation.css. */
+
+/* Page header action accent (moved out of styles.css line-42 block). */
+.release-page .release-delete-action { border-color: #88495c; color: #ffafbb; }
+
+/* The Foundation tab owns the full workspace width. */
+.release-workspace-foundation .workspace { display: block; min-height: 0; }
+
+/* AI controls use native selects (moved out of the retired form-panel compound rule). */
+.release-page-v3 .ai-controls select { border-color: #31506d; background: #081524; color: #e6f2fb; }
+.release-page-v3 .ai-controls select:focus { border-color: var(--ui-line-purple); box-shadow: var(--ui-focus-ring); }
+
+/* Consistent vertical rhythm between the stacked sections inside the scroll view. */
+.release-page .release-workspace-view > .release-plan-panel,
+.release-page .release-workspace-view > .campaign-pack-panel { margin-top: var(--v4-section-gap); }
+
+/* Compact action buttons in card headers (foundation cards). */
+.release-page .v4-card-actions .ui-button { min-height: 30px; padding: 5px 9px; font-size: .74rem; }
+
+/* On short or narrow screens the page shell stops clipping: content flows and the
+   shared .v4-scroll scrollbar styling is released (matches styles.css media overrides). */
+@media (max-height: 820px), (max-width: 700px) {
+  .release-page .v4-scroll { overflow: visible; overscroll-behavior: auto; }
+  .release-page .release-workspace-view > .release-plan-panel,
+  .release-page .release-workspace-view > .campaign-pack-panel { margin-top: var(--v4-section-gap); }
+}
+
+/* Workspace chrome stays fixed; only the selected feature scrolls above the player. */
+.release-page.v4-page {
+  height: calc(100dvh - 70px - 64px);
+  max-height: calc(100dvh - 70px - 64px);
+  min-height: 0;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: var(--v4-card-gap);
+  padding: var(--v4-page-pad-y) var(--v4-page-pad-x) 12px;
+}
+.release-page .release-workspace-view { min-width: 0; padding: 2px 6px 12px 2px; }
+.release-page .release-workspace-view .workspace { min-height: 0; }
+.release-page .release-workspace-tabs { max-width: 100%; width: fit-content; overflow-x: auto; flex-shrink: 0; }
+.release-page .release-workspace-tabs .ui-tab { min-height: 36px; font-size: 13px; }
+.release-page .release-foundation-v31 { padding: 0; background: none; }
+.release-page .release-hero-v31 { padding: 12px 0 16px; flex-wrap: wrap; }
+.release-page .release-hero-copy { flex: 1 1 220px; }
+.release-page .release-hero-copy h1 { font-size: 24px; }
+.release-page .release-hero-facts { gap: 16px; }
+.release-page .foundation-workflow { margin-bottom: 16px; padding: 12px 0; }
+.release-page .foundation-workflow small { font-size: 12px; }
+.release-page .foundation-grid { gap: var(--v4-section-gap); }
+.release-page .foundation-column { gap: var(--v4-section-gap); }
+.release-page .foundation-card { padding: var(--v4-card-pad); }
+.release-page .foundation-card p { overflow-wrap: anywhere; }
+.release-page .foundation-save p, .release-page .foundation-feedback { font-size: 12px; }
+.release-page .v4-card-header h2 { font-size: 16px; }
+.release-page .rp-panel { background: var(--v4-surface); border-color: var(--v4-edge); box-shadow: var(--v4-surface-shadow); }
+.release-page .rp-panel::before { display: none; }
+.release-page .rp-header { align-items: start; }
+.release-page .rp-header-left, .release-page .rp-header-right { min-width: 0; }
+.release-page .rp-summary, .release-page .rp-header h2, .release-page .rp-card-title { overflow-wrap: anywhere; }
+.release-page .rp-card, .release-page .pcr-item, .release-page .campaign-pack-grid > article {
+  border-radius: var(--ui-radius-panel);
+  border-color: var(--v4-edge);
+  box-shadow: none;
+}
+.release-page .campaign-pack-grid > article { background: var(--ui-surface-raised); min-width: 0; }
+.release-page .campaign-pack-grid p, .release-page .pcr-content-text, .release-page .draft pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.release-page .draft pre { max-height: 420px; overflow: auto; }
+.release-page .pack-item-actions, .release-page .draft-actions { flex-wrap: wrap; gap: 8px; }
+.release-page .pack-item-actions button, .release-page .draft-actions button, .release-page .ai-controls select {
+  min-height: 32px;
+  border-radius: var(--ui-radius-control);
+  border: 1px solid var(--ui-line-subtle);
+  background: var(--ui-surface-raised);
+  color: var(--ui-text-primary);
+  font-size: 12px;
+}
+.release-page .pack-item-actions button:hover:not(:disabled), .release-page .draft-actions button:hover:not(:disabled) {
+  border-color: var(--ui-line-cyan); background: var(--ui-surface-hover);
+}
+.release-page .pack-item-actions button:disabled { opacity: .5; cursor: not-allowed; }
+.release-page .media-gallery-grid article, .release-page .draft-workflow article { min-width: 0; }
+.release-page .media-gallery-grid p { overflow-wrap: anywhere; }
+@media (max-width: 1500px) {
+  .release-page .foundation-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .release-page .foundation-column:last-child { grid-column: 1 / -1; grid-template-columns: repeat(3,minmax(0,1fr)); align-items: start; }
+  .release-page .readiness-summary { flex-wrap: wrap; }
+}
+@media (max-height: 820px), (max-width: 900px) {
+  .release-page.v4-page { height: auto; max-height: none; overflow: visible; padding-bottom: 84px; }
+  .release-page .release-workspace-view { overflow: visible; }
+  .release-page .foundation-grid, .release-page .foundation-column:last-child { grid-template-columns: minmax(0,1fr); }
+  .release-page .foundation-column:last-child { grid-column: auto; }
+}

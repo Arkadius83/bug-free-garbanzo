@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ArtistAlias, ConversationMessage, ConversationRuntimeState, ProviderExecutionTrace, ReleaseSummary, SystemStatus } from "../electron/shared/contracts";
 import { buildProviderTraceViewModel } from "../electron/shared/provider-trace-view-model";
+import { PageHeader } from "./ui/PageHeader";
+import { SectionCard } from "./ui/SectionCard";
+import { Button } from "./ui/Button";
+import { Textarea } from "./ui/Textarea";
 
 type ConversationWorkspaceProps = {
   artistId: ArtistAlias;
@@ -12,7 +16,9 @@ type ConversationWorkspaceProps = {
   onOpenRelease: () => void;
 };
 
+type Mode = "create" | "assistant";
 const MAX_SESSION_MESSAGES = 16;
+
 type ConversationUiMessage = ConversationMessage & {
   providerTrace?: ProviderExecutionTrace | null;
   providerLabel?: string | null;
@@ -66,7 +72,9 @@ function ProviderDiagnostics({ trace }: { trace?: ProviderExecutionTrace | null 
     </details>
   );
 }
+
 export function ConversationWorkspace({ artistId, artistName, release, status, activeModel, onModelChange, onOpenRelease }: ConversationWorkspaceProps) {
+  const [mode, setMode] = useState<Mode>("create");
   const [messages, setMessages] = useState<ConversationUiMessage[]>(starterMessages);
   const [input, setInput] = useState("");
   const [runtimeState, setRuntimeState] = useState<ConversationRuntimeState>("Ready");
@@ -172,36 +180,75 @@ export function ConversationWorkspace({ artistId, artistName, release, status, a
     activeRequestId.current = null;
   }
 
+  const handleGenerate = () => void sendMessage();
+
+  const generateError = workStatus && !busy && runtimeState === "Error" ? workStatus : null;
+
   return (
     <div className="page-content conversation-page">
-      <header className="conversation-header">
-        <div>
-          <span className="eyebrow">AI Studio</span>
-          <h1>Conversation workspace.</h1>
-          <p>Start with a normal request. The studio keeps the current artist, release, and work status in view while you shape the next move.</p>
+      <PageHeader eyebrow="AI Studio" title="Compact workspace." lead="Shape the brief, generate, and review in one view. The studio keeps the current artist, release, model, and work status in view while you work." actions={<Button onClick={onOpenRelease}>Open release</Button>} />
+
+      <div className="ai-studio-context-bar">
+        <span className="context-artist"><small>ARTIST</small><strong>{artistName}</strong></span>
+        <span className="context-release"><small>RELEASE</small><strong>{release?.title ?? "No active release"}</strong></span>
+        <Button variant="ghost" disabled={!release} onClick={() => void onOpenRelease()}>{release ? "Switch" : "None"}</Button>
+        <span className="context-provider"><small>MODEL</small><strong>{providerLabel}</strong></span>
+        <span className="context-status"><small>STATUS</small><strong>{runtimeState}</strong></span>
+      </div>
+
+      <div className="ai-studio-mode-bar">
+        <button className={`mode-tab ${mode === "create" ? "active" : ""}`} onClick={() => setMode("create")}>Create</button>
+        <button className={`mode-tab ${mode === "assistant" ? "active" : ""}`} onClick={() => setMode("assistant")}>Assistant</button>
+      </div>
+
+      {mode === "create" && (
+        <div className="ai-studio-workspace ai-studio-create-layout">
+          <div className="ai-studio-setup">
+            <SectionCard eyebrow="Setup" title="Content">
+              <label className="ui-field"><span className="ui-field-label">Content type</span><select value="draft" onChange={() => {}}><option value="draft">Draft</option><option value="promo">Promo</option><option value="campaign">Campaign</option></select></label>
+              <label className="ui-field"><span className="ui-field-label">Channel</span><select value="Instagram" onChange={() => {}}><option>Instagram</option><option>Facebook</option><option>TikTok</option><option>SoundCloud</option><option>YouTube</option></select></label>
+              <label className="ui-field"><span className="ui-field-label">Language</span><select value="en" onChange={() => {}}><option value="en">English</option><option value="de">Deutsch</option><option value="pl">Polski</option></select></label>
+            </SectionCard>
+          </div>
+
+          <div className="ai-studio-create">
+            <SectionCard eyebrow="CREATE" title="Creative workspace" actions={<Button disabled={!input.trim() || busy} onClick={() => void handleGenerate()}>{busy ? "Generating..." : "Generate"}</Button>}>
+              <div className="create-workspace-body">
+                <Textarea rows={5} value={input} disabled={busy} onChange={(event) => setInput(event.target.value)} placeholder="Describe what to create — campaign copy, task plans, artwork briefs, scheduling ideas..." />
+                <div className="create-actions">
+                  <Button disabled={!input.trim() || busy} onClick={() => void handleGenerate()} variant="primary">{busy ? "Generating..." : "Generate"}</Button>
+                </div>
+                {busy && <div className="generation-progress"><span>Generating with {isAuto ? "Auto" : selectedModelName}...</span></div>}
+                {generateError && <div className="generation-error"><span>{generateError}</span></div>}
+                {messages.filter((m) => m.role === "assistant" && m.content).length > 0 ? (
+                  <div className="create-result">
+                    <div className="preview-messages">{messages.filter((m) => m.role === "assistant" && m.content).map((m) => <article key={m.id}><p>{m.content}</p></article>)}</div>
+                  </div>
+                ) : !busy && !generateError ? (
+                  <div className="analytics-empty"><strong>No output yet</strong><p>Generate content to see it here.</p></div>
+                ) : null}
+              </div>
+            </SectionCard>
+          </div>
         </div>
-        <button className="primary" onClick={onOpenRelease}>Open release</button>
-      </header>
+      )}
 
-      <section className="conversation-shell">
-        <aside className="conversation-context panel">
-          <div className="panel-heading"><span className="eyebrow">Workspace</span><h2>Active context</h2></div>
-          <div className="context-stack"><span><small>PROJECT</small><b>{activeWorkspace}</b></span><span><small>ARTIST</small><b>{artistName}</b></span><span><small>AI</small><b>{providerLabel}</b></span><span><small>STATE</small><b>{runtimeState}</b></span></div>
-          <label className="conversation-model-select">Model<select value={isAuto ? "" : (selectedModelName ?? "")} onChange={(event) => onModelChange(event.target.value || null)}><option value="">Auto · Harness provider routing</option>{availableModels.map((model) => <option value={model.name} key={model.name}>{model.name}</option>)}</select><small>{availableModels.length ? "Auto uses free providers first, then local fallback." : "Start Ollama to discover local models, or use Auto."}</small></label>
-          <div className="current-work"><small>CURRENT WORK</small><strong>{workStatus}</strong><p>No autonomous action runs from this conversation area.</p></div>
-          <div className="voice-placeholder"><small>VOICE</small><strong>Input and playback placeholder</strong><p>Future voice capture and spoken responses will attach here.</p></div>
-        </aside>
-
-        <section className="conversation-main panel">
-          <div className="conversation-history" ref={historyRef} onScroll={handleHistoryScroll} aria-label="Conversation history">
-            {messages.map((message) => <article className={`conversation-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "AI Studio" : "You"} · {message.createdAt === new Date(0).toISOString() ? "ready" : new Date(message.createdAt).toLocaleTimeString()}</small><p>{message.content || (runtimeState === "Thinking" ? "Thinking..." : "")}</p><ProviderDiagnostics trace={message.providerTrace} /></article>)}
-          </div>
-          <div className="conversation-composer">
-            <textarea rows={3} value={input} disabled={busy} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendMessage(); }} placeholder="Ask AI Studio to plan a release task, draft a post, organize campaign work, or think through the next step..." />
-            {busy ? <button className="danger-button" onClick={() => void stopResponse()}>Stop</button> : <button className="primary" disabled={!canSend} onClick={() => void sendMessage()}>Send</button>}
-          </div>
-        </section>
-      </section>
+      {mode === "assistant" && (
+        <div className="ai-studio-workspace ai-studio-assistant-layout">
+          <SectionCard eyebrow="Assistant" title="Conversation" className="conversation-main">
+            <div className="conversation-history v4-scroll" ref={historyRef} onScroll={handleHistoryScroll} aria-label="Conversation history">
+              {messages.map((message) => <article className={`conversation-message ${message.role}`} key={message.id}><small>{message.role === "assistant" ? "AI Studio" : "You"} · {message.createdAt === new Date(0).toISOString() ? "ready" : new Date(message.createdAt).toLocaleTimeString()}</small><p>{message.content || (runtimeState === "Thinking" ? "Thinking..." : "")}</p><ProviderDiagnostics trace={message.providerTrace} /></article>)}
+            </div>
+            <div className="conversation-composer">
+              <Textarea rows={2} value={input} disabled={busy} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void sendMessage(); }} placeholder="Continue the conversation or press Enter+Ctrl to send..." />
+              {busy ? <button className="danger-button" onClick={() => void stopResponse()}>Stop</button> : <button className="primary" disabled={!canSend} onClick={() => void sendMessage()}>Send</button>}
+            </div>
+            <div className="assistant-diagnostics-toggle">
+              <ProviderDiagnostics />
+            </div>
+          </SectionCard>
+        </div>
+      )}
     </div>
   );
 }

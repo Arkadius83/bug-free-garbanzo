@@ -158,9 +158,9 @@ export function createMockStudio(overrides?: Partial<StudioApi>): MockStudio {
 }
 
 export function installMockStudio(mock: MockStudio): void {
-  window.studio = mock as import("../../../../electron/shared/contracts").StudioApi;
+  (globalThis as Record<string, unknown>).studio = mock;
 }
 
 export function removeMockStudio(): void {
-  window.studio = undefined;
+  (globalThis as Record<string, unknown>).studio = undefined;
 }

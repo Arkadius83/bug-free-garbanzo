@@ -1,10 +1,5 @@
 import type { CampaignPackItem, MediaGenerationSummary, MetaConnection, PublishingQueueItem, ReleaseReadiness, ReleaseSummary, SoundCloudConnection, SoundCloudTrackSummary, SpotifyConnection, TaskSummary } from "../../../electron/shared/contracts";
 
-import totalReachBg from "../../assets/kpi_templates/01_total_reach_template.png";
-import engagementBg from "../../assets/kpi_templates/02_engagement_rate_template.png";
-import assetsBg from "../../assets/kpi_templates/03_generated_assets_template.png";
-import scheduledBg from "../../assets/kpi_templates/04_scheduled_posts_template.png";
-import approvalsBg from "../../assets/kpi_templates/05_approvals_pending_template.png";
 
 interface DashboardKpiRowProps {
   releases: ReleaseSummary[];
@@ -23,15 +18,17 @@ interface KpiCardProps {
   label: string;
   value: string | number;
   trend: string;
-  artwork: string;
+  icon: string;
   accent: "cyan" | "purple" | "teal" | "magenta" | "cyan-purple";
 }
 
-function KpiCard({ label, value, trend, artwork, accent }: KpiCardProps) {
-  return <article className={`kpi-widget kpi-${accent}`} style={{ backgroundImage: `url(${artwork})` }} aria-label={`${label}: ${value}. ${trend}`}>
+function KpiCard({ label, value, trend, icon, accent }: KpiCardProps) {
+  return <article className={`kpi-widget kpi-${accent}`} aria-label={`${label}: ${value}. ${trend}`}>
+    <span className="kpi-symbol" aria-hidden="true">{icon}</span>
     <div className="kpi-value-field">
+      <span className="kpi-label">{label}</span>
       <strong>{value}</strong>
-      <span>{trend}</span>
+      <span className="kpi-trend">{trend}</span>
     </div>
   </article>;
 }
@@ -48,10 +45,10 @@ export function DashboardKpiRow({ releases, tasks, readiness, queue, meta: _meta
   const generatedAssetCount = mediaGenerations.length + campaignPackItems.length;
 
   return <section className="dashboard-kpi-row" aria-label="Workspace summary">
-    <KpiCard label="Total Reach" value={hasPlays ? totalPlays.toLocaleString() : "-"} trend={hasPlays ? `${soundCloudTracks.length} tracks` : "Import tracks"} artwork={totalReachBg} accent="cyan" />
-    <KpiCard label="Engagement Rate" value={averageEngagement != null ? `${averageEngagement}%` : "-"} trend={averageEngagement != null ? `${tracksWithRate.length} tracks` : "Awaiting data"} artwork={engagementBg} accent="purple" />
-    <KpiCard label="Generated Assets" value={generatedAssetCount} trend={`${mediaGenerations.length} media · ${campaignPackItems.length} copy`} artwork={assetsBg} accent="teal" />
-    <KpiCard label="Scheduled Posts" value={scheduledPosts} trend={`${queue.length} in queue`} artwork={scheduledBg} accent="magenta" />
-    <KpiCard label="Approvals Pending" value={approvalsPending} trend={`Readiness ${readiness?.score ?? 0}%`} artwork={approvalsBg} accent="cyan-purple" />
+    <KpiCard label="Total Reach" value={hasPlays ? totalPlays.toLocaleString() : "-"} trend={hasPlays ? `${soundCloudTracks.length} tracks` : "Import tracks"} icon="◎" accent="cyan" />
+    <KpiCard label="Engagement Rate" value={averageEngagement != null ? `${averageEngagement}%` : "-"} trend={averageEngagement != null ? `${tracksWithRate.length} tracks` : "Awaiting data"} icon="♡" accent="purple" />
+    <KpiCard label="Generated Assets" value={generatedAssetCount} trend={`${mediaGenerations.length} media · ${campaignPackItems.length} copy`} icon="◇" accent="teal" />
+    <KpiCard label="Scheduled Posts" value={scheduledPosts} trend={`${queue.length} in queue`} icon="▦" accent="magenta" />
+    <KpiCard label="Approvals Pending" value={approvalsPending} trend={`Readiness ${readiness?.score ?? 0}%`} icon="◷" accent="cyan-purple" />
   </section>;
 }
