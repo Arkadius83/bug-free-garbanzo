@@ -34,6 +34,22 @@ function buildMonthGrid(year: number, month: number): { date: Date; currentMonth
   return result;
 }
 
+function buildWeekGrid(year: number, month: number): { date: Date; currentMonth: boolean; dayNumber: number }[] {
+  const today = new Date();
+  const anchor = today.getFullYear() === year && today.getMonth() === month ? today : new Date(year, month, 1);
+  const monday = new Date(anchor);
+  monday.setDate(anchor.getDate() - ((anchor.getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    return { date, currentMonth: date.getMonth() === month, dayNumber: date.getDate() };
+  });
+}
+
+function calendarDateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export function ContentCalendar({ campaignPackItems, publishingQueue, activeReleaseId, onOpenRelease }: { campaignPackItems?: CampaignPackItem[]; publishingQueue?: PublishingQueueItem[]; activeReleaseId?: string | null; onOpenRelease?: () => void }) {
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [view, setView] = useState<CalendarView>("list");
@@ -66,12 +82,12 @@ export function ContentCalendar({ campaignPackItems, publishingQueue, activeRele
   const shown = useMemo(() => visibleEvents(allEvents, view), [allEvents, view]);
   const grouped = useMemo(() => shown.reduce<Record<string, ScheduleEvent[]>>((groups, event) => { const key = dateKey(event.scheduledAt, event.timezone); groups[key] = [...(groups[key] ?? []), event]; return groups; }, {}), [shown]);
 
-  const monthGrid = useMemo(() => buildMonthGrid(calendarYear, calendarMonth), [calendarYear, calendarMonth]);
+  const calendarGrid = useMemo(() => view === "week" ? buildWeekGrid(calendarYear, calendarMonth) : buildMonthGrid(calendarYear, calendarMonth), [calendarYear, calendarMonth, view]);
 
   const pendingItems = useMemo(() => (campaignPackItems ?? []).filter((item) => item.status === "draft" || item.status === "approved"), [campaignPackItems]);
   const needsApprovalCount = pendingItems.length;
   const scheduledCount = allEvents.filter((e) => e.status === "SCHEDULED").length;
-  const publishedCount = allEvents.filter((e) => e.status === "READY").length;
+  const readyCount = allEvents.filter((e) => e.status === "READY").length;
 
   function openEdit(event: ScheduleEvent) { setEditing(event); setEditPlatform(event.platform); setEditStatus(event.status); setEditTime(getLocalInputValue(event.scheduledAt)); }
   function openDrawer(event: ScheduleEvent) { setDrawerEvent(event); setDrawerPackItem(null); }
@@ -81,13 +97,28 @@ export function ContentCalendar({ campaignPackItems, publishingQueue, activeRele
   async function sendToPublishingQueue(event: ScheduleEvent) { if (!window.studio) return; setQueueing(true); setMessage("Sending to Publishing Queue..."); try { const result = await window.studio.sendScheduleEventToPublishingQueue(event.id); setEvents((current) => current.map((item) => item.id === result.scheduleEvent.id ? result.scheduleEvent : item)); setEditing(result.scheduleEvent); setMessage("Sent to Publishing Queue as a draft for its existing approval workflow."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not send to Publishing Queue"); } finally { setQueueing(false); } }
 
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const calendarTitle = view === "week" && calendarGrid.length
+    ? `${calendarGrid[0].date.toLocaleDateString("en-GB", { day: "numeric", month: "short" })} - ${calendarGrid[6].date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`
+    : `${monthNames[calendarMonth]} ${calendarYear}`;
+
+  function moveMonth(delta: number) {
+    const next = new Date(calendarYear, calendarMonth + delta, 1);
+    setCalendarYear(next.getFullYear());
+    setCalendarMonth(next.getMonth());
+  }
+
+  function goToday() {
+    const today = new Date();
+    setCalendarYear(today.getFullYear());
+    setCalendarMonth(today.getMonth());
+    setSelectedDate(calendarDateKey(today));
+  }
 
   return (
     <div className="content-calendar content-calendar-v5">
-      <PageHeader eyebrow="Content Calendar" title="Plan, review and manage your content across platforms." lead="Calendar entries are persisted ScheduleEvents. Publishing jobs are created later, after review." actions={<>
-        <Button variant="ghost" onClick={onOpenRelease}>{activeReleaseId ? "Switch release" : "Release"}</Button>
-        <Button variant="ghost">Today</Button>
-        <Button variant="primary">+ Create content</Button>
+      <PageHeader eyebrow="Content Calendar" title="Plan, review and schedule content." lead="Exact publishing times, platforms and review state for approved release content." actions={<>
+        {onOpenRelease ? <Button variant="ghost" onClick={onOpenRelease}>{activeReleaseId ? "Switch release" : "Release"}</Button> : null}
+        <Button variant="primary" onClick={() => setShowApprovalQueue(true)}>Schedule content</Button>
       </>}>
         <Toolbar className="calendar-filter-bar" ariaLabel="Calendar filters">
           <Select value={filterPlatform} options={[{ value: "all", label: "All platforms" }, ...platforms.map((p) => ({ value: p, label: p }))]} onChange={(event) => setFilterPlatform(event.target.value as CampaignChannel | "all")} />
@@ -97,25 +128,26 @@ export function ContentCalendar({ campaignPackItems, publishingQueue, activeRele
           <Tabs activeTab={view} onChange={(mode) => setView(mode as CalendarView)} tabs={[{ id: "week", label: "Week" }, { id: "month", label: "Month" }, { id: "list", label: "List" }]} ariaLabel="Calendar views" />
           <span className="kpi-counter"><b>{scheduledCount}</b> Scheduled</span>
           <span className="kpi-counter"><b>{needsApprovalCount}</b> Needs Approval</span>
-          <span className="kpi-counter"><b>{publishedCount}</b> Published</span>
+          <span className="kpi-counter"><b>{readyCount}</b> Ready</span>
         </Toolbar>
       </PageHeader>
 
-      <section className="content-calendar" aria-label="Content Calendar">
-        <div className="content-calendar-layout">
+      <section className="calendar-workspace" aria-label="Content Calendar">
+        <div className={`content-calendar-layout content-calendar-layout-${view}`}>
+          {view !== "list" ? <>
           <div className="calendar-panel">
-            <SectionCard eyebrow="Calendar" title={`${monthNames[calendarMonth]} ${calendarYear}`} actions={<>
-              <Button variant="ghost" onClick={() => setCalendarMonth(calendarMonth - 1)}>Previous</Button>
-              <Button variant="ghost" onClick={() => { setCalendarYear(new Date().getFullYear()); setCalendarMonth(new Date().getMonth()); }}>Today</Button>
-              <Button variant="ghost" onClick={() => setCalendarMonth(calendarMonth + 1)}>Next</Button>
+            <SectionCard eyebrow={view === "week" ? "Week" : "Month"} title={calendarTitle} actions={<>
+              <Button variant="icon" aria-label="Previous month" title="Previous month" onClick={() => moveMonth(-1)}>&lt;</Button>
+              <Button variant="ghost" onClick={goToday}>Today</Button>
+              <Button variant="icon" aria-label="Next month" title="Next month" onClick={() => moveMonth(1)}>&gt;</Button>
             </>}>
               <div className="calendar-month-header">
                 {days.map((day) => <span key={day} className="calendar-weekday">{day.slice(0, 3)}</span>)}
               </div>
               <div className="calendar-month-grid">
-                {monthGrid.map(({ date, currentMonth, dayNumber }, index) => {
-                  const key = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
-                  const dayEvents = (allEvents ?? []).filter((event) => { const d = new Date(event.scheduledAt); return d.getFullYear() === date.getFullYear() && d.getMonth() === date.getMonth() && d.getDate() === dayNumber; });
+                {calendarGrid.map(({ date, currentMonth, dayNumber }, index) => {
+                  const key = calendarDateKey(date);
+                  const dayEvents = allEvents.filter((event) => dateKey(event.scheduledAt, event.timezone) === key);
                   const isToday = date.toDateString() === new Date().toDateString();
                   const isSelected = selectedDate === key;
                   const tone = dayEvents.length > 0 ? (dayEvents.some((e) => e.status === "READY") ? "success" : dayEvents.some((e) => e.status === "SCHEDULED") ? "cyan" : dayEvents.some((e) => e.status === "CANCELLED") ? "danger" : "neutral") : undefined;
@@ -123,14 +155,15 @@ export function ContentCalendar({ campaignPackItems, publishingQueue, activeRele
                   <button key={index} className={`calendar-day-cell ${!currentMonth ? "calendar-day-other" : ""} ${isToday ? "calendar-day-today" : ""} ${isSelected ? "calendar-day-selected" : ""} ${tone ? `calendar-day-tone-${tone}` : ""}`} onClick={() => { if (dayEvents.length > 0) openEdit(dayEvents[0]); setSelectedDate(isSelected ? null : key); }} aria-label={`${date.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "numeric", year: "numeric" })} - ${dayEvents.length} events`}>
                         <span className="calendar-day-number">{dayNumber}</span>
                         <span className="calendar-day-markers">{dayEvents.slice(0, 3).map((event) => <span key={event.id} className={`calendar-day-marker calendar-marker-${event.status.toLowerCase()}`} />)}</span>
-                        {dayEvents.length > 0 && <span className="calendar-day-count">{dayEvents.length}</span>}
-                        {dayEvents.length > 0 && dayEvents.slice(0, 3).map((event) => <span key={event.id} className="calendar-day-event-title">{event.campaignItemTitle} — {event.releaseTitle}</span>)}
+                        {dayEvents.slice(0, view === "week" ? 4 : 2).map((event) => <span key={event.id} className="calendar-day-event"><b>{formatDateTime(event.scheduledAt, event.timezone).split(", ").at(-1)}</b><span>{event.platform} - {event.campaignItemTitle}</span><i>{event.status}</i></span>)}
+                        {dayEvents.length > (view === "week" ? 4 : 2) ? <span className="calendar-day-more">+{dayEvents.length - (view === "week" ? 4 : 2)} more</span> : null}
                       </button>
                   );
                 })}
               </div>
             </SectionCard>
           </div>
+          </> : null}
 
           <div className="approval-panel">
             <SectionCard eyebrow="Needs Approval" title={`Approval Queue ${needsApprovalCount > 0 ? `(${needsApprovalCount})` : ""}`} actions={<Button variant="ghost" onClick={() => setShowApprovalQueue(true)}>View all</Button>}>
@@ -145,8 +178,6 @@ export function ContentCalendar({ campaignPackItems, publishingQueue, activeRele
               )}
             </SectionCard>
           </div>
-        </div>
-
         {view === "list" && !showApprovalQueue ? (
           <div className="calendar-list-view">
             {shown.length === 0 ? <SectionCard className="calendar-empty"><div className="v4-empty"><strong>No scheduled promo content for this view.</strong><span>Approved content appears here after it receives a ScheduleEvent.</span></div></SectionCard> : (
@@ -156,6 +187,7 @@ export function ContentCalendar({ campaignPackItems, publishingQueue, activeRele
             )}
           </div>
         ) : null}
+        </div>
 
         {showApprovalQueue ? (
           <div className="approval-queue-view">

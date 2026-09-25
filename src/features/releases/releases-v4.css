@@ -6,6 +6,55 @@
 /* Page header action accent (moved out of styles.css line-42 block). */
 .release-page .release-delete-action { border-color: #88495c; color: #ffafbb; }
 
+.release-page-v3 > header.v4-page-header {
+  position: relative;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.release-page-v3 > header.v4-page-header::after { display: none; }
+.release-page-v3 > header.v4-page-header h1 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.15;
+}
+.release-page-v3 > header.v4-page-header .v4-page-lead {
+  overflow: hidden;
+  max-width: 70ch;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.release-page .artist-strip {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  overflow-x: auto;
+  padding: 1px 1px 4px;
+}
+.release-page .artist-strip button {
+  flex: 0 0 auto;
+  min-width: 150px;
+  padding: 8px 11px;
+}
+.release-page .artist-strip strong,
+.release-page .artist-strip span {
+  display: block;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.release-page .artist-strip strong { font-size: 13px; }
+.release-page .artist-strip span { margin-top: 2px; font-size: 11px; }
+
 /* The Foundation tab owns the full workspace width. */
 .release-workspace-foundation .workspace { display: block; min-height: 0; }
 
@@ -37,10 +86,16 @@
   gap: var(--v4-card-gap);
   padding: var(--v4-page-pad-y) var(--v4-page-pad-x) 12px;
 }
-.release-page .release-workspace-view { min-width: 0; padding: 2px 6px 12px 2px; }
+.release-page .release-workspace-view { min-width: 0; padding: 2px 6px 12px 2px; scroll-padding-top: 8px; }
 .release-page .release-workspace-view .workspace { min-height: 0; }
 .release-page .release-workspace-tabs { max-width: 100%; width: fit-content; overflow-x: auto; flex-shrink: 0; }
 .release-page .release-workspace-tabs .ui-tab { min-height: 36px; font-size: 13px; }
+.release-page .release-workspace-tabs {
+  padding: 3px;
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-panel);
+  background: var(--v4-surface);
+}
 .release-page .release-foundation-v31 { padding: 0; background: none; }
 .release-page .release-hero-v31 { padding: 12px 0 16px; flex-wrap: wrap; }
 .release-page .release-hero-copy { flex: 1 1 220px; }
@@ -65,6 +120,30 @@
   box-shadow: none;
 }
 .release-page .campaign-pack-grid > article { background: var(--ui-surface-raised); min-width: 0; }
+.release-page .release-list article,
+.release-page .draft-workflow > article {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--v4-edge);
+  border-radius: var(--ui-radius-control);
+  background: var(--v4-surface);
+}
+.release-page .release-list article > div:first-child,
+.release-page .draft-summary { min-width: 0; }
+.release-page .release-list article strong,
+.release-page .release-list article span,
+.release-page .draft-summary strong,
+.release-page .draft-summary span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.release-page .release-list article.active-release {
+  border-color: var(--ui-line-cyan);
+  background: var(--v4-surface-raised);
+  box-shadow: inset 2px 0 var(--ui-accent-cyan);
+}
 .release-page .campaign-pack-grid p, .release-page .pcr-content-text, .release-page .draft pre {
   overflow-wrap: anywhere;
   white-space: pre-wrap;

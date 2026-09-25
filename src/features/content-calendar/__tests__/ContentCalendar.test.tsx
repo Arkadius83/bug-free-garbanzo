@@ -23,7 +23,6 @@ describe("ContentCalendar", () => {
     render(<ContentCalendar />);
     expect(await screen.findByText("Launch caption")).toBeInTheDocument();
     expect(screen.getByText(/Instagram · Different Perspective/)).toBeInTheDocument();
-    expect(screen.getByText(/Launch caption\s*—\s*Different Perspective/)).toBeInTheDocument();
   });
 
   it("switches week, month and list views", async () => {
@@ -37,6 +36,24 @@ describe("ContentCalendar", () => {
     expect(screen.getByRole("tab", { name: "List" })).toHaveAttribute("data-state", "active");
     await user.click(screen.getByRole("tab", { name: "Week" }));
     expect(screen.getByRole("tab", { name: "Week" })).toHaveAttribute("data-state", "active");
+  });
+
+  it("opens the compact month view and keeps calendar controls interactive", async () => {
+    studio.listScheduleEvents = async () => [mockScheduleEvent({ scheduledAt: new Date().toISOString() })];
+    render(<ContentCalendar />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("tab", { name: "Month" }));
+    expect(screen.getByRole("button", { name: "Previous month" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Next month" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Next month" }));
+    expect(screen.getByRole("button", { name: "Today" })).toBeEnabled();
+  });
+
+  it("opens the existing approval queue from the primary schedule action", async () => {
+    render(<ContentCalendar campaignPackItems={[]} />);
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Schedule content" }));
+    expect(screen.getByText("All items requiring review")).toBeInTheDocument();
   });
 
   it("opens details and updates an event without publishing", async () => {

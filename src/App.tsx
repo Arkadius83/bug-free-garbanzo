@@ -777,11 +777,8 @@ export function App() {
         {activeView==="settings"&&<SettingsPage status={status} onNavigate={(v)=>setActiveView(v as AppView)} />}
 
 
-        {activeView === "releases" && <div className={`page-content release-page release-page-v3 ${releaseWorkspaceTab === "foundation" ? "release-page-v31" : ""}`}>
-        <header>
-          <div><span className="eyebrow">Release Manager</span><h1>Build the next release.</h1></div>
-          <div className="header-actions">{activeReleaseId && currentRelease && <Button variant="ghost" className="release-delete-action" onClick={() => void deleteRelease(currentRelease)}>Delete release</Button>}<Button onClick={saveRelease}>{activeReleaseId ? "Save changes" : "Create release"}</Button></div>
-        </header>
+        {activeView === "releases" && <div className={`page-content v4-page release-page release-page-v3 ${releaseWorkspaceTab === "foundation" ? "release-page-v31" : ""}`}>
+        <PageHeader eyebrow="Release Manager" title={activeReleaseId ? title || "Untitled release" : "Create a release"} lead={activeReleaseId ? `${artist.name} · ${primaryGenre || "Genre not set"} · ${releaseStatus}` : "Build the release foundation, campaign and promotion workflow."} actions={<>{activeReleaseId && currentRelease && <Button variant="ghost" className="release-delete-action" onClick={() => void deleteRelease(currentRelease)}>Delete release</Button>}<Button onClick={saveRelease}>{activeReleaseId ? "Save changes" : "Create release"}</Button></>} />
         <section className="artist-strip">
           {artists.map((profile) => (
             <button className={profile.id === selectedArtist ? "selected" : ""} key={profile.id} onClick={() => { setSelectedArtist(profile.id); setPrimaryGenre(profile.genres[0]); }}>
@@ -790,7 +787,7 @@ export function App() {
           ))}
         </section>
         <Tabs className="release-workspace-tabs" ariaLabel="Release workspace sections" activeTab={releaseWorkspaceTab} onChange={setReleaseWorkspaceTab} tabs={[{ id: "foundation", label: "Release Foundation" }, { id: "campaign-drafts", label: "Campaign Drafts" }, { id: "release-plan", label: "Release Plan" }, { id: "promotion-formats", label: "Promotion Formats" }]} />
-        <div className={`release-workspace-view release-workspace-${releaseWorkspaceTab}`}>
+        <div className={`release-workspace-view v4-scroll release-workspace-${releaseWorkspaceTab}`} role="region" aria-label="Release workspace content" tabIndex={0}>
         <div className="workspace">
           {releaseWorkspaceTab === "foundation" && <ReleaseFoundation key={activeReleaseId ?? "new"} releaseId={activeReleaseId} title={title} artist={artist.name} genre={primaryGenre} date={releaseDate} story={story} status={releaseStatus}
             allowedStatuses={activeReleaseId ? allowedReleaseStatuses[persistedStatus] : ["draft"]} assets={assets} readiness={releaseReadiness}

@@ -1,6 +1,14 @@
 import { useEffect, useState } from "react";
 import type { MetaConnection, PublishingQueueItem, YouTubeConnection, TikTokConnection } from "../../../electron/shared/contracts";
 import { Tabs } from "../../ui/Tabs";
+import { Button } from "../../ui/Button";
+import { PageHeader } from "../../ui/PageHeader";
+import { SectionCard } from "../../ui/SectionCard";
+import { Select } from "../../ui/Select";
+import { StatusBadge } from "../../ui/StatusBadge";
+import { Textarea } from "../../ui/Textarea";
+import { Toolbar } from "../../ui/Toolbar";
+import { PlatformIcon } from "../dashboard/PlatformIcon";
 import "./publishing.css";
 
 type PublishingTab = "compose" | "queue" | "history";
@@ -12,14 +20,8 @@ interface PublishingPageProps {
 export function PublishingPage({ onNavigate }: PublishingPageProps) {
   const [activeTab, setActiveTab] = useState<PublishingTab>("queue");
   return (
-    <div className="publishing-page">
-      <header>
-        <div>
-          <span className="eyebrow">Publishing</span>
-          <h1>Compose, schedule and publish.</h1>
-          <p>One-off publishing without a Release Plan. Reuse Meta, YouTube and TikTok backends.</p>
-        </div>
-      </header>
+    <div className="publishing-page v4-page">
+      <PageHeader eyebrow="Publishing" title="Publishing workspace" lead="Compose one-off posts, review the scheduled queue and inspect delivery history." />
       <Tabs tabs={[{ id: "compose", label: "Compose" }, { id: "queue", label: "Queue" }, { id: "history", label: "History" }]} activeTab={activeTab} onChange={(id) => setActiveTab(id as PublishingTab)} ariaLabel="Publishing sections" />
       {activeTab === "compose" && <ComposeSection />}
       {activeTab === "queue" && <QueueSection onNavigate={onNavigate} />}
@@ -93,63 +95,49 @@ function ComposeSection() {
 
   return (
     <div className="publishing-compose">
-      <div className="compose-form">
-        <div className="compose-field">
-          <label>Platform</label>
-          <select value={platform} onChange={(e) => setPlatform(e.target.value as typeof platform)}>
+      <SectionCard eyebrow="Delivery" title="Compose post" className="compose-form">
+          <Select label="Platform" value={platform} onChange={(e) => setPlatform(e.target.value as typeof platform)}>
             {connectedPlatforms.length === 0 && <option value="">No platforms connected</option>}
             {meta?.connected && <><option value="Facebook">Facebook</option><option value="Instagram">Instagram</option></>}
             {youTube?.connected && <option value="YouTube">YouTube</option>}
             {tikTok?.connected && <option value="TikTok">TikTok</option>}
-          </select>
-        </div>
+          </Select>
         {(platform === "Facebook" || platform === "Instagram") && meta?.connected && (
-          <div className="compose-field">
-            <label>Destination</label>
-            <select value={destinationId} onChange={(e) => setDestinationId(e.target.value)}>
+          <Select label="Destination" value={destinationId} onChange={(e) => setDestinationId(e.target.value)}>
               <option value="">Select destination</option>
               {meta.destinations.filter((d) => d.platform === platform).map((d) => (
                 <option key={d.id} value={d.id}>{d.username ? `@${d.username}` : d.name}</option>
               ))}
-            </select>
-          </div>
+          </Select>
         )}
         {platform === "YouTube" && (
-          <div className="compose-field">
-            <label>Privacy</label>
-            <select value={privacy} onChange={(e) => setPrivacy(e.target.value)}>
+          <Select label="Publishing mode" value={privacy} helperText="YouTube visibility is applied at upload time." onChange={(e) => setPrivacy(e.target.value)}>
               <option value="private">Private</option>
               <option value="unlisted">Unlisted</option>
               <option value="public">Public</option>
-            </select>
-          </div>
+          </Select>
         )}
-        <div className="compose-field">
-          <label>{platform === "YouTube" ? "Title / Description" : "Caption"}</label>
-          <textarea rows={4} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder={platform === "YouTube" ? "Video title and description" : "Write your post caption..."} />
-        </div>
+        <Textarea label={platform === "YouTube" ? "Title / Description" : "Caption"} rows={5} value={caption} onChange={(e) => setCaption(e.target.value)} placeholder={platform === "YouTube" ? "Video title and description" : "Write your post caption..."} />
         {(platform === "YouTube" || platform === "TikTok") && (
           <div className="compose-field">
-            <label>Video file</label>
-            <div className="compose-actions">
-              <button onClick={() => void selectVideo()}>Select video</button>
+            <label>Video asset</label>
+            <Toolbar>
+              <Button variant="secondary" onClick={() => void selectVideo()}>Select video</Button>
               <small className="compose-video-path">{videoPath || "No file selected"}</small>
-            </div>
+            </Toolbar>
           </div>
         )}
-        <div className="compose-actions">
-          <button className="primary" disabled={busy || !caption.trim() || connectedPlatforms.length === 0} onClick={() => void publish()}>{busy ? "Publishing..." : "Publish now"}</button>
-        </div>
+        <Toolbar><Button disabled={busy || !caption.trim() || connectedPlatforms.length === 0} onClick={() => void publish()}>{busy ? "Publishing..." : "Publish now"}</Button></Toolbar>
         {message && <p className={`settings-message ${result && result.includes("Failed") ? "error" : ""}`}>{message}</p>}
-      </div>
-      <div className="compose-preview">
-        <span className="eyebrow">Preview</span>
+      </SectionCard>
+      <SectionCard eyebrow="Preview" title="Delivery preview" className="compose-preview" meta={<StatusBadge label={connectedPlatforms.includes(platform) ? "AVAILABLE" : "NOT CONNECTED"} tone={connectedPlatforms.includes(platform) ? "success" : "warning"} />}>
         <div className="preview-card">
-          <strong>{platform}</strong>
+          <div className="preview-platform"><PlatformIcon name={platform} /><strong>{platform}</strong></div>
           <p>{caption || "Your caption will appear here..."}</p>
           {videoPath && <small className="preview-video-badge">Video: {videoPath.split(/[/\\]/).pop()}</small>}
         </div>
-      </div>
+        <p className="publishing-capability-note">{platform === "TikTok" ? "TikTok currently uploads a private draft for review in TikTok." : platform === "YouTube" ? "Video upload uses the selected YouTube privacy mode." : "Publishing uses the selected connected Meta destination."}</p>
+      </SectionCard>
     </div>
   );
 }
@@ -192,14 +180,14 @@ function QueueSection({ onNavigate }: { onNavigate: (view: string) => void }) {
 
   return (
     <div>
-      <div className="queue-stats">
+      <div className="queue-stats" aria-label="Queue summary">
         <span><strong>{publishing.length}</strong> publishing</span>
         <span><strong>{scheduled.length}</strong> scheduled/approved</span>
         <span><strong>{queue.filter((i) => i.status === "published").length}</strong> published</span>
       </div>
       {message && <p className="settings-message">{message}</p>}
       {scheduled.length === 0 ? (
-        <div className="queue-empty"><strong>Queue is empty</strong><p>Approved promo content from Content Calendar appears here.</p><button onClick={() => onNavigate("calendar")}>Open Calendar</button></div>
+        <div className="queue-empty"><strong>Queue is empty</strong><p>Approved promo content from Content Calendar appears here.</p><Button variant="secondary" onClick={() => onNavigate("calendar")}>Open Calendar</Button></div>
       ) : (
         <div className="queue-list">
           {scheduled.map((item) => (
@@ -209,10 +197,10 @@ function QueueSection({ onNavigate }: { onNavigate: (view: string) => void }) {
                 <span>{item.scheduledAt ? new Date(item.scheduledAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "Draft"}</span>
               </div>
               <div className="queue-content">
-                <strong>{item.platform} · {item.releaseTitle}</strong>
+                <div className="queue-title"><PlatformIcon name={item.platform} /><strong>{item.platform} · {item.releaseTitle}</strong></div>
                 <p>{item.caption}</p>
               </div>
-              <span className={`queue-status ${item.status}`}>{item.status}</span>
+              <StatusBadge className="queue-status" label={item.status.toUpperCase()} tone={item.status === "failed" ? "danger" : item.status === "published" ? "success" : item.status === "publishing" ? "warning" : "cyan"} />
               <div className="queue-actions">
                 {item.status === "approved" && (item.platform === "Facebook" || item.platform === "Instagram") && meta?.connected && (
                   <>
@@ -220,11 +208,11 @@ function QueueSection({ onNavigate }: { onNavigate: (view: string) => void }) {
                       <option value="">Destination</option>
                       {meta.destinations.filter((d) => d.platform === item.platform).map((d) => <option key={d.id} value={d.id}>{d.username ?? d.name}</option>)}
                     </select>
-                    <button onClick={() => void publishMeta(item.id)}>Publish</button>
+                    <Button onClick={() => void publishMeta(item.id)}>Publish</Button>
                   </>
                 )}
-                <button onClick={() => void review(item.id, "SCHEDULE")}>Schedule</button>
-                <button onClick={() => void review(item.id, "REJECT")} className="danger-button">Reject</button>
+                <Button variant="secondary" onClick={() => void review(item.id, "SCHEDULE")}>Schedule</Button>
+                <Button variant="ghost" onClick={() => void review(item.id, "REJECT")} className="danger-button">Reject</Button>
               </div>
             </article>
           ))}

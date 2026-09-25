@@ -69,3 +69,27 @@
 .settings-input-medium { min-width: 280px; }
 @media (max-width: 900px) { .settings-page { grid-template-columns: 1fr; } .brand-layout { grid-template-columns: 1fr; } .credential-fields-grid-2 { grid-template-columns: 1fr; } }
 @media (max-width: 700px) { .settings-nav { flex-direction: row; flex-wrap: wrap; } .crm-toolbar { grid-template-columns: 1fr; } }
+
+/* MAM V5 compact settings and integrations */
+.settings-page { height: 100%; overflow: hidden; }
+.settings-page .settings-nav { align-self: start; gap: 3px; padding: 10px; background: linear-gradient(180deg,rgba(12,25,43,.98),rgba(8,14,27,.98)); box-shadow: var(--v4-surface-shadow); }
+.settings-page .settings-nav h2 { margin: 4px 8px 10px; color: var(--ui-text-primary); font-size: 1rem; letter-spacing: 0; text-transform: none; }
+.settings-page .settings-content { min-width: 0; min-height: 0; overflow: auto; padding: 0 5px 0 0; }
+.settings-page .settings-content > header, .settings-page .settings-content > .v4-page-header { margin-bottom: var(--v4-section-gap); }
+.settings-page .settings-card, .settings-page .provider-section { border-color: var(--v4-edge); background: linear-gradient(145deg,rgba(11,25,42,.97),rgba(8,15,28,.98)); box-shadow: var(--v4-surface-shadow); }
+.settings-page .settings-card-header h2, .settings-page .settings-card-header h3 { margin: 0; color: var(--ui-text-primary); font-size: 1.02rem; font-weight: 650; }
+.settings-page .connection-status { display: inline-flex; align-items: center; gap: 6px; max-width: 240px; padding: 4px 9px; border: 1px solid var(--v4-edge); background: rgba(5,12,23,.76); color: var(--ui-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-page .connection-status.connected { border-color: color-mix(in srgb,var(--ui-accent-green) 45%,var(--v4-edge)); background: rgba(16,69,62,.34); color: var(--ui-accent-green); }
+.settings-page .connection-status .dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: currentColor; box-shadow: 0 0 8px currentColor; }
+.settings-page .connected-info { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.settings-page .connected-info > div { min-width: 0; }
+.settings-page .connected-info strong, .settings-page .connected-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.settings-page .integration-heading { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.settings-page .integration-heading .platform-brand { width: 28px; height: 28px; flex: 0 0 auto; }
+.settings-page .integration-heading > div { min-width: 0; }
+.settings-page .settings-tabs-spacer > .settings-card { max-width: 1080px; }
+.settings-page .integration-diagnostics { border-top: 1px solid var(--v4-separator); padding-top: 8px; }
+.settings-page .integration-diagnostics summary { color: var(--ui-text-secondary); cursor: pointer; font-size: .78rem; }
+.settings-page .integration-diagnostics[open] summary { margin-bottom: 8px; color: var(--ui-accent-cyan); }
+.settings-page .integration-diagnostics .callback-display { margin-bottom: 0; }
+@media (max-width: 900px) { .settings-page { height: auto; overflow: visible; } .settings-page .settings-content { overflow: visible; } }

@@ -3,6 +3,8 @@ import { InterfacePreferencesPanel } from "../../ui/InterfacePreferencesPanel";
 import type { ArtistAlias, KlingCliStatus, LocalServiceStatus, MediaBridgeStatus, MediaGenerationSettings, MetaConnection, SoundCloudConnection, SpotifyConnection, YouTubeConnection, TikTokConnection, YouTubeChannelDataSnapshot, TikTokUserProfile, BrandProfile, MediaAspectRatio } from "../../../electron/shared/contracts";
 import { artists } from "../../data/artists";
 import { Tabs } from "../../ui/Tabs";
+import { PageHeader } from "../../ui/PageHeader";
+import { PlatformIcon } from "../dashboard/PlatformIcon";
 import "./settings.css";
 
 type SettingsSection = "general" | "connections" | "ai-media" | "local-services" | "infrastructure";
@@ -23,7 +25,7 @@ interface SettingsPageProps {
 export function SettingsPage({ status, onNavigate }: SettingsPageProps) {
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
   return (
-    <div className="settings-page">
+    <div className="settings-page v4-page">
       <nav className="settings-nav">
         <h2>Settings</h2>
         {sectionTabs.map((tab) => (
@@ -155,7 +157,7 @@ function ConnectionsSection() {
   ];
   return (
     <>
-      <header><h1>Connections</h1><p>OAuth credentials, connection status and platform authorization.</p></header>
+      <PageHeader eyebrow="Settings" title="Connections" lead="OAuth credentials, account state and supported publishing capabilities." />
       <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} ariaLabel="Connection platforms" />
       <div className="settings-tabs-spacer">
         {activeTab === "soundcloud" && <SoundCloudConnectionSection />}
@@ -220,7 +222,7 @@ function SoundCloudConnectionSection() {
         <div><h3>SoundCloud Artist Pro</h3><p className="settings-card-subtitle">OAuth 2.1 · credentials encrypted by Windows</p></div>
         <span className={`connection-status ${connection?.connected ? "connected" : ""}`}><span className="dot" />{connection?.connected ? "CONNECTED" : "NOT CONNECTED"}</span>
       </div>
-      <div className="callback-display"><small>CALLBACK URL</small><code>{connection?.callbackUrl ?? "ai-studio-manager://soundcloud/callback"}</code></div>
+      <details className="integration-diagnostics"><summary>Connection details</summary><div className="callback-display"><small>CALLBACK URL</small><code>{connection?.callbackUrl ?? "ai-studio-manager://soundcloud/callback"}</code></div></details>
       <div className="credential-fields">
         <label>Client ID<input autoComplete="off" placeholder={connection?.configured ? "Already configured" : "Paste Client ID"} value={clientId} onChange={(e) => setClientId(e.target.value)} /></label>
         <label>Client Secret<input type="password" autoComplete="new-password" placeholder={connection?.configured ? "Replace only when needed" : "Paste Client Secret"} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} /></label>
@@ -282,7 +284,7 @@ function SpotifyConnectionSection() {
         <div><h3>Spotify</h3><p className="settings-card-subtitle">Development Mode · PKCE · Premium required</p></div>
         <span className={`connection-status ${connection?.connected ? "connected" : ""}`}><span className="dot" />{connection?.connected ? connection.displayName : "NOT CONNECTED"}</span>
       </div>
-      <div className="callback-display"><small>REDIRECT URI</small><code>{connection?.callbackUrl ?? "http://127.0.0.1:43821/callback"}</code></div>
+      <details className="integration-diagnostics"><summary>Connection details</summary><div className="callback-display"><small>REDIRECT URI</small><code>{connection?.callbackUrl ?? "http://127.0.0.1:43821/callback"}</code></div></details>
       <div className="credential-fields">
         <label>Client ID<input placeholder={connection?.configured ? "Already configured" : "Paste Client ID"} value={clientId} onChange={(e) => setClientId(e.target.value)} /></label>
       </div>
@@ -348,10 +350,10 @@ function MetaConnectionSection() {
   return (
     <div className="settings-card">
       <div className="settings-card-header">
-        <div><h3>Meta (Facebook + Instagram)</h3><p className="settings-card-subtitle">Graph API · Business Login</p></div>
+        <div className="integration-heading"><PlatformIcon name="Facebook" /><div><h3>Meta (Facebook + Instagram)</h3><p className="settings-card-subtitle">Graph API · feed publishing to authorized destinations</p></div></div>
         <span className={`connection-status ${connection?.connected ? "connected" : ""}`}><span className="dot" />{connection?.connected ? `${connection.destinations.length} DESTINATIONS` : "NOT CONNECTED"}</span>
       </div>
-      <div className="callback-display"><small>REDIRECT URI</small><code>{connection?.callbackUrl ?? "http://localhost:43822/callback"}</code></div>
+      <details className="integration-diagnostics"><summary>Connection details</summary><div className="callback-display"><small>REDIRECT URI</small><code>{connection?.callbackUrl ?? "http://localhost:43822/callback"}</code></div></details>
       <div className="credential-fields">
         <label>App ID<input placeholder={connection?.configured ? "Already configured" : "Paste Meta App ID"} value={appId} onChange={(e) => setAppId(e.target.value)} /></label>
         <label>App Secret<input type="password" autoComplete="new-password" placeholder={connection?.configured ? "Replace only when needed" : "Paste App Secret"} value={appSecret} onChange={(e) => setAppSecret(e.target.value)} /></label>
@@ -431,10 +433,10 @@ function YouTubeConnectionSection() {
   return (
     <div className="settings-card">
       <div className="settings-card-header">
-        <div><h3>YouTube</h3><p className="settings-card-subtitle">OAuth 2.0 · Data API v3 · Analytics</p></div>
+        <div className="integration-heading"><PlatformIcon name="YouTube" /><div><h3>YouTube</h3><p className="settings-card-subtitle">OAuth 2.0 · publishing, channel data and analytics</p></div></div>
         <span className={`connection-status ${connection?.connected ? "connected" : ""}`}><span className="dot" />{connection?.connected ? connection.channelTitle : "NOT CONNECTED"}</span>
       </div>
-      <div className="callback-display"><small>REDIRECT URI</small><code>{connection?.callbackUrl ?? "http://127.0.0.1:43822/callback"}</code></div>
+      <details className="integration-diagnostics"><summary>Connection details</summary><div className="callback-display"><small>REDIRECT URI</small><code>{connection?.callbackUrl ?? "http://127.0.0.1:43822/callback"}</code></div></details>
       <div className="credential-fields-grid-2">
         <label>Client ID<input placeholder={connection?.configured ? "Already configured" : "Paste Client ID"} value={clientId} onChange={(e) => setClientId(e.target.value)} /></label>
         <label>Client Secret<input type="password" autoComplete="new-password" placeholder={connection?.configured ? "Replace only when needed" : "Paste Client Secret"} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} /></label>
@@ -521,10 +523,10 @@ function TikTokConnectionSection() {
   return (
     <div className="settings-card">
       <div className="settings-card-header">
-        <div><h3>TikTok</h3><p className="settings-card-subtitle">Content Posting API · FILE_UPLOAD</p></div>
+        <div className="integration-heading"><PlatformIcon name="TikTok" /><div><h3>TikTok</h3><p className="settings-card-subtitle">Content Posting API · private draft upload only</p></div></div>
         <span className={`connection-status ${connection?.connected ? "connected" : ""}`}><span className="dot" />{connection?.connected ? (connection.displayName ?? connection.openId) : "NOT CONNECTED"}</span>
       </div>
-      <div className="callback-display"><small>REDIRECT URI</small><code>{connection?.callbackUrl ?? "http://127.0.0.1:43823/callback"}</code></div>
+      <details className="integration-diagnostics"><summary>Connection details</summary><div className="callback-display"><small>REDIRECT URI</small><code>{connection?.callbackUrl ?? "http://127.0.0.1:43823/callback"}</code></div></details>
       <div className="credential-fields-grid-2">
         <label>Client Key<input placeholder={connection?.configured ? "Already configured" : "Paste Client Key"} value={clientKey} onChange={(e) => setClientKey(e.target.value)} /></label>
         <label>Client Secret<input type="password" autoComplete="new-password" placeholder={connection?.configured ? "Replace only when needed" : "Paste Client Secret"} value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} /></label>
@@ -538,6 +540,7 @@ function TikTokConnectionSection() {
       {connection?.connected && (
         <div className="settings-row">
           <button disabled={busy} onClick={() => void loadProfile()}>Get profile info</button>
+          <span className="settings-hint-small">Direct public posting is unavailable until TikTok grants the required publishing approval.</span>
         </div>
       )}
       {message && <p className="settings-message">{message}</p>}
