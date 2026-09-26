@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 
-import type { CampaignPackItem, CampaignChannel, PublishingQueueItem, ScheduleEvent, ScheduleEventStatus, StudioApi } from "../../../electron/shared/contracts";
+import type { CampaignPackItem, CampaignChannel, EventCampaignItem, PublishingQueueItem, ScheduleEvent, ScheduleEventStatus, StudioApi } from "../../../electron/shared/contracts";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Modal } from "../../ui/Modal";
@@ -50,11 +50,12 @@ function calendarDateKey(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
-export function ContentCalendar({ campaignPackItems, publishingQueue, activeReleaseId, onOpenRelease }: { campaignPackItems?: CampaignPackItem[]; publishingQueue?: PublishingQueueItem[]; activeReleaseId?: string | null; onOpenRelease?: () => void }) {
+export function ContentCalendar({ campaignPackItems, publishingQueue, eventCampaignItems = [], activeReleaseId, onOpenRelease }: { campaignPackItems?: CampaignPackItem[]; publishingQueue?: PublishingQueueItem[]; eventCampaignItems?: EventCampaignItem[]; activeReleaseId?: string | null; onOpenRelease?: () => void }) {
   const [events, setEvents] = useState<ScheduleEvent[]>([]);
   const [view, setView] = useState<CalendarView>("list");
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [queuedEventItems, setQueuedEventItems] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<ScheduleEvent | null>(null);
   const [editPlatform, setEditPlatform] = useState<CampaignChannel>("Instagram");
   const [editStatus, setEditStatus] = useState<ScheduleEventStatus>("DRAFT");
@@ -95,6 +96,7 @@ export function ContentCalendar({ campaignPackItems, publishingQueue, activeRele
   async function saveEdit() { if (!window.studio || !editing || !editTime) return; setMessage("Saving schedule..."); try { const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || editing.timezone || "UTC"; const updated = await window.studio.updateScheduleEvent({ id: editing.id, platform: editPlatform, status: editStatus, scheduledAt: new Date(editTime).toISOString(), timezone }); setEvents((current) => current.map((event) => event.id === updated.id ? updated : event)); setEditing(null); setMessage("Schedule updated."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not update schedule"); } }
   async function cancelEvent(event: ScheduleEvent) { if (!window.studio) return; setMessage("Cancelling schedule..."); try { const updated = await window.studio.cancelScheduleEvent(event.id); setEvents((current) => current.map((item) => item.id === updated.id ? updated : item)); setEditing(null); setMessage("Schedule cancelled."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not cancel schedule"); } }
   async function sendToPublishingQueue(event: ScheduleEvent) { if (!window.studio) return; setQueueing(true); setMessage("Sending to Publishing Queue..."); try { const result = await window.studio.sendScheduleEventToPublishingQueue(event.id); setEvents((current) => current.map((item) => item.id === result.scheduleEvent.id ? result.scheduleEvent : item)); setEditing(result.scheduleEvent); setMessage("Sent to Publishing Queue as a draft for its existing approval workflow."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not send to Publishing Queue"); } finally { setQueueing(false); } }
+  async function queueEventCampaignItem(id:string){if(!window.studio)return;setQueueing(true);setMessage("Sending event campaign item to Publishing Queue...");try{await window.studio.enqueueEventCampaignItem(id);setQueuedEventItems(current=>new Set(current).add(id));setMessage("Event campaign item added to Publishing Queue as a draft.");}catch(error){setMessage(error instanceof Error?error.message:"Could not send event campaign item to Publishing Queue");}finally{setQueueing(false);}}
 
   const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   const calendarTitle = view === "week" && calendarGrid.length
@@ -131,6 +133,8 @@ export function ContentCalendar({ campaignPackItems, publishingQueue, activeRele
           <span className="kpi-counter"><b>{readyCount}</b> Ready</span>
         </Toolbar>
       </PageHeader>
+
+      {eventCampaignItems.some((item) => item.status === "APPROVED" && item.scheduledAt) && <SectionCard eyebrow="Event Studio" title="Approved event campaign milestones" className="event-calendar-strip"><div className="event-calendar-items">{eventCampaignItems.filter((item) => item.status === "APPROVED" && item.scheduledAt).map((item) => {const queued=Boolean(item.publishingQueueId)||queuedEventItems.has(item.id);const supported=queueSupportedPlatforms.has(item.platform);return <article key={item.id}><div><strong>{item.title}</strong><span>{item.platform} · {new Date(item.scheduledAt!).toLocaleString()}</span></div><StatusBadge tone={queued?"cyan":"success"} label={queued?"QUEUED":"APPROVED"} />{queued?<Button variant="ghost" disabled>In Publishing Queue</Button>:<Button variant="secondary" disabled={queueing||!supported} title={supported?"Send approved event content to Publishing Queue":`${item.platform} publishing is not available yet`} onClick={()=>void queueEventCampaignItem(item.id)}>Send to Publishing Queue</Button>}</article>;})}</div></SectionCard>}
 
       <section className="calendar-workspace" aria-label="Content Calendar">
         <div className={`content-calendar-layout content-calendar-layout-${view}`}>

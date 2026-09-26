@@ -175,14 +175,14 @@ function QueueSection({ onNavigate }: { onNavigate: (view: string) => void }) {
     } catch (error) { setMessage(error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': Error: /, "") : "Meta publishing failed"); }
   }
 
-  const scheduled = queue.filter((item) => ["scheduled", "approved", "failed"].includes(item.status));
+  const scheduled = queue.filter((item) => ["draft", "scheduled", "approved", "failed"].includes(item.status));
   const publishing = queue.filter((item) => item.status === "publishing");
 
   return (
     <div>
       <div className="queue-stats" aria-label="Queue summary">
         <span><strong>{publishing.length}</strong> publishing</span>
-        <span><strong>{scheduled.length}</strong> scheduled/approved</span>
+        <span><strong>{scheduled.length}</strong> review/scheduled</span>
         <span><strong>{queue.filter((i) => i.status === "published").length}</strong> published</span>
       </div>
       {message && <p className="settings-message">{message}</p>}
@@ -197,11 +197,13 @@ function QueueSection({ onNavigate }: { onNavigate: (view: string) => void }) {
                 <span>{item.scheduledAt ? new Date(item.scheduledAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }) : "Draft"}</span>
               </div>
               <div className="queue-content">
-                <div className="queue-title"><PlatformIcon name={item.platform} /><strong>{item.platform} · {item.releaseTitle}</strong></div>
+                <div className="queue-title"><PlatformIcon name={item.platform} /><strong>{item.platform} · {item.sourceTitle}</strong><StatusBadge label={item.sourceType === "event" ? "EVENT" : "RELEASE"} tone={item.sourceType === "event" ? "purple" : "cyan"} /></div>
                 <p>{item.caption}</p>
+                <small>Source: {item.sourceCampaignItemTitle ?? item.sourceTitle}</small>
               </div>
               <StatusBadge className="queue-status" label={item.status.toUpperCase()} tone={item.status === "failed" ? "danger" : item.status === "published" ? "success" : item.status === "publishing" ? "warning" : "cyan"} />
               <div className="queue-actions">
+                {item.status === "draft" && <Button onClick={() => void review(item.id, "APPROVE")}>Approve</Button>}
                 {item.status === "approved" && (item.platform === "Facebook" || item.platform === "Instagram") && meta?.connected && (
                   <>
                     <select className="queue-dest-select" value={metaDest[item.id] ?? ""} onChange={(e) => setMetaDest((c) => ({ ...c, [item.id]: e.target.value }))}>
@@ -211,7 +213,7 @@ function QueueSection({ onNavigate }: { onNavigate: (view: string) => void }) {
                     <Button onClick={() => void publishMeta(item.id)}>Publish</Button>
                   </>
                 )}
-                <Button variant="secondary" onClick={() => void review(item.id, "SCHEDULE")}>Schedule</Button>
+                {item.status === "approved" && <Button variant="secondary" onClick={() => void review(item.id, "SCHEDULE")}>Schedule</Button>}
                 <Button variant="ghost" onClick={() => void review(item.id, "REJECT")} className="danger-button">Reject</Button>
               </div>
             </article>
@@ -248,7 +250,8 @@ function HistorySection() {
             <article className="history-item" key={item.id}>
               <b className={item.status}>{item.status}</b>
               <div>
-                <strong>{item.platform} · {item.releaseTitle}</strong>
+                <strong>{item.platform} · {item.sourceTitle}</strong>
+                <small>{item.sourceType === "event" ? "Event" : "Release"} source</small>
                 <small>{item.publishedAt ? new Date(item.publishedAt).toLocaleString() : "—"}{item.remotePostId ? ` · Post ${item.remotePostId}` : ""}</small>
               </div>
               <small className="history-media-type">{item.mediaType ? `${item.mediaProvider} ${item.mediaType}` : "Text"}</small>

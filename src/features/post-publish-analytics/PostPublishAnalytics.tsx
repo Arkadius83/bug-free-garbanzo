@@ -48,7 +48,7 @@ export function PostPublishAnalytics({ publishingQueue }: PostPublishAnalyticsPr
 
   const releases = useMemo(() => {
     const map = new Map<string, string>();
-    for (const item of publishedItems) map.set(item.releaseId, item.releaseTitle);
+    for (const item of publishedItems) if (item.releaseId) map.set(item.releaseId, item.releaseTitle);
     return Array.from(map.entries());
   }, [publishedItems]);
 

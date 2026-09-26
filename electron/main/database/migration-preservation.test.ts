@@ -21,6 +21,7 @@ test("rebuilds preserve linked media and schedule records", () => {
       INSERT INTO schedule_events(id,release_id,release_plan_id,campaign_item_id,promo_generation_id,platform,scheduled_at,timezone,created_at,updated_at,publishing_queue_id) VALUES ('s','r','plan','item','promo','Facebook','2026-09-22T12:00:00Z','Europe/Berlin','now','now','q');`);
     migrateDatabase(db);
     assert.equal(db.prepare("SELECT media_generation_id FROM publishing_queue WHERE id='q'").get()?.media_generation_id, 'm');
+    assert.equal(db.prepare("SELECT source_type FROM publishing_queue WHERE id='q'").get()?.source_type, 'release');
     assert.equal(db.prepare("SELECT publishing_queue_id FROM schedule_events WHERE id='s'").get()?.publishing_queue_id, 'q');
     assert.equal(db.prepare("SELECT prompt FROM media_generations WHERE id='m'").get()?.prompt, 'prompt');
   } finally { db.close(); }

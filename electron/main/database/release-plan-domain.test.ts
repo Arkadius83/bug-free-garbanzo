@@ -102,7 +102,7 @@ test("plan revisions, items, versions and approval records survive database reop
     assert.deepEqual(database.getReleasePlan(first.id), approved);
     assert.deepEqual(database.getCurrentReleasePlan(release.id), second);
     assert.deepEqual(database.listApprovalRecords("release_plan", first.id), records);
-    assert.equal(database.health().schemaVersion, 30);
+    assert.equal(database.health().schemaVersion, 32);
     database.initialize();
     assert.deepEqual(database.getReleasePlan(first.id), approved);
   } finally { database.close(); rmSync(directory, { recursive: true, force: true }); }
@@ -123,7 +123,7 @@ for (const reportedVersion of [19, 30]) {
       const plan = database.generateReleasePlan({ releaseId: release.id });
       assert.equal(plan.revisionNumber, 1);
       assert.ok(plan.campaignItems.length > 0);
-      assert.equal(database.health().schemaVersion, 30);
+      assert.equal(database.health().schemaVersion, 32);
     } finally { database.close(); rmSync(directory, { recursive: true, force: true }); }
   });
 }
@@ -507,7 +507,7 @@ test("Release Plan uses the current consolidated schema", () => {
   const database = new StudioDatabase(path.join(directory, "studio.sqlite"));
   try {
     database.initialize();
-    assert.equal(database.health().schemaVersion, 30);
+    assert.equal(database.health().schemaVersion, 32);
   } finally {
     database.close();
     rmSync(directory, { recursive: true, force: true });

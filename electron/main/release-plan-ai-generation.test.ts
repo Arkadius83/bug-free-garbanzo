@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import "./event-generation.test.js";
 import { DatabaseSync } from "node:sqlite";
 import { generateAndPersistAiReleasePlan } from "./release-plan-generation-service.js";
 import type { ConversationProviderName, ConversationProviderRouteResult, ConversationProviderRouter } from "./conversation-runtime.js";
@@ -337,7 +338,7 @@ test("service assembles context, uses injected router, persists and survives reo
   try {
     reopened.initialize();
     assert.deepEqual(reopened.getReleasePlan(plan.id), plan);
-    assert.equal(reopened.health().schemaVersion, 30);
+    assert.equal(reopened.health().schemaVersion, 32);
   } finally { reopened.close(); }
 }));
 

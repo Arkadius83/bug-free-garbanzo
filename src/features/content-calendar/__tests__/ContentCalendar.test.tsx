@@ -111,4 +111,13 @@ describe("ContentCalendar", () => {
     await user.click(await screen.findByText("Instagram announcement"));
     expect(screen.getByText("TikTok publishing is not available yet.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send to Publishing Queue" })).not.toBeInTheDocument();
-  });});
+  });
+
+  it("queues approved Event Studio content through the shared queue action",async()=>{
+    const enqueue=vi.fn(studio.enqueueEventCampaignItem);studio.enqueueEventCampaignItem=enqueue;
+    render(<ContentCalendar eventCampaignItems={[{id:"event-item",eventId:"event-1",title:"Event announcement",contentType:"EVENT_ANNOUNCEMENT",language:"en",platform:"Facebook",tone:"clear",content:"Approved event copy",scheduledAt:"2026-10-01T18:00:00.000Z",status:"APPROVED",publishingQueueId:null,createdAt:"",updatedAt:""}]}/>);
+    const user=userEvent.setup();await user.click(await screen.findByRole("button",{name:"Send to Publishing Queue"}));
+    await waitFor(()=>expect(enqueue).toHaveBeenCalledWith("event-item"));
+    expect(await screen.findByRole("button",{name:"In Publishing Queue"})).toBeDisabled();
+  });
+});

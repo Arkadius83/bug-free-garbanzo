@@ -205,6 +205,12 @@ export interface SystemStatus {
     models: OllamaModel[];
     error?: string;
   };
+  metaAi: {
+    configured: boolean;
+    available: boolean;
+    sessionPath: string;
+    error?: string;
+  };
 }
 
 export interface DatabaseHealth {
@@ -350,7 +356,8 @@ export interface UpsertContactInput { id?:string; name:string; contactType:Conta
 export interface AddContactInteractionInput { contactId:string; channel:ContactChannel|"meeting"; direction:"outbound"|"inbound"|"note"; summary:string; occurredAt:string; }
 export interface GenerateMediaInput { campaignPackItemId:string; provider:MediaProvider; mediaType:GeneratedMediaType; aspectRatio?:MediaAspectRatio; }
 export type PublishingStatus="draft"|"approved"|"scheduled"|"publishing"|"published"|"failed";
-export interface PublishingQueueItem { id:string; releaseId:string; releaseTitle:string; platform:CampaignChannel; campaignPackItemId:string; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; remotePostId:string|null; publishedAt:string|null; destinationId:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; sourceScheduleEventId:string|null; sourceCampaignItemTitle:string|null; reviewedBy:string|null; reviewedAt:string|null; reviewReason:string|null; createdAt:string; updatedAt:string; }
+export type PublishingSourceType="release"|"event";
+export interface PublishingQueueItem { id:string; sourceType:PublishingSourceType; sourceId:string; sourceTitle:string; releaseId:string|null; releaseTitle:string; campaignPackItemId:string|null; eventId:string|null; eventName:string|null; eventCampaignItemId:string|null; platform:CampaignChannel; mediaGenerationId:string|null; caption:string; scheduledAt:string|null; status:PublishingStatus; error:string|null; exportedAt:string|null; remotePostId:string|null; publishedAt:string|null; destinationId:string|null; mediaType:GeneratedMediaType|null; mediaProvider:MediaProvider|null; rightsBlocked:boolean; sourceScheduleEventId:string|null; sourceCampaignItemTitle:string|null; reviewedBy:string|null; reviewedAt:string|null; reviewReason:string|null; createdAt:string; updatedAt:string; }
 export interface CreatePublishingQueueInput { releaseId:string; campaignPackItemId:string; mediaGenerationId:string|null; platform:CampaignChannel; scheduledAt:string|null; }
 export interface ReviewPublishingQueueItemInput { id:string; action:"APPROVE"|"REJECT"|"RETURN_TO_DRAFT"|"SCHEDULE"; actor?:string; reason?:string; }
 export interface UpdatePublishingQueueContentInput { id:string; caption:string; scheduledAt:string|null; }
@@ -414,6 +421,19 @@ export interface TikTokCreatorInfo {
   stitch_disabled?: boolean;
   max_video_post_duration_sec?: number;
 }
+
+export type EventKind = "ORGANIZER" | "GUEST_APPEARANCE";
+export type EventStatus = "DRAFT" | "PLANNED" | "ANNOUNCED" | "COMPLETED" | "CANCELLED";
+export type EventCampaignStatus = "DRAFT" | "REVIEW" | "APPROVED" | "REJECTED";
+export type EventContentType = "EVENT_ANNOUNCEMENT" | "ARTIST_ANNOUNCEMENT" | "LINEUP_REVEAL" | "TICKET_PROMOTION" | "GIVEAWAY" | "COUNTDOWN" | "EVENT_DAY_INFO" | "POST_EVENT_THANK_YOU";
+export interface EventLineupSlot { id:string; eventId:string; artistName:string; performanceStart:string|null; performanceEnd:string|null; sortOrder:number; }
+export interface EventAsset { id:string; eventId:string; kind:"POSTER"|"ARTIST_LOGO"|"MEDIA"; filePath:string; fileName:string; mimeType:string|null; metadata:Record<string,unknown>; createdAt:string; }
+export interface EventSummary { id:string; kind:EventKind; name:string; status:EventStatus; date:string; doorsTime:string|null; startTime:string|null; endTime:string|null; timezone:string; venue:string; address:string; genre:string; description:string; ticketUrl:string|null; eventUrl:string|null; socialLinks:string[]; organizer:string; createdAt:string; updatedAt:string; lineup:EventLineupSlot[]; assets:EventAsset[]; campaignProgress:number; }
+export interface UpsertEventInput { id?:string; kind:EventKind; name:string; status:EventStatus; date:string; doorsTime?:string|null; startTime?:string|null; endTime?:string|null; timezone:string; venue:string; address?:string; genre?:string; description?:string; ticketUrl?:string|null; eventUrl?:string|null; socialLinks?:string[]; organizer?:string; lineup?:Array<{id?:string;artistName:string;performanceStart?:string|null;performanceEnd?:string|null;sortOrder?:number}>; }
+export interface EventCampaignItem { id:string; eventId:string; title:string; contentType:EventContentType; language:ContentLanguage; platform:CampaignChannel; tone:string; content:string; scheduledAt:string|null; status:EventCampaignStatus; publishingQueueId:string|null; createdAt:string; updatedAt:string; }
+export interface GenerateEventContentInput { eventId:string; contentType:EventContentType; language:ContentLanguage; platform:CampaignChannel; tone:string; }
+export interface GenerateEventCampaignInput { eventId:string; language:ContentLanguage; platforms:CampaignChannel[]; tone:string; }
+export interface AttachEventAssetInput { eventId:string; kind:EventAsset["kind"]; filePath:string; fileName:string; mimeType:string|null; metadata?:Record<string,unknown>; }
 export interface TikTokUserProfile {
   openId: string;
   displayName: string;
@@ -992,6 +1012,17 @@ export interface StudioApi {
   createReleaseDraft(input: CreateReleaseDraftInput): Promise<ReleaseSummary>;
   updateRelease(input: UpdateReleaseInput): Promise<ReleaseSummary>;
   deleteRelease(releaseId: string): Promise<void>;
+  listEvents():Promise<EventSummary[]>;
+  getEvent(id:string):Promise<EventSummary|null>;
+  saveEvent(input:UpsertEventInput):Promise<EventSummary>;
+  deleteEvent(id:string):Promise<void>;
+  selectAndAttachEventAsset(eventId:string,kind:EventAsset["kind"]):Promise<EventAsset|null>;
+  detachEventAsset(id:string):Promise<void>;
+  listEventCampaignItems(eventId?:string|null):Promise<EventCampaignItem[]>;
+  generateEventContent(input:GenerateEventContentInput):Promise<EventCampaignItem>;
+  generateEventCampaign(input:GenerateEventCampaignInput):Promise<EventCampaignItem[]>;
+  updateEventCampaignItem(id:string,input:{content?:string;scheduledAt?:string|null;status?:EventCampaignStatus}):Promise<EventCampaignItem>;
+  enqueueEventCampaignItem(id:string):Promise<PublishingQueueItem>;
   generateReleasePlan(input: GenerateReleasePlanInput): Promise<ReleasePlan>;
   regenerateReleasePlan(input: RegenerateReleasePlanInput): Promise<ReleasePlan>;
   getCurrentReleasePlan(releaseId: string): Promise<ReleasePlan | null>;

@@ -672,4 +672,116 @@ export const migrations: Migration[] = [
       ALTER TABLE media_generations_v3 RENAME TO media_generations;
       CREATE INDEX idx_media_generations_release ON media_generations(release_id, created_at DESC);
     `
+  },
+  {
+    version: 31,
+    name: "event_studio_v1",
+    sql: `
+      CREATE TABLE events_v1 (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('ORGANIZER','GUEST_APPEARANCE')),
+        name TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('DRAFT','PLANNED','ANNOUNCED','COMPLETED','CANCELLED')),
+        event_date TEXT NOT NULL,
+        doors_time TEXT,
+        start_time TEXT,
+        end_time TEXT,
+        timezone TEXT NOT NULL,
+        venue TEXT NOT NULL DEFAULT '',
+        address TEXT NOT NULL DEFAULT '',
+        genre TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        ticket_url TEXT,
+        event_url TEXT,
+        social_links_json TEXT NOT NULL DEFAULT '[]',
+        organizer TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE TABLE event_lineup_v1 (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events_v1(id) ON DELETE CASCADE,
+        artist_name TEXT NOT NULL,
+        performance_start TEXT,
+        performance_end TEXT,
+        sort_order INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE event_assets_v1 (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events_v1(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK(kind IN ('POSTER','ARTIST_LOGO','MEDIA')),
+        file_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        mime_type TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE event_campaign_items_v1 (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events_v1(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        content_type TEXT NOT NULL CHECK(content_type IN ('EVENT_ANNOUNCEMENT','ARTIST_ANNOUNCEMENT','LINEUP_REVEAL','TICKET_PROMOTION','GIVEAWAY','COUNTDOWN','EVENT_DAY_INFO','POST_EVENT_THANK_YOU')),
+        language TEXT NOT NULL CHECK(language IN ('de','en','pl')),
+        platform TEXT NOT NULL CHECK(platform IN ('Instagram','Facebook','TikTok','SoundCloud','YouTube')),
+        tone TEXT NOT NULL DEFAULT '',
+        content TEXT NOT NULL DEFAULT '',
+        scheduled_at TEXT,
+        status TEXT NOT NULL DEFAULT 'DRAFT' CHECK(status IN ('DRAFT','REVIEW','APPROVED','REJECTED')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+      CREATE INDEX idx_events_date ON events_v1(event_date,status);
+      CREATE INDEX idx_event_campaign_calendar ON event_campaign_items_v1(scheduled_at,status);
+    `
+  },
+  {
+    version: 32,
+    name: "unified_publishing_queue_sources_v1",
+    sql: `
+      CREATE TABLE publishing_queue_v3 (
+        id TEXT PRIMARY KEY,
+        source_type TEXT NOT NULL DEFAULT 'release' CHECK(source_type IN ('release','event')),
+        release_id TEXT REFERENCES releases(id) ON DELETE CASCADE,
+        campaign_pack_item_id TEXT REFERENCES campaign_pack_items(id) ON DELETE CASCADE,
+        event_id TEXT REFERENCES events_v1(id) ON DELETE CASCADE,
+        event_campaign_item_id TEXT REFERENCES event_campaign_items_v1(id) ON DELETE CASCADE,
+        media_generation_id TEXT REFERENCES media_generations(id) ON DELETE SET NULL,
+        platform TEXT NOT NULL CHECK(platform IN ('Instagram','Facebook','TikTok','SoundCloud','YouTube')),
+        caption TEXT NOT NULL,
+        scheduled_at TEXT,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','approved','scheduled','publishing','published','failed')),
+        error TEXT,
+        exported_at TEXT,
+        remote_post_id TEXT,
+        published_at TEXT,
+        destination_id TEXT,
+        reviewed_by TEXT,
+        reviewed_at TEXT,
+        review_reason TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        CHECK(
+          (source_type='release' AND release_id IS NOT NULL AND campaign_pack_item_id IS NOT NULL AND event_id IS NULL AND event_campaign_item_id IS NULL)
+          OR
+          (source_type='event' AND release_id IS NULL AND campaign_pack_item_id IS NULL AND event_id IS NOT NULL AND event_campaign_item_id IS NOT NULL)
+        )
+      );
+      INSERT INTO publishing_queue_v3(
+        id,source_type,release_id,campaign_pack_item_id,event_id,event_campaign_item_id,
+        media_generation_id,platform,caption,scheduled_at,status,error,exported_at,
+        remote_post_id,published_at,destination_id,reviewed_by,reviewed_at,review_reason,
+        created_at,updated_at
+      )
+      SELECT id,'release',release_id,campaign_pack_item_id,NULL,NULL,media_generation_id,
+        platform,caption,scheduled_at,status,error,exported_at,remote_post_id,published_at,
+        destination_id,reviewed_by,reviewed_at,review_reason,created_at,updated_at
+      FROM publishing_queue;
+      DROP TABLE publishing_queue;
+      ALTER TABLE publishing_queue_v3 RENAME TO publishing_queue;
+      CREATE INDEX idx_publishing_queue_schedule ON publishing_queue(scheduled_at,status);
+      CREATE INDEX idx_publishing_queue_release ON publishing_queue(release_id,created_at DESC);
+      CREATE INDEX idx_publishing_queue_event ON publishing_queue(event_id,created_at DESC);
+      CREATE INDEX idx_publishing_queue_review ON publishing_queue(status,reviewed_at DESC);
+      CREATE UNIQUE INDEX idx_publishing_queue_event_campaign_item ON publishing_queue(event_campaign_item_id) WHERE event_campaign_item_id IS NOT NULL;
+    `
   }];

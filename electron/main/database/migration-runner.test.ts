@@ -18,10 +18,10 @@ function fixture(version: number, check: (db: DatabaseSync, file: string) => voi
   } finally { db.close(); rmSync(dir, { recursive: true, force: true }); }
 }
 
-for (const version of [0, ...Array.from({length: 12}, (_, i) => i + 19)]) {
+for (const version of [0, ...Array.from({length: 13}, (_, i) => i + 19)]) {
   test(`migration ${version} -> latest and idempotent reopen`, () => fixture(version, (db, file) => {
     migrateDatabase(db);
-    assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, 30);
+    assert.equal(db.prepare("PRAGMA user_version").get()?.user_version, 32);
     assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name='post_publish_analytics'").get());
     assert.equal(db.prepare("PRAGMA foreign_keys").get()?.foreign_keys, 1);
     const reopened = new DatabaseSync(file);
