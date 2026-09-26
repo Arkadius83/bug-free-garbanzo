@@ -2,6 +2,12 @@
 
 const { contextBridge, ipcRenderer } = require("electron") as typeof import("electron");
 
+function metaAiErrorMessage(error: unknown, fallback: string): string {
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  if (!raw) return fallback;
+  return raw.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, "");
+}
+
 const api: StudioApi = {
   getInterfacePreferences: () => ipcRenderer.invoke("studio:get-interface-preferences"),
   saveInterfacePreferences: (value) => ipcRenderer.invoke("studio:save-interface-preferences", value),
@@ -123,6 +129,11 @@ const api: StudioApi = {
   saveMetaCredentials: (appId,appSecret,configurationId) => ipcRenderer.invoke("studio:save-meta-credentials",appId,appSecret,configurationId),
   beginMetaConnect: () => ipcRenderer.invoke("studio:begin-meta-connect"),
   disconnectMeta: () => ipcRenderer.invoke("studio:disconnect-meta"),
+  getMetaAiStatus: () => ipcRenderer.invoke("studio:get-meta-ai-status").catch(() => ({ configured:false, available:false, sessionPath:"", error:"Meta AI not available" } as any)),
+  loginMetaAi: () => ipcRenderer.invoke("studio:login-meta-ai").catch(() => null as any),
+  disconnectMetaAi: () => ipcRenderer.invoke("studio:disconnect-meta-ai").catch(() => ({ configured:false, available:false, sessionPath:"", error:"Meta AI disconnect failed" } as any)),
+  generateMetaAiImage: (prompt:string,aspect:string,count:number) => ipcRenderer.invoke("studio:generate-meta-ai-image",prompt,aspect,count).catch((error: unknown) => ({ ok:false, command:"image create", sessionPath:"", message: metaAiErrorMessage(error, "Meta AI image generation failed") } as any)),
+  generateMetaAiVideo: (prompt:string,aspect:string) => ipcRenderer.invoke("studio:generate-meta-ai-video",prompt,aspect).catch((error: unknown) => ({ ok:false, command:"video create", sessionPath:"", message: metaAiErrorMessage(error, "Meta AI video generation failed") } as any)),
   publishMetaQueueItem: (itemId,destinationId) => ipcRenderer.invoke("studio:publish-meta-queue-item",itemId,destinationId),
   publishMetaTestPost: (input) => ipcRenderer.invoke("studio:publish-meta-test-post",input).catch(() => ({ ok:false, platform:"Facebook", sanitizedError:"Meta test publish not consolidated â€” UI disabled" } as any)),
   getMediaBridgeStatus: () => ipcRenderer.invoke("studio:get-media-bridge-status"),

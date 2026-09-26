@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import path from "node:path";
 import { discoverOllamaModels, generateCampaignDraft, generateCampaignPackContent, runPlanningAgent } from "./ollama.js";
-import type { AddContactInteractionInput, AiSettings, AssetKind, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, EditPromoContentInput, EventAsset, EventCampaignStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateEventCampaignInput, GenerateEventContentInput, GenerateMediaInput, GeneratePromoContentInput, AiHarnessRequest, ConversationRequest, PublishingStatus, RetryPromoGenerationInput, ReviewPublishingQueueItemInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, TikTokCreatorInfo, TikTokTestPublishInput, TikTokTestPublishResult, TikTokUserProfile, UpdateBrandProfileInput, UpdatePromoReviewInput, UpdateReleaseInput, UpdateScheduleEventInput, CreateScheduleEventInput, UpdatePublishingQueueContentInput, UpdateSoundCloudTrackInput, UpsertContactInput, UpsertEventInput } from "../shared/contracts.js";
+import type { AddContactInteractionInput, AiSettings, AssetKind, ContentLanguage, CreatePublishingQueueInput, CreateReleaseDraftInput, CreateTaskInput, DraftStatus, EditPromoContentInput, EventAsset, EventCampaignStatus, GenerateCampaignDraftInput, GenerateCampaignPackInput, GenerateEventCampaignInput, GenerateEventContentInput, GenerateMediaInput, GeneratePromoContentInput, MetaAiGenerateResult, MetaAiSession, MetaAiStatus, AiHarnessRequest, ConversationRequest, PublishingStatus, RetryPromoGenerationInput, ReviewPublishingQueueItemInput, SaveGeneratedDraftInput, SoundCloudContentType, SpotifyArtistMapping, SystemStatus, TaskStatus, TikTokCreatorInfo, TikTokTestPublishInput, TikTokTestPublishResult, TikTokUserProfile, UpdateBrandProfileInput, UpdatePromoReviewInput, UpdateReleaseInput, UpdateScheduleEventInput, CreateScheduleEventInput, UpdatePublishingQueueContentInput, UpdateSoundCloudTrackInput, UpsertContactInput, UpsertEventInput } from "../shared/contracts.js";
 import { defaultInterfacePreferences, normalizeInterfacePreferences } from "../shared/interface-preferences.js";
 import type { HarnessExecutionApprovalRequest, HarnessExecutionRequest } from "../shared/harness-execution.js";
 import type { ChangeReleasePlanStatusInput, CreateCampaignItemInput, CreateReleasePlanInput, RecordApprovalActionInput, ReorderCampaignItemsInput, ApproveReleasePlanInput, GenerateReleasePlanInput, RegenerateReleasePlanInput, UpdateCampaignItemInput, UpdateReleasePlanInput } from "../shared/contracts.js";
@@ -17,6 +17,7 @@ import { DistroKidClient } from "./distrokid.js";
 import { MediaGenerationClient } from "./media-generation.js";
 import { LocalServicesManager } from "./local-services.js";
 import { MetaClient } from "./meta.js";
+import { MetaAiClient } from "./meta-ai.js";
 import { MediaBridgeClient } from "./media-bridge.js";
 import { YouTubeClient } from "./youtube.js";
 import { TikTokClient } from "./tiktok.js";
@@ -63,6 +64,7 @@ let distrokidClient: DistroKidClient;
 let mediaGenerationClient: MediaGenerationClient;
 let localServicesManager: LocalServicesManager;
 let metaClient: MetaClient;
+let metaAiClient: MetaAiClient;
 let mediaBridgeClient: MediaBridgeClient;
 let youTubeClient: YouTubeClient;
 let tikTokClient: TikTokClient;
@@ -94,6 +96,15 @@ async function handleMetaCallback(url: string): Promise<void> {
   if (window) { if (window.isMinimized()) window.restore(); window.focus(); }
 }
 
+function metaAiCallbackFromArgs(args: string[]): string | null {
+  return args.find((value) => value.startsWith("ai-studio-manager://meta-ai/callback")) ?? null;
+}
+
+async function handleMetaAiCallback(url: string): Promise<void> {
+  try { const session = await metaAiClient.login(); const window = BrowserWindow.getAllWindows()[0]; if (window) { if (window.isMinimized()) window.restore(); window.focus(); } console.info("[meta-ai] Login completed", { sessionPath: session }); }
+  catch (error) { console.error("Meta AI login failed", error); }
+}
+
 function createWindow(): void {
   const window = new BrowserWindow({
     width: 1440,
@@ -123,20 +134,19 @@ function createWindow(): void {
 ipcMain.handle("studio:get-system-status", async (): Promise<SystemStatus> => {
   try {
     const models = await discoverOllamaModels();
+    const metaAiStatus = await metaAiClient.status();
     return {
       appVersion: app.getVersion(),
       platform: process.platform,
-      ollama: { available: true, models }
+      ollama: { available: true, models },
+      metaAi: { configured: metaAiStatus.configured, available: metaAiStatus.available, sessionPath: metaAiStatus.sessionPath, error: metaAiStatus.error },
     };
   } catch (error) {
     return {
       appVersion: app.getVersion(),
       platform: process.platform,
-      ollama: {
-        available: false,
-        models: [],
-        error: error instanceof Error ? error.message : "Unknown Ollama error"
-      }
+      ollama: { available: false, models: [], error: error instanceof Error ? error.message : "Unknown Ollama error" },
+      metaAi: { configured: false, available: false, sessionPath: "", error: error instanceof Error ? error.message : "Unknown Meta AI error" },
     };
   }
 });
@@ -273,7 +283,12 @@ ipcMain.handle("studio:get-meta-connection",()=>metaClient.status());
 ipcMain.handle("studio:save-meta-credentials",(_event,appId:string,appSecret:string,configurationId:string)=>metaClient.saveCredentials(appId,appSecret,configurationId));
 ipcMain.handle("studio:begin-meta-connect",()=>metaClient.beginConnect());
 ipcMain.handle("studio:disconnect-meta",()=>metaClient.disconnect());
-ipcMain.handle("studio:get-media-bridge-status",()=>mediaBridgeClient.status());
+  ipcMain.handle("studio:get-meta-ai-status",()=>metaAiClient.status());
+  ipcMain.handle("studio:login-meta-ai",async()=>{try{const session=await metaAiClient.login();return session;}catch(error){throw error instanceof Error?error:new Error("Meta AI login failed");}});
+  ipcMain.handle("studio:disconnect-meta-ai",async()=>{try{const status=await metaAiClient.disconnect();return status;}catch(error){throw error instanceof Error?error:new Error("Meta AI disconnect failed");}});
+  ipcMain.handle("studio:generate-meta-ai-image",async(_event,prompt:string,aspect:string,count:number)=>{try{const result=await metaAiClient.generateImage(prompt,aspect,count);return result;}catch(error){throw error instanceof Error?error:new Error("Meta AI image generation failed");}});
+  ipcMain.handle("studio:generate-meta-ai-video",async(_event,prompt:string,aspect:string)=>{try{const result=await metaAiClient.generateVideo(prompt,aspect);return result;}catch(error){throw error instanceof Error?error:new Error("Meta AI video generation failed");}});
+  ipcMain.handle("studio:get-media-bridge-status",()=>mediaBridgeClient.status());
 ipcMain.handle("studio:save-media-bridge-settings",(_event,accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string)=>mediaBridgeClient.saveSettings(accountId,bucket,accessKeyId,secretAccessKey));
 ipcMain.handle("studio:get-youtube-connection",()=>youTubeClient.status());
 ipcMain.handle("studio:save-youtube-credentials",(_event,clientId:string,clientSecret:string)=>youTubeClient.saveCredentials(clientId,clientSecret));
@@ -394,6 +409,7 @@ void app.whenReady().then(async () => {
   mediaGenerationClient = new MediaGenerationClient(app.getPath("userData"));
   localServicesManager = new LocalServicesManager(app.getPath("userData"));
   metaClient = new MetaClient(app.getPath("userData"));
+  metaAiClient = new MetaAiClient(app.getPath("userData"), path.join(process.cwd(), "meta-ai-cli"));
   mediaBridgeClient = new MediaBridgeClient(app.getPath("userData"));
   youTubeClient = new YouTubeClient(app.getPath("userData"));
   tikTokClient = new TikTokClient(app.getPath("userData"));
@@ -428,9 +444,10 @@ void app.whenReady().then(async () => {
 });
 
 app.on("open-url", (event, url) => {
-  if (!url.startsWith("ai-studio-manager://soundcloud/callback") && !url.startsWith("ai-studio-manager://meta/callback")) return;
+  if (!url.startsWith("ai-studio-manager://soundcloud/callback") && !url.startsWith("ai-studio-manager://meta/callback") && !url.startsWith("ai-studio-manager://meta-ai/callback")) return;
   event.preventDefault();
   if (url.startsWith("ai-studio-manager://meta/callback")) { if (metaClient) void handleMetaCallback(url); }
+  else if (url.startsWith("ai-studio-manager://meta-ai/callback")) { if (metaAiClient) void handleMetaAiCallback(url); }
   else if (soundCloudClient) void handleSoundCloudCallback(url);
 });
 
@@ -439,6 +456,8 @@ app.on("second-instance", (_event, argv) => {
   if (soundCloudCallback && soundCloudClient) void handleSoundCloudCallback(soundCloudCallback);
   const metaCallback = metaCallbackFromArgs(argv);
   if (metaCallback && metaClient) void handleMetaCallback(metaCallback);
+  const metaAiCallback = metaAiCallbackFromArgs(argv);
+  if (metaAiCallback && metaAiClient) void handleMetaAiCallback(metaAiCallback);
 });
 
 app.on("before-quit", () => { localServicesManager?.stopManaged(); studioDatabase?.close(); });

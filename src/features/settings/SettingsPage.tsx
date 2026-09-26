@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { InterfacePreferencesPanel } from "../../ui/InterfacePreferencesPanel";
-import type { ArtistAlias, KlingCliStatus, LocalServiceStatus, MediaBridgeStatus, MediaGenerationSettings, MetaConnection, SoundCloudConnection, SpotifyConnection, YouTubeConnection, TikTokConnection, YouTubeChannelDataSnapshot, TikTokUserProfile, BrandProfile, MediaAspectRatio } from "../../../electron/shared/contracts";
+import type { ArtistAlias, KlingCliStatus, LocalServiceStatus, MediaBridgeStatus, MediaGenerationSettings, MetaConnection, MetaAiStatus, SoundCloudConnection, SpotifyConnection, YouTubeConnection, TikTokConnection, YouTubeChannelDataSnapshot, TikTokUserProfile, BrandProfile, MediaAspectRatio } from "../../../electron/shared/contracts";
 import { artists } from "../../data/artists";
 import { Tabs } from "../../ui/Tabs";
 import { PageHeader } from "../../ui/PageHeader";
@@ -554,12 +554,14 @@ function AiMediaSection() {
   const [comfyUrl, setComfyUrl] = useState("http://127.0.0.1:8188");
   const [comfyCheckpoint, setComfyCheckpoint] = useState("");
   const [mediaSettings, setMediaSettings] = useState<MediaGenerationSettings>({ openAiConfigured: false, klingConfigured: false, klingCliConfigured: false, klingCliVersion: null, comfyUiUrl: "http://127.0.0.1:8188", comfyUiAvailable: false, comfyUiCheckpoints: [], comfyUiCheckpoint: null, comfyUiError: null });
+  const [metaAiStatus, setMetaAiStatus] = useState<MetaAiStatus>({ configured: false, available: false, sessionPath: "" });
+  const [metaAiBusy, setMetaAiBusy] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     if (!window.studio) return;
-    void Promise.all([window.studio.getMediaGenerationSettings(), window.studio.getKlingCliStatus()]).then(([ms, kl]) => {
-      setMediaSettings(ms); setComfyUrl(ms.comfyUiUrl); setComfyCheckpoint(ms.comfyUiCheckpoint ?? ""); setKlingStatus(kl);
+    void Promise.all([window.studio.getMediaGenerationSettings(), window.studio.getKlingCliStatus(), window.studio.getMetaAiStatus()]).then(([ms, kl, ma]) => {
+      setMediaSettings(ms); setComfyUrl(ms.comfyUiUrl); setComfyCheckpoint(ms.comfyUiCheckpoint ?? ""); setKlingStatus(kl); setMetaAiStatus(ma);
     }).catch(() => undefined);
   }, []);
 
@@ -586,6 +588,42 @@ function AiMediaSection() {
     setKlingStatus(await window.studio.getKlingCliStatus());
   }
 
+  async function refreshMetaAi() {
+    if (!window.studio) return;
+    setMetaAiBusy(true);
+    try { setMetaAiStatus(await window.studio.getMetaAiStatus()); setMessage("Meta AI status refreshed."); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not refresh Meta AI status"); }
+    finally { setMetaAiBusy(false); }
+  }
+
+  async function loginMetaAi() {
+    if (!window.studio) return; setMetaAiBusy(true); setMessage("Starting Meta AI login...");
+    try { const session = await window.studio.loginMetaAi(); setMetaAiStatus(await window.studio.getMetaAiStatus()); setMessage(`Meta AI login completed. Session at ${session?.sessionPath ?? "unknown"}.`); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Meta AI login failed"); }
+    finally { setMetaAiBusy(false); }
+  }
+
+  async function disconnectMetaAi() {
+    if (!window.studio) return; setMetaAiBusy(true); setMessage("Disconnecting Meta AI...");
+    try { await window.studio.disconnectMetaAi(); setMetaAiStatus(await window.studio.getMetaAiStatus()); setMessage("Meta AI disconnected."); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Could not disconnect Meta AI"); }
+    finally { setMetaAiBusy(false); }
+  }
+
+  async function generateMetaAiImage() {
+    if (!window.studio) return; setMetaAiBusy(true); setMessage("Generating image with Meta AI...");
+    try {
+      const result = await window.studio.generateMetaAiImage("a fox in snowfall", "9:16", 1);
+      const saved = result.images ?? [];
+      if (result.ok !== false && saved.length > 0) {
+        setMessage(`Meta AI image generated. ${saved.length} image(s) saved: ${saved.map((image) => image.path).join(", ")}`);
+      } else {
+        setMessage(`Meta AI image generation failed. ${result.message ?? "No images were saved."}`);
+      }
+    }
+    catch (error) { setMessage(error instanceof Error ? error.message : "Meta AI image generation failed"); }
+    finally { setMetaAiBusy(false); }
+  }
   return (
     <>
       <header><h1>AI & Media</h1><p>API keys and media generation providers.</p></header>
@@ -638,6 +676,33 @@ function AiMediaSection() {
           )}
           <div className={mediaSettings.comfyUiAvailable ? "settings-status-ok" : "settings-hint-small"} style={{ marginTop: 8 }}>
             {mediaSettings.comfyUiAvailable ? `● ONLINE · ${mediaSettings.comfyUiCheckpoint ?? "select model"}` : `○ STANDBY · starts on generation`}
+          </div>
+        </div>
+      </div>
+      <div className="settings-section">
+        <h2>Meta AI</h2>
+        <div className="provider-section">
+          <h3>Meta AI Image & Video Generation</h3>
+          <p>Generate images and videos via Meta AI using Playwright browser session. Requires deno on PATH.</p>
+          <div className="settings-row settings-row-tight">
+            <span className={metaAiStatus.available ? "settings-status-ok" : "settings-status-error"}>
+              {metaAiStatus.available ? `● DENo AVAILABLE · ${metaAiStatus.configured ? "Session configured" : "No session"}` : "○ DENo NOT AVAILABLE"}
+            </span>
+            <button disabled={metaAiBusy} onClick={() => void refreshMetaAi()}>Refresh</button>
+          </div>
+          <div className="settings-row settings-row-tight">
+            <button className="primary" disabled={metaAiBusy || metaAiStatus.configured} onClick={() => void loginMetaAi()}>
+              {metaAiBusy ? "Working..." : metaAiStatus.configured ? "Session configured" : "Login to Meta AI"}
+            </button>
+            {metaAiStatus.configured && <button className="danger-button" disabled={metaAiBusy} onClick={() => void disconnectMetaAi()}>Disconnect</button>}
+          </div>
+          {metaAiStatus.configured && (
+            <div className="settings-row settings-row-tight">
+              <button disabled={metaAiBusy} onClick={() => void generateMetaAiImage()}>Generate test image (9:16)</button>
+            </div>
+          )}
+          <div className={metaAiStatus.error ? "settings-status-error" : "settings-hint-small"} style={{ marginTop: 8 }}>
+            {metaAiStatus.error || (metaAiStatus.configured ? "Session ready. Use Meta AI for image/video generation." : "Login required to use Meta AI.")}
           </div>
         </div>
       </div>

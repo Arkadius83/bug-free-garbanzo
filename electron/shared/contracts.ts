@@ -365,6 +365,10 @@ export interface MetaDestination { id:string; platform:"Facebook"|"Instagram";pa
 export interface MetaConnection { configured:boolean;connected:boolean;callbackUrl:string;graphVersion:string;configurationId:string|null;destinations:MetaDestination[];error:string|null; }
 export interface MetaTestPublishInput { destinationId:string; text:string; }
 export interface MetaTestPublishResult { ok:boolean; destinationId:string; destinationName:string; endpoint:string; startedAt:string; finishedAt:string; postId:string|null; error:string|null; }
+export interface MetaAiCookie { domain: string; name: string; value: string; path?: string; expires?: number; httpOnly?: boolean; secure?: boolean; sameSite?: string; }
+export interface MetaAiSession { cookies: MetaAiCookie[]; userAgent?: string; timezone?: string; sessionPath: string; }
+export interface MetaAiStatus { configured: boolean; available: boolean; sessionPath: string; error?: string; }
+export interface MetaAiGenerateResult { ok: boolean; command: string; sessionPath: string; message: string; images?: Array<{ url: string; thumbnail: string|null; fileName: string|null; path: string; bytes: number; contentType: string|null }>; videos?: Array<{ url: string; thumbnail: string|null; id: string; path: string; bytes: number; contentType: string|null }>; error?: string; }
 export interface MediaBridgeStatus { configured:boolean;provider:"cloudflare-r2";accountId:string|null;bucket:string|null;error:string|null; }
 
 export type PublisherPlatform = "YouTube" | "TikTok";
@@ -1114,6 +1118,11 @@ export interface StudioApi {
   disconnectMeta():Promise<MetaConnection>;
   publishMetaQueueItem(itemId:string,destinationId:string):Promise<PublishingQueueItem>;
   publishMetaTestPost(input:MetaTestPublishInput):Promise<MetaTestPublishResult>;
+  getMetaAiStatus():Promise<MetaAiStatus>;
+  loginMetaAi():Promise<MetaAiSession>;
+  disconnectMetaAi():Promise<MetaAiStatus>;
+  generateMetaAiImage(prompt:string,aspect:string,count:number):Promise<MetaAiGenerateResult>;
+  generateMetaAiVideo(prompt:string,aspect:string):Promise<MetaAiGenerateResult>;
   getMediaBridgeStatus():Promise<MediaBridgeStatus>;
   saveMediaBridgeSettings(accountId:string,bucket:string,accessKeyId:string,secretAccessKey:string):Promise<MediaBridgeStatus>;
   generatePromoContent(input: GeneratePromoContentInput): Promise<PromoGenerationResult>;
